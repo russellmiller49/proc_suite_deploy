@@ -1,0 +1,13 @@
+id: microdebrider_debridement
+label: Microdebrider Debridement (Tumor Excision)
+category: bronchoscopy
+cpt_hints: []
+schema_id: microdebrider_debridement_v1
+output_section: PROCEDURE_DETAILS
+template_path: microdebrider_debridement.j2
+required_fields: []
+optional_fields:
+  - airway_segment
+  - notes
+proc_types:
+  - microdebrider_debridement

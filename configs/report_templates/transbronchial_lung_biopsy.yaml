@@ -1,0 +1,15 @@
+id: transbronchial_lung_biopsy
+label: Transbronchial Lung Biopsy
+category: bronchoscopy
+cpt_hints: ["31628"]
+schema_id: transbronchial_lung_biopsy_v1
+output_section: PROCEDURE_DETAILS
+template_path: transbronchial_lung_biopsy.j2
+required_fields:
+  - lung_segment
+  - samples_collected
+  - forceps_tools
+  - tests
+optional_fields: []
+proc_types:
+  - transbronchial_lung_biopsy

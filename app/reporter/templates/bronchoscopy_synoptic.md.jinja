@@ -1,0 +1,31 @@
+# Bronchoscopy Synoptic Report
+
+## Indication
+{{ report.indication }}
+
+## Anesthesia
+{{ report.anesthesia }}
+
+## Survey
+{% for item in report.survey %}- {{ item }}
+{% endfor %}
+
+## Localization
+{{ report.localization }}
+
+## Sampling
+{% for sample in report.sampling %}- {{ sample }}
+{% endfor %}
+
+## Therapeutics
+{% if report.therapeutics %}{% for therapy in report.therapeutics %}- {{ therapy }}
+{% endfor %}{% else %}- None
+{% endif %}
+
+## Complications
+{% if report.complications %}{% for issue in report.complications %}- {{ issue }}
+{% endfor %}{% else %}- None
+{% endif %}
+
+## Disposition
+{{ report.disposition }}

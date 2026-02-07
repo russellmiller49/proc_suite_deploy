@@ -1,0 +1,3 @@
+Linear EBUS scope was advanced into the esophagus. Mediastinal nodes were visualized and sampled: {{ proc.stations_sampled | join(', ') }}{% if proc.needle_gauge %} with a {{ proc.needle_gauge }} needle{% endif %}{% if proc.passes is not none %} for {{ proc.passes }} passes{% endif %}.
+{% if proc.rose_result %}ROSE: {{ proc.rose_result }}.{% endif %}
+{% if proc.complications %}Complications: {{ proc.complications }}.{% else %}No immediate complications.{% endif %}

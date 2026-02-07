@@ -1,0 +1,84 @@
+{# ============================================================================
+   INTERVENTIONAL PULMONOLOGY PROCEDURAL REPORT TEMPLATES
+   Base Template and Macros
+   ============================================================================ #}
+
+{# --------------------------------------------------------------------------
+   COMMON MACROS
+   -------------------------------------------------------------------------- #}
+
+{% macro specimen_list(specimens) -%}
+{% if specimens %}
+SPECIMEN(S): {% for spec in specimens %}{{ spec }}{% if not loop.last %}, {% endif %}{% endfor %}
+{% endif %}
+{%- endmacro %}
+
+{% macro chest_ultrasound_findings(us) -%}
+CHEST ULTRASOUND FINDINGS: Image saved and printed
+Hemithorax: {{ us.hemithorax | default('Right/Left') }}
+Pleural Effusion Volume: {{ us.effusion_volume | default('None/Minimal/Small/Moderate/Large') }}
+Echogenicity: {{ us.echogenicity | default('Anechoic/Hypoechoic/Isoechoic/Hyperechoic') }}
+Loculations: {{ us.loculations | default('None/Thin/Thick') }}
+Diaphragmatic Motion: {{ us.diaphragm_motion | default('Normal/Diminished/Absent') }}
+Lung sliding before procedure: {{ us.lung_sliding_pre | default('Present/Absent') }}
+Lung sliding post procedure: {{ us.lung_sliding_post | default('Present/Absent') }}
+Lung consolidation/atelectasis: {{ us.consolidation | default('Present/Absent') }}
+Pleura: {{ us.pleura | default('Normal/Thick/Nodular') }}
+{%- endmacro %}
+
+{% macro ventilation_parameters(vent) -%}
+Ventilation Parameters:
+Mode: {{ vent.mode }}
+RR: {{ vent.respiratory_rate }}
+TV: {{ vent.tidal_volume }}
+PEEP: {{ vent.peep }}
+FiO2: {{ vent.fio2 }}
+Flow Rate: {{ vent.flow_rate }}
+Pmean: {{ vent.mean_pressure }}
+{%- endmacro %}
+
+{% macro procedure_tolerance(complications=None, complications_detail=None) -%}
+{% if complications %}
+The patient tolerated the procedure with complications: {{ complications_detail }}.
+{% else %}
+The patient tolerated the procedure well. There were no immediate complications.
+{% endif %}
+{%- endmacro %}
+
+{% macro anesthesia_block(anesthesia) -%}
+ANESTHESIA: {{ anesthesia.type }}{% if anesthesia.details %} - {{ anesthesia.details }}{% endif %}
+{% if anesthesia.lidocaine_volume %}Lidocaine 1%: {{ anesthesia.lidocaine_volume }} ml{% endif %}
+{% if anesthesia.other %}Other: {{ anesthesia.other }}{% endif %}
+{%- endmacro %}
+
+{% macro cxr_ordered(ordered) -%}
+CXR ordered: {{ 'Yes' if ordered else 'No' }}
+{%- endmacro %}
+
+{% macro staff_present(attending, fellow=None, rn=None, rt=None) -%}
+{% if attending %}The staff physician, Dr. {{ attending }}, was present throughout the entire procedure.{% endif %}
+{% if fellow %}
+ASSISTANT: {{ fellow }}{% endif %}
+{% if rn %}
+RN: {{ rn }}{% endif %}
+{% if rt %}
+RT: {{ rt }}{% endif %}
+{%- endmacro %}
+
+{% macro consent_block(consent_type='standard') -%}
+{% if consent_type == 'standard' %}
+CONSENT: Obtained before the procedure. Its indications and potential complications and alternatives were discussed with the patient or surrogate. The patient or surrogate read and signed the provided consent form. The consent was witnessed by an assisting medical professional.
+{% elif consent_type == 'phone' %}
+CONSENT: Obtained before the procedure. Its indications and potential complications and alternatives were discussed with the patient or surrogate. The patient or surrogate provided consent over the phone. The consent was witnessed by an assisting medical professional.
+{% endif %}
+{%- endmacro %}
+
+{% macro timeout_block() -%}
+After the successful induction of anesthesia, a timeout was performed (confirming the patient's name, procedure type, and procedure location). All procedure related images were saved and archived.
+{%- endmacro %}
+
+{% macro rose_result(rose) -%}
+{% if rose %}
+ROSE cytology was reported as {{ rose.adequacy }} and suggestive of {{ rose.findings }} (final results are pending).
+{% endif %}
+{%- endmacro %}

@@ -1,0 +1,17 @@
+id: peripheral_ablation
+label: Microwave Ablation
+category: navigation
+cpt_hints: []
+schema_id: peripheral_ablation_v1
+output_section: PROCEDURE_DETAILS
+template_path: peripheral_ablation.j2
+required_fields: []
+optional_fields:
+  - modality
+  - target
+  - power_w
+  - duration_min
+  - max_temp_c
+  - notes
+proc_types:
+  - peripheral_ablation

@@ -1,0 +1,38 @@
+{% set _seg_text = (proc.lung_segment or "") | trim %}
+{% set _segments = [] %}
+{% if _seg_text and "," in _seg_text %}
+  {% set _segments = _seg_text.split(",") %}
+{% elif _seg_text %}
+  {% set _segments = [_seg_text] %}
+{% endif %}
+{% set _seg_upper = _seg_text | upper %}
+{% set _target_lobe = "the target lobe" %}
+{% if "RUL" in _seg_upper %}{% set _target_lobe = "the Right Upper Lobe (RUL)" %}{% endif %}
+{% if "RML" in _seg_upper %}{% set _target_lobe = "the Right Middle Lobe (RML)" %}{% endif %}
+{% if "RLL" in _seg_upper %}{% set _target_lobe = "the Right Lower Lobe (RLL)" %}{% endif %}
+{% if "LUL" in _seg_upper %}{% set _target_lobe = "the Left Upper Lobe (LUL)" %}{% endif %}
+{% if "LLL" in _seg_upper %}{% set _target_lobe = "the Left Lower Lobe (LLL)" %}{% endif %}
+
+Airway Inspection The bronchoscope was introduced and a systematic airway inspection was performed, noting normal anatomy without endobronchial lesions.
+
+Radial EBUS & Preparation Attention was turned to {{ _target_lobe }}.
+
+rEBUS Survey: A radial EBUS probe was advanced to the basilar segments. The survey confirmed the absence of significant vessels at the selected biopsy sites and allowed for navigation to the periphery.
+
+{% if proc.blocker_type %}Balloon Block: A {{ proc.blocker_type }} was positioned prophylactically at the lobar/segmental orifice to provide immediate tamponade if necessary.{% endif %}
+
+Transbronchial Cryobiopsy A{% if proc.cryoprobe_size_mm %} {{ proc.cryoprobe_size_mm | fmt_unit("mm") }}{% endif %} cryoprobe was utilized for sampling.
+
+{% if proc.freeze_seconds and _segments %}
+{% for seg in _segments %}
+Site {{ loop.index }} ({{ seg | trim }}): The probe was advanced to the target. A {{ proc.freeze_seconds }}-second freeze cycle was applied. The probe and scope were withdrawn en bloc.
+{% endfor %}
+{% endif %}
+
+Findings & Hemostasis
+
+{% if proc.num_samples %}Yield: A total of {{ proc.num_samples }} samples were collected{% if proc.sample_size_mm is not none %}, measuring approximately {{ proc.sample_size_mm | fmt_unit("mm") }} each{% endif %}.{% endif %}
+
+Hemostasis: {% if proc.blocker_type %}The prophylactic {{ proc.blocker_type }} was utilized/monitored. {% endif %}Final airway inspection demonstrated no clinically significant bleeding.
+
+Pneumothorax Check: Post-procedure assessment demonstrated no pneumothorax.

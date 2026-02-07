@@ -1,0 +1,15 @@
+id: bronchial_washing
+label: Bronchial Washing
+category: bronchoscopy
+cpt_hints: ["31622"]
+schema_id: bronchial_washing_v1
+output_section: PROCEDURE_DETAILS
+template_path: bronchial_washing.j2
+required_fields:
+  - airway_segment
+  - instilled_volume_ml
+  - returned_volume_ml
+  - tests
+optional_fields: []
+proc_types:
+  - bronchial_washing

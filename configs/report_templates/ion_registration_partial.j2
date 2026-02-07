@@ -1,0 +1,9 @@
+Indication: {{ proc.indication }}. A partial registration strategy was performed{% if proc.scope_of_registration %} with scope limited to {{ proc.scope_of_registration }}{% endif %}.{% if proc.registered_landmarks %} Registered landmarks: {{ proc.registered_landmarks | join(', ') }}.{% endif %}
+{% if proc.registration_start_time or proc.registration_complete_time or proc.navigation_start_time %}Timing: {% if proc.registration_start_time %}start {{ proc.registration_start_time }}; {% endif %}{% if proc.registration_complete_time %}complete {{ proc.registration_complete_time }}; {% endif %}{% if proc.navigation_start_time %}navigation start {{ proc.navigation_start_time }}.{% endif %}{% endif %}
+{% if proc.time_to_primary_nodule_min is not none or proc.navigation_time_min is not none %}Performance metrics: {% if proc.time_to_primary_nodule_min is not none %}combined registration + navigation time to primary nodule {{ proc.time_to_primary_nodule_min }} minutes{% endif %}{% if proc.navigation_time_min is not none %}{% if proc.time_to_primary_nodule_min is not none %}; {% endif %}navigation time {{ proc.navigation_time_min }} minutes{% endif %}.{% endif %}
+{% if proc.divergence_pct is not none %}Virtual-to-live divergence at primary nodule: {{ proc.divergence_pct }}%.{% endif %}
+{% if proc.rebus_pattern %}Radial EBUS pattern: {{ proc.rebus_pattern }}.{% endif %}
+{% if proc.tool_in_lesion_confirmation %}Tool-in-lesion confirmation: {{ proc.tool_in_lesion_confirmation }}.{% endif %}
+{% if proc.rose_adequacy %}ROSE adequacy: {{ proc.rose_adequacy }}.{% endif %}
+{% if proc.diagnostic_yield_pct is not none %}Diagnostic yield (if known): {{ proc.diagnostic_yield_pct }}%.{% endif %}
+{% if proc.followup_plan %}Follow-up: {{ proc.followup_plan }}.{% endif %}

@@ -1,0 +1,9 @@
+{#
+  file: templates/addons/bronchial_washing.jinja
+  Title: Bronchial Washing (CPT 31622)
+  Category: CORE DIAGNOSTIC / THERAPEUTIC BRONCHOSCOPY PROCEDURES
+  CPT: 31622
+#}
+{% macro render(ctx=None) -%}
+Bronchial washing was performed with saline instilled and returned. Specimens were sent for analysis. Instilled [Volume] cc of NS, suction returned with [Volume] cc of NS at [Airway Segment]. Samples sent for [Testing type].
+{%- endmacro %}

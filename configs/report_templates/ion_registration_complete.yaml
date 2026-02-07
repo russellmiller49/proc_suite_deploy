@@ -1,0 +1,16 @@
+id: ion_registration_complete
+label: Ion Registration — Complete
+category: robotic
+cpt_hints: []
+schema_id: ion_registration_complete_v1
+output_section: PROCEDURE_DETAILS
+template_path: ion_registration_complete.j2
+required_fields: []
+optional_fields:
+  - method
+  - airway_landmarks
+  - fiducial_error_mm
+  - alignment_quality
+  - notes
+proc_types:
+  - ion_registration_complete

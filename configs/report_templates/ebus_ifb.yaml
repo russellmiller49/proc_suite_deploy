@@ -1,0 +1,18 @@
+id: ebus_ifb
+label: EBUS-Guided Intranodal Forceps Biopsy
+category: ebus
+cpt_hints: ["31652", "31653"]
+schema_id: ebus_ifb_v1
+output_section: PROCEDURE_DETAILS
+template_path: ebus_ifb.j2
+required_fields:
+  - station_name
+  - needle_gauge
+  - core_samples
+optional_fields:
+  - size_mm
+  - ultrasound_features
+  - rose_result
+  - specimen_medium
+proc_types:
+  - ebus_ifb

@@ -1,0 +1,24 @@
+id: endobronchial_hemostasis
+label: Endobronchial Hemostasis (Hemoptysis Control)
+category: airway_therapy
+cpt_hints: []
+schema_id: endobronchial_hemostasis_v1
+output_section: PROCEDURE_DETAILS
+template_path: endobronchial_hemostasis.j2
+required_fields:
+  - airway_segment
+optional_fields:
+  - iced_saline_ml
+  - epinephrine_concentration
+  - epinephrine_volume_ml
+  - tranexamic_acid_dose
+  - topical_thrombin_dose
+  - balloon_type
+  - balloon_location
+  - balloon_duration_sec
+  - balloon_cycles
+  - hemostasis_result
+  - escalation_plan
+  - tolerance
+proc_types:
+  - endobronchial_hemostasis

@@ -1,0 +1,9 @@
+{#
+  file: templates/addons/bronchial_brushings.jinja
+  Title: Bronchial Brushings (CPT 31623)
+  Category: CORE DIAGNOSTIC / THERAPEUTIC BRONCHOSCOPY PROCEDURES
+  CPT: 31623
+#}
+{% macro render(ctx=None) -%}
+Endobronchial/transbronchial brushings were obtained; a total of [number] samples were collected and submitted. Performed with [Brush Tool] at [Lung Segment]. Samples sent for [Testing type].
+{%- endmacro %}

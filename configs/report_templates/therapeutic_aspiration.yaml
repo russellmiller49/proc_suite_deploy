@@ -1,0 +1,13 @@
+id: therapeutic_aspiration
+label: Therapeutic Aspiration
+category: bronchoscopy
+cpt_hints: ["31645", "31646"]
+schema_id: therapeutic_aspiration_v1
+output_section: PROCEDURE_DETAILS
+template_path: therapeutic_aspiration.j2
+required_fields:
+  - airway_segment
+  - aspirate_type
+optional_fields: []
+proc_types:
+  - therapeutic_aspiration

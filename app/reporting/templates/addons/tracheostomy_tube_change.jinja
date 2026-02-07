@@ -1,0 +1,9 @@
+{#
+  file: templates/addons/tracheostomy_tube_change.jinja
+  Title: Tracheostomy Tube Change (CPT 31502)
+  Category: TRACHEOSTOMY / UPPER AIRWAY PROCEDURES
+  CPT: 31502
+#}
+{% macro render(ctx=None) -%}
+Upper airway was suctioned and cleared. Endotracheal suctioning performed. The cuff was deflated and the existing tracheostomy tube ([old_trach_type] [old_size]) removed. The stoma was widely patent without granulation tissue. A new tracheostomy tube ([new_trach_type] [new_size]) was placed with obturator in place, the obturator was removed, the inner cannula inserted, and the cuff inflated. Position and patency were confirmed. The patient tolerated the procedure well.
+{%- endmacro %}

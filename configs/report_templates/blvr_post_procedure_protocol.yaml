@@ -1,0 +1,17 @@
+id: blvr_post_procedure_protocol
+label: Post-BLVR Management Protocol
+category: blvr
+cpt_hints: []
+schema_id: blvr_post_procedure_protocol_v1
+output_section: INSTRUCTIONS
+template_path: blvr_post_procedure_protocol.j2
+required_fields: []
+optional_fields:
+  - cxr_schedule
+  - monitoring_plan
+  - steroids_plan
+  - antibiotics_plan
+  - ambulation_plan
+  - discharge_plan
+proc_types:
+  - blvr_post_procedure_protocol

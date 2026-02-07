@@ -1,0 +1,15 @@
+id: bal_variant
+label: Bronchoalveolar Lavage (Detailed)
+category: bronchoscopy
+cpt_hints: ["31624"]
+schema_id: bal_alt_v1
+output_section: PROCEDURE_DETAILS
+template_path: bal_variant.j2
+required_fields:
+  - lung_segment
+  - instilled_volume_cc
+  - returned_volume_cc
+  - tests
+optional_fields: []
+proc_types:
+  - bal_variant

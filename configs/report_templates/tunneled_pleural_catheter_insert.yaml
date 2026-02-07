@@ -1,0 +1,33 @@
+id: tunneled_pleural_catheter_insert
+label: Tunneled Pleural Catheter Placement
+category: pleural
+cpt_hints: ["32550"]
+schema_id: tunneled_pleural_catheter_insert_v1
+output_section: PROCEDURE_DETAILS
+template_path: tunneled_pleural_catheter_insert.j2
+required_fields: []
+optional_fields:
+  - intercostal_space
+  - entry_location
+  - side
+  - tunnel_length_cm
+  - exit_site
+  - anesthesia_lidocaine_ml
+  - fluid_removed_ml
+  - fluid_appearance
+  - pleural_pressures
+  - drainage_device
+  - suction
+  - specimen_tests
+  - cxr_ordered
+  - pleural_guidance
+  - effusion_volume
+  - effusion_echogenicity
+  - loculations
+  - diaphragm_motion
+  - lung_sliding_pre
+  - lung_sliding_post
+  - lung_consolidation
+  - pleura_description
+proc_types:
+  - tunneled_pleural_catheter_insert

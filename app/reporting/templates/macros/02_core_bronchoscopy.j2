@@ -1,0 +1,280 @@
+{# ============================================================================
+   4. CORE DIAGNOSTIC / THERAPEUTIC BRONCHOSCOPY PROCEDURES
+   ============================================================================ #}
+
+{# --- Bronchial Washing - CPT 31622 --- #}
+{% macro bronchial_washing(volume_instilled, volume_returned, airway_segment, testing_types) %}
+Bronchial washing was performed with saline instilled and returned. Specimens were sent for analysis.
+
+Instilled {{ volume_instilled }} cc of NS, suction returned with {{ volume_returned }} cc of NS at {{ airway_segment }}.
+
+Samples sent for: {% for test in testing_types %}{{ test }}{% if not loop.last %}, {% endif %}{% endfor %}.
+{% endmacro %}
+
+
+{# --- Bronchial Brushings - CPT 31623 --- #}
+{% macro bronchial_brushings(num_samples, brush_tool, lung_segment, testing_types, endobronchial=true) %}
+{% if endobronchial %}Endobronchial{% else %}Transbronchial{% endif %} brushings were obtained; a total of {{ num_samples }} samples were collected and submitted.
+
+Performed with {{ brush_tool }} at {{ lung_segment }}.
+
+Samples sent for: {% for test in testing_types %}{{ test }}{% if not loop.last %}, {% endif %}{% endfor %}.
+{% endmacro %}
+
+
+{# --- Bronchoalveolar Lavage (BAL) - CPT 31624 --- #}
+{% macro bronchoalveolar_lavage(lung_segment, volume_instilled, volume_returned, testing_types) %}
+BAL was performed in the {{ lung_segment }} with saline instilled and returned. Specimens were submitted.
+
+Instilled {{ volume_instilled }} cc of NS, suction returned with {{ volume_returned }} cc of NS.
+
+Samples sent for: {% for test in testing_types %}{{ test }}{% if not loop.last %}, {% endif %}{% endfor %}.
+{% endmacro %}
+
+
+{# --- Endobronchial Biopsy - CPT 31625 --- #}
+{% macro endobronchial_biopsy(airway_segment, testing_types, lesion_removed=true) %}
+Endobronchial biopsies were obtained with hemostasis achieved. Tissue was submitted for pathology. No immediate bleeding was observed.
+
+Performed at {{ airway_segment }}.{% if lesion_removed %} Lesion was successfully removed.{% endif %}
+
+Samples sent for: {% for test in testing_types %}{{ test }}{% if not loop.last %}, {% endif %}{% endfor %}.
+{% endmacro %}
+
+
+{# --- Transbronchial Lung Biopsy (TBLB) - CPT 31628 --- #}
+{% macro transbronchial_lung_biopsy(num_samples, forceps_tool, lung_segment, testing_types) %}
+Transbronchial forceps biopsies were performed with a total of {{ num_samples }} samples collected. Specimens were submitted.
+
+Performed with {{ forceps_tool }} at {{ lung_segment }}.
+
+Samples sent for: {% for test in testing_types %}{{ test }}{% if not loop.last %}, {% endif %}{% endfor %}.
+{% endmacro %}
+
+
+{# --- Transbronchial Needle Aspiration (TBNA) - CPT 31629/31633 --- #}
+{% macro transbronchial_needle_aspiration(num_samples=None, needle_tool=None, lung_segment=None, testing_types=None) %}
+Transbronchial needle aspiration was performed targeting designated lymph nodes. Samples collected.
+
+Performed with {{ needle_tool or "[needle tool]" }} at {{ lung_segment or "[target segment]" }}. Total {{ num_samples or "[count]" }} samples were collected.
+
+{% if testing_types %}Samples sent for: {% for test in testing_types %}{{ test }}{% if not loop.last %}, {% endif %}{% endfor %}.{% else %}Samples sent for: [testing types].{% endif %}
+{% endmacro %}
+
+
+{# --- Balloon Dilation - CPT 31630 --- #}
+{% macro balloon_dilation(airway_segment, balloon_type, dilation_size_mm, num_inflations, duration_seconds) %}
+Bronchial stenosis was dilated with a balloon catheter. Patency improved without complications.
+
+Performed at {{ airway_segment }}. {{ balloon_type }} balloon was used to perform dilation to {{ dilation_size_mm }} mm. Total {{ num_inflations }} inflations with dilation time of {{ duration_seconds }} seconds each.
+{% endmacro %}
+
+
+{# --- Airway Stent Placement - CPT 31631/31636/31637 --- #}
+{% macro airway_stent_placement(stent_type, airway_segment, fluoroscopy_used=true) %}
+A stent was deployed across the target stenosis under bronchoscopic {% if fluoroscopy_used %}and fluoroscopic {% endif %}guidance.
+
+The following stent ({{ stent_type }}) was placed in the {{ airway_segment }}.
+{% endmacro %}
+
+
+{# --- Endobronchial Tumor Destruction - CPT 31641 --- #}
+{% macro endobronchial_tumor_destruction(airway_segment, modality, setting_mode, duration, patency_before, patency_after) %}
+Endobronchial obstruction was treated with tumor destruction therapy. Pre- and post-procedure patency recorded.
+
+Performed at {{ airway_segment }} with the following modalities:
+- Modality: {{ modality }}
+- Setting/Mode: {{ setting_mode }}
+- Duration: {{ duration }}
+- Results: Prior to treatment, affected airway was noted to be {{ patency_before }}% patent. After treatment, the airway was {{ patency_after }}% patent.
+{% endmacro %}
+
+
+{# --- Multi-modality Tumor Destruction --- #}
+{% macro tumor_destruction_multimodal(airway_segment, treatments) %}
+Endobronchial obstruction was treated with tumor destruction therapy. Pre- and post-procedure patency recorded.
+
+Performed at {{ airway_segment }} with the following modalities:
+{% for tx in treatments %}
+- Modality: {{ tx.modality }}
+  - Setting/Mode: {{ tx.setting }}
+  - Duration: {{ tx.duration }}
+{% endfor %}
+
+Results: Prior to treatment, affected airway was noted to be {{ treatments[0].patency_before }}% patent. After treatment, the airway was {{ treatments[-1].patency_after }}% patent.
+{% endmacro %}
+
+
+{# --- Therapeutic Aspiration - CPT 31645/31646 --- #}
+{% macro therapeutic_aspiration(airway_segment, aspirate_type) %}
+Successful therapeutic aspiration was performed to clean out the {{ airway_segment }} from {{ aspirate_type }}.
+{% endmacro %}
+
+
+{# --- Endobronchial Tumor Excision - CPT 31640 --- #}
+{% macro endobronchial_tumor_excision(method='mechanical debridement') %}
+Endobronchial tumor was noted and excised with {{ method }} (coring or microdebrider or forceps).
+{% endmacro %}
+
+
+{# --- Rigid Bronchoscopy (Diagnostic / Therapeutic) --- #}
+{% macro rigid_bronchoscopy(scope_size, scope_model, interventions, hfjv=false, flexible_used=true, ebl_ml=0, specimens=None, post_plan=None) %}
+After induction of general anesthesia, a rigid bronchoscope {{ scope_size }}/{{ scope_model }} was introduced via the mouth under direct visualization. High-frequency jet ventilation (HFJV): {{ 'Yes' if hfjv else 'No' }}.
+
+A complete airway survey was performed.
+
+The following therapeutic interventions were performed: {% for int in interventions %}{{ int }}{% if not loop.last %}, {% endif %}{% endfor %}.
+
+A flexible bronchoscope was{% if not flexible_used %} not{% endif %} used through the rigid barrel for segmental inspection and suctioning.
+
+Hemostasis was confirmed. The bronchoscope and adjunct instruments were withdrawn.
+
+The patient tolerated the procedure well without immediate complications.
+
+Estimated blood loss: {{ ebl_ml }} mL.
+{% if specimens %}
+Specimens: {% for spec in specimens %}{{ spec }}{% if not loop.last %}, {% endif %}{% endfor %}.
+{% endif %}
+{% if post_plan %}
+Post-procedure plan: {{ post_plan }}.
+{% endif %}
+{% endmacro %}
+
+
+{# --- Foreign Body Removal – Flexible/Rigid --- #}
+{% macro foreign_body_removal(airway_segment, retrieval_tool, num_passes, removed_intact=true, mucosal_trauma='no', bleeding='no', hemostasis_method='none', cxr_ordered=true) %}
+A suspected foreign body was visualized at the {{ airway_segment }}. Retrieval was performed using {{ retrieval_tool }} with {{ num_passes }} passes.
+
+The object was removed {% if removed_intact %}intact{% else %}fragmented{% endif %}.
+
+Post-removal inspection showed {{ mucosal_trauma }} mucosal trauma and {{ bleeding }} bleeding{% if hemostasis_method != 'none' %}; hemostasis achieved with {{ hemostasis_method }}{% endif %}.
+
+Ventilation and airway patency were confirmed.
+
+The patient tolerated the procedure well. CXR ordered: {{ 'Yes' if cxr_ordered else 'No' }}.
+{% endmacro %}
+
+
+{# --- Airway Stent Removal / Revision --- #}
+{% macro stent_removal_revision(indication, stent_brand, stent_type, stent_size, airway_segment, technique, outcome, adjuncts=None, new_stent=None) %}
+Indication for stent removal/revision: {{ indication }}.
+
+Stent details: {{ stent_brand }}/{{ stent_type }}, size {{ stent_size }}, location {{ airway_segment }}.
+
+Technique: {{ technique }}.
+
+The stent was {{ outcome }}.
+{% if adjuncts %}
+Adjuncts: {% for adj in adjuncts %}{{ adj }}{% if not loop.last %}, {% endif %}{% endfor %}.
+{% endif %}
+
+Post-intervention inspection showed the airway patent with minimal bleeding.
+{% if new_stent %}
+A new stent was placed: {{ new_stent }}.
+{% endif %}
+
+The patient tolerated the procedure well.
+{% endmacro %}
+
+
+{# --- Endobronchial Hemostasis (Hemoptysis Control) --- #}
+{% macro endobronchial_hemostasis(bleeding_source, iced_saline_volume=None, epinephrine_details=None, txa_details=None, thrombin_dose=None, balloon_details=None, hemostasis_achieved='Yes') %}
+Source of bleeding localized to the {{ bleeding_source }}.
+
+Hemostatic measures included:
+{% if iced_saline_volume %}- Iced saline {{ iced_saline_volume }} mL{% endif %}
+{% if epinephrine_details %}- Epinephrine {{ epinephrine_details.concentration }} at {{ epinephrine_details.volume }} mL{% endif %}
+{% if txa_details %}- Tranexamic acid {{ txa_details.dose }}/{{ txa_details.concentration }} via bronchoscope{% endif %}
+{% if thrombin_dose %}- Topical thrombin {{ thrombin_dose }}{% endif %}
+{% if balloon_details %}- Balloon tamponade with {{ balloon_details.type }} {{ balloon_details.size }} at {{ balloon_details.location }} for {{ balloon_details.duration }} seconds × {{ balloon_details.cycles }} cycles{% endif %}
+
+Hemostasis achieved: {{ hemostasis_achieved }}.
+{% if hemostasis_achieved != 'Yes' %}
+Additional measures: [selective intubation/bronchial blocker placement/IR consultation as indicated].
+{% endif %}
+
+The patient tolerated the procedure well; no immediate complications.
+{% endmacro %}
+
+
+{# --- Endobronchial Blocker Placement (Isolation / Hemorrhage Control) --- #}
+{% macro endobronchial_blocker(blocker_type, blocker_size, side, location, balloon_volume, inflation_medium='air', indication='hemoptysis', secured_to='ETT') %}
+An {{ blocker_type }} blocker {{ blocker_size }} was positioned under bronchoscopic guidance into the {{ side }} {{ location }} bronchus.
+
+Balloon inflated with {{ balloon_volume }} mL {{ inflation_medium }} to achieve occlusion. Position confirmed endoscopically and by ventilation parameters.
+
+Indication: {{ indication }}.
+
+The blocker was secured to {{ secured_to }}. The patient tolerated the procedure well.
+{% endmacro %}
+
+
+{# --- Photodynamic Therapy (PDT) — Light Application --- #}
+{% macro pdt_light_application(photosensitizer_agent, photosensitizer_dose, admin_datetime, lesion_site, wavelength_nm, fluence, duration_min) %}
+Photosensitizer {{ photosensitizer_agent }}/{{ photosensitizer_dose }} administered on {{ admin_datetime }}.
+
+Under bronchoscopic visualization, a diffuser fiber was positioned across the {{ lesion_site }}. Laser activation at {{ wavelength_nm }} nm delivered {{ fluence }} J/cm² for {{ duration_min }} minutes.
+
+Airway was inspected for immediate edema or bleeding; none noted. Standard light-precaution instructions were reviewed.
+
+The patient tolerated the procedure well.
+{% endmacro %}
+
+
+{# --- Photodynamic Therapy — Debridement (48–96 hours post‑light) --- #}
+{% macro pdt_debridement(site, debridement_tool, patency_pre, patency_post) %}
+A follow-up bronchoscopy was performed. Necrotic tissue at {{ site }} was debrided with {{ debridement_tool }}.
+
+Airway patency improved from {{ patency_pre }}% to {{ patency_post }}%.
+
+No active bleeding was seen after debridement. The patient tolerated the procedure well.
+{% endmacro %}
+
+
+{# --- Cryo-Extraction of Mucus Casts/Secretions --- #}
+{% macro cryo_extraction_mucus(cryoprobe_size, airway_segment, freeze_seconds, num_extractions) %}
+A cryoprobe {{ cryoprobe_size }} mm was applied to adherent secretions at {{ airway_segment }} for {{ freeze_seconds }} seconds until adherence was achieved; the probe and bronchoscope were withdrawn en bloc.
+
+This was repeated for {{ num_extractions }} casts/occlusions.
+
+The airway was cleared with improved ventilation. No complications occurred.
+{% endmacro %}
+
+
+{# --- Awake Fiberoptic Intubation (FOI) --- #}
+{% macro awake_foi(lidocaine_concentration, lidocaine_volume, sedation_agent, sedation_dose, ett_size, route, depth_cm) %}
+After topical anesthesia with {{ lidocaine_concentration }}% lidocaine {{ lidocaine_volume }} mL and sedation with {{ sedation_agent }}/{{ sedation_dose }}, a flexible bronchoscope loaded with an endotracheal tube {{ ett_size }} was advanced via the {{ route }} route.
+
+The vocal cords were visualized and the scope advanced into the trachea. The ETT was railroaded over the scope to {{ depth_cm }} cm.
+
+Placement was confirmed by end-tidal CO₂ and bronchoscopic visualization.
+
+The patient tolerated the procedure without immediate complications.
+{% endmacro %}
+
+
+{# --- Bronchoscopy-Guided Double-Lumen Tube (DLT) Placement/Confirmation --- #}
+{% macro dlt_confirmation(side, dlt_size, adjustments=None) %}
+A {{ side }} DLT {{ dlt_size }} Fr was placed by anesthesia.
+
+Position was confirmed bronchoscopically: tracheal lumen aligned with the {% if side == 'left' %}right{% else %}left{% endif %} mainstem; bronchial cuff seated just below the {{ side }} main carina.
+
+Leak test performed and adequate seal noted.
+{% if adjustments %}
+Adjustments: {{ adjustments }}.
+{% endif %}
+
+Final position re-verified after patient positioning. The patient tolerated the procedure well.
+{% endmacro %}
+
+
+{# --- Airway Stent Surveillance Bronchoscopy --- #}
+{% macro stent_surveillance(stent_type, location, findings, interventions, final_patency) %}
+Surveillance bronchoscopy for previously placed {{ stent_type }} stent at {{ location }}.
+
+The stent was inspected for: {{ findings }}.
+
+Interventions performed: {% for int in interventions %}{{ int }}{% if not loop.last %}, {% endif %}{% endfor %}.
+
+Final patency estimated at {{ final_patency }}%. No immediate complications.
+{% endmacro %}

@@ -1,0 +1,22 @@
+id: robotic_ion_bronchoscopy
+label: Robotic Navigational Bronchoscopy (Ion)
+category: robotic
+cpt_hints: []
+schema_id: robotic_ion_bronchoscopy_v1
+output_section: PROCEDURE_DETAILS
+template_path: robotic_ion_bronchoscopy.j2
+required_fields:
+  - vent_mode
+  - vent_rr
+  - vent_tv_ml
+  - vent_peep_cm_h2o
+  - vent_fio2_pct
+optional_fields:
+  - navigation_plan_source
+  - vent_flow_rate
+  - vent_pmean_cm_h2o
+  - cbct_performed
+  - radial_pattern
+  - notes
+proc_types:
+  - robotic_ion_bronchoscopy

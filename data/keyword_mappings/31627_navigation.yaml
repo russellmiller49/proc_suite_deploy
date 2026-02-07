@@ -1,0 +1,21 @@
+code: "31627"
+description: "Navigation bronchoscopy"
+positive_phrases:
+  - "navigation"
+  - "electromagnetic navigation"
+  - "enb"
+  - "superDimension"
+  - "Ion"
+  - "Monarch"
+  - "robotic bronchoscopy"
+  - "navigational bronchoscopy"
+  - "virtual bronchoscopy navigation"
+negative_phrases:
+  - "planned"
+  - "scheduled"
+  - "navigation failed"
+  - "unable to navigate"
+  - "navigation aborted"
+context_window_chars: 200
+version: "2025-01-01"
+notes: "Navigation bronchoscopy add-on code"

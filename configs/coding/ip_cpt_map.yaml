@@ -1,0 +1,78 @@
+base_codes:
+  - id: ebus_primary
+    cpt: "31652"
+    description: "EBUS-TBNA initial station"
+    reason: "First mediastinal/hilar station sampled"
+    match:
+      procedure_type: ["ebus_tbna"]
+    units_expression: "max(stations, 1)"
+  - id: bronchoscopy_diagnostic
+    cpt: "31622"
+    description: "Diagnostic bronchoscopy"
+    reason: "Airway inspection with sampling"
+    match:
+      procedure_type: ["bronchoscopy", "robotic_nav"]
+    units_expression: "1"
+  - id: cryobiopsy_primary
+    cpt: "31627"
+    description: "Cryobiopsy"
+    reason: "Transbronchial cryobiopsy performed"
+    match:
+      procedure_type: ["cryobiopsy"]
+    units_expression: "max(targets, 1)"
+  - id: thoracentesis_primary
+    cpt: "32555"
+    description: "Thoracentesis"
+    reason: "Pleural effusion drainage"
+    match:
+      procedure_type: ["thoracentesis", "pleuroscopy", "ipc"]
+    units_expression: "1"
+  - id: airway_stent
+    cpt: "31631"
+    description: "Airway stent placement"
+    reason: "Stent deployed"
+    match:
+      procedure_type: ["stent"]
+    units_expression: "max(devices, 1)"
+
+addon_codes:
+  - id: ebus_additional
+    cpt: "31653"
+    description: "Each additional EBUS station"
+    reason: "Additional stations sampled"
+    match:
+      procedure_type: ["ebus_tbna"]
+      min_stations: 2
+    units_expression: "max(stations - 1, 0)"
+  - id: bronchoscopy_bal
+    cpt: "31624"
+    description: "BAL"
+    reason: "Documented BAL"
+    match:
+      procedure_type: ["bronchoscopy", "ebus_tbna", "robotic_nav"]
+      requires_bal: true
+    units_expression: "1"
+  - id: sedation_initial
+    cpt: "99152"
+    description: "Moderate sedation initial 15 min"
+    reason: "Sedation time >= 10 minutes"
+    match:
+      min_sedation_minutes: 10
+    units_expression: "1"
+  - id: sedation_additional
+    cpt: "99153"
+    description: "Each additional 15 min"
+    reason: "Sedation duration beyond initial"
+    match:
+      min_sedation_minutes: 30
+    units_expression: "max((sedation_minutes - 15) // 15, 0)"
+
+modifiers:
+  - id: bilateral
+    apply_if:
+      laterality: ["bilateral"]
+    modifiers: ["50"]
+  - id: distinct_anatomy
+    apply_if:
+      distinct_targets: true
+    modifiers: ["59"]

@@ -1,0 +1,29 @@
+BRONCHOSCOPY NOTE
+
+PROCEDURE: Flexible bronchoscopy{% if procedures_summary %} with {{ procedures_summary }}{% endif %}
+OPERATORS: {{ encounter.attending }}{% if encounter.assistant %}, {{ encounter.assistant }}{% endif %}
+INDICATIONS: {{ indication_text or "Bronchoscopic evaluation" }}
+Informed consent obtained. A time out was performed prior to procedure.
+Sedation with {{ (sedation.description or sedation.type) if sedation else "moderate sedation" }}. Vitals were continuously monitored throughout the procedure.
+
+FINDINGS:
+{% if proc.airway_overview %}{{ proc.airway_overview }}{% else %}The bronchoscope was passed and a systematic airway survey was completed without obstruction or endobronchial lesions.{% endif %}
+{% if proc.right_lung_overview %}Right Lung: {{ proc.right_lung_overview }}{% endif %}
+{% if proc.left_lung_overview %}Left Lung: {{ proc.left_lung_overview }}{% endif %}
+{% if proc.mucosa_overview %}Mucosa: {{ proc.mucosa_overview }}{% endif %}
+{% if proc.secretions_overview %}Secretions: {{ proc.secretions_overview }}{% endif %}
+{% if procedure_details %}{{ procedure_details }}{% endif %}
+
+Summary:
+Pharynx: Not assessed due to Bronch introduction via ETT/Trach Tube
+Larynx: Not assessed due to Bronch introduction via ETT/Trach Tube
+Vocal Cords: Not assessed due to Bronch introduction via ETT/Trach Tube
+Trachea: Distal 1/3 Normal
+Right Lung: {{ proc.right_lung_overview or "No significant secretions" }}
+Left Lung: {{ proc.left_lung_overview or "No significant secretions" }}
+No evidence of mass, lesions, bleeding or other intra-bronchial pathology.
+Mucosa: {{ proc.mucosa_overview or "Normal" }}
+Secretions: {{ proc.secretions_overview or "Minimal" }}. Suctioned to clear.
+
+The flexible bronchoscope was retracted and removed.
+The patient tolerated the procedure well with no immediate complications.

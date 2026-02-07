@@ -1,0 +1,6 @@
+Indication: {{ proc.indication }}.
+Device(s){% if proc.device_brand %}: {{ proc.device_brand }}{% endif %}{% if proc.locations %}, location(s): {{ proc.locations | join(', ') }}{% endif %}.
+Removal performed using standard retrieval techniques with {{ proc.valves_removed }} valves removed.{% if proc.valves_exchanged is not none %} Exchange performed for {{ proc.valves_exchanged }} valves{% if proc.replacement_sizes %} sized {{ proc.replacement_sizes }}{% endif %}.{% endif %}
+{% if proc.mucosa_status %}Mucosa post-removal: {{ proc.mucosa_status }}.{% endif %}
+Final airway patency and ventilation verified. The patient tolerated the procedure well.
+{% if proc.tolerance_notes %}Notes: {{ proc.tolerance_notes }}.{% endif %}

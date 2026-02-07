@@ -1,0 +1,159 @@
+{# ============================================================================
+   6. BLVR (BRONCHOSCOPIC LUNG VOLUME REDUCTION) PROCEDURES
+   ============================================================================ #}
+
+{# --- Endobronchial Valve Placement - CPT 31647/31648 --- #}
+{% macro endobronchial_valve_placement(balloon_occlusion=true, chartis_used=true, air_leak_confirmed=true, lobes_treated=None, valve_brand='Zephyr', valve_details=None) %}
+{% if balloon_occlusion %}Balloon occlusion was performed to confirm lobe selection: YES{% else %}Balloon occlusion was performed to confirm lobe selection: NO{% endif %}
+
+{% if chartis_used %}Chartis System was used to confirm no collateral ventilation: YES{% else %}Chartis System was used to confirm no collateral ventilation: NO{% endif %}
+
+{% if air_leak_confirmed %}Air leak stop or reduced was confirmed: YES{% else %}Air leak stop or reduced was confirmed: NO{% endif %}
+
+The following lobes were intervened:
+{% if lobes_treated %}
+{% for lobe in lobes_treated %}
+- {{ lobe }}
+{% endfor %}
+{% else %}
+- Left Upper
+- Left Lower
+- Right Upper
+- Right Middle
+- Right Lower
+{% endif %}
+
+The following valves were used:
+{% if valve_brand == 'Spiration' %}
+- Spiration (Olympus)
+{% elif valve_brand == 'Zephyr' %}
+- Zephyr (Pulmonx)
+{% else %}
+- {{ valve_brand }}
+{% endif %}
+
+{% if valve_details %}
+Valve sizes used and corresponding segments:
+{% for detail in valve_details %}
+- {{ detail.segment }}: {{ detail.size }}
+{% endfor %}
+{% endif %}
+
+Airflow occlusion and target-lobe atelectasis were confirmed endoscopically and physiologically. No immediate complications were observed.
+{% endmacro %}
+
+
+{# --- Endobronchial Valve Removal / Exchange --- #}
+{% macro endobronchial_valve_removal_exchange(indication, valve_brand, locations, removal_tool, num_removed, num_exchanged=0, exchange_sizes=None, mucosa_post='normal') %}
+Indication: {{ indication }}.
+
+Device(s): {{ valve_brand }}, location(s): {% for loc in locations %}{{ loc }}{% if not loop.last %}, {% endif %}{% endfor %}.
+
+Removal performed using {{ removal_tool }} with {{ num_removed }} valves removed.
+{% if num_exchanged > 0 %}
+
+Exchange performed for {{ num_exchanged }} valves sized {% for size in exchange_sizes %}{{ size }}{% if not loop.last %}, {% endif %}{% endfor %}.
+{% endif %}
+
+Mucosa post-removal: {{ mucosa_post }}.
+
+Final airway patency and ventilation verified. The patient tolerated the procedure well.
+{% endmacro %}
+
+
+{# --- Post-BLVR Management Protocol --- #}
+{% macro post_blvr_protocol() %}
+POST-PROCEDURE COPD ENDOBRONCHIAL VALVE MANAGEMENT PROTOCOL
+
+IMPORTANT: 25%-40% of patients are expected to develop a pneumothorax
+- Most within 3-4 days
+- This is an expectation, not an adverse event
+
+A pneumothorax kit will be at the patient's bedside at all times
+
+If there are new symptoms or any concerns:
+1. Order a stat chest x-ray
+2. Call the Interventional Pulmonary attending and MICU team while waiting for the CXR
+3. Clinical judgment to place a chest tube may be needed in urgent/emergent situations
+
+MONITORING:
+- Continuous pulse oximetry and telemetry
+- Monitor for persistent desaturation ≥4% of baseline
+- Monitor for desaturation <90%
+- Monitor for tachypnea, arrhythmias, unexplained tachycardia, or unexplained hypotension
+
+DAY-TO-DAY MANAGEMENT:
+
+Day 1 (Day of procedure):
+- Chest x-ray immediately post-procedure
+- Chest x-ray ~4 hours post-procedure
+- Bedrest
+- Resume home COPD inhalers/medications
+- Steroids and antibiotics given in OR (Day 1/3)
+
+Day 2:
+- Chest x-ray at 6:00 am
+- Ambulate in the room with physical therapy
+- Continue home COPD inhalers/medications
+- Steroids and antibiotics PO (Day 2/3)
+
+Day 3:
+- Daily chest x-ray at 6:00 am
+- Ambulate outside the room
+- Continue home COPD inhalers/medications
+- Steroids and antibiotics PO (Day 3/3)
+- Consider prolonged course or taper based on patient's condition
+
+Day 4:
+- Daily chest x-ray at 6:00 am
+- Consider discharge
+- Discuss with interventional pulmonary before discharge
+- Set up clinical f/u with IP in two weeks
+- Continue all COPD medications and f/u with primary COPD doctor within 4 weeks
+{% endmacro %}
+
+
+{# ============================================================================
+   7. CRYO PROCEDURES
+   ============================================================================ #}
+
+{# --- Transbronchial Cryobiopsy - CPT 31632 --- #}
+{% macro transbronchial_cryobiopsy(forceps_tool=None, lung_segment=None, num_samples=None, testing_types=None, blocker_used=true, blocker_volume_cc=6, rebus_performed=true) %}
+{% if rebus_performed %}
+Radial EBUS was performed to confirm there are no large vessels at the site of biopsy and noted airway that allowed to go to the periphery of the subsegment of interest. Also notable to see area of disease/possible atelectasis.
+{% endif %}
+
+Radial EBUS survey confirmed absence of significant vessels at the biopsy site. Transbronchial cryobiopsy was performed using a cryoprobe with freeze-thaw cycles per sample.
+
+{% if blocker_used %}
+After each sample was obtained, Arndt's Endobronchial blocker was inflated with {{ blocker_volume_cc }}cc of air at the ostium for tamponade.
+{% else %}
+An endobronchial blocker was positioned for tamponade after each sample.
+{% endif %}
+
+Performed with {{ forceps_tool or "[cryoprobe type]" }} at {{ lung_segment or "[target segment]" }}.
+
+Total {{ num_samples or "[count]" }} samples were collected.
+
+{% if testing_types %}Samples sent for: {% for test in testing_types %}{{ test }}{% if not loop.last %}, {% endif %}{% endfor %}.{% else %}Samples sent for: [testing types].{% endif %}
+
+No immediate complications.
+{% endmacro %}
+
+
+{# --- Endobronchial Cryoablation - CPT 31641 --- #}
+{% macro endobronchial_cryoablation(probe_size='1.7mm', freeze_duration=15, thaw_duration=15, num_cycles=5, ablation_pattern='center, then four quadrants (anterior-posterior, superior-inferior)') %}
+Cryoablation of endobronchial tumor/stenosis was performed with a cryoprobe using freeze-thaw cycles across overlapping quadrants. Post-treatment patency improved and hemostasis was adequate.
+
+{{ probe_size }} Cryoprobe was used to ablate the nodule using cloud sampling technique. {{ freeze_duration }} sec freeze and {{ thaw_duration }} sec thaw. {{ ablation_pattern }} for a total of {{ num_cycles }} freeze thaw cycles.
+{% endmacro %}
+
+
+{# --- Alternative Cryoablation Template --- #}
+{% macro cryoablation_alternative(probe_size='1.7mm', freeze_duration=30, thaw_duration=15, num_overlapping=5, orientations='central/superior/inferior/anterior/posterior') %}
+Cryoablation was done with {{ probe_size }} probe with {{ freeze_duration }} seconds freeze and {{ thaw_duration }} second thaw.
+
+Total {{ num_overlapping }} overlapping ablations were done in {{ orientations }} orientation.
+
+Hemostasis was adequate and patency improved.
+{% endmacro %}

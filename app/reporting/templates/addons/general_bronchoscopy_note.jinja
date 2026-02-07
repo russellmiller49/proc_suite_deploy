@@ -1,0 +1,36 @@
+{#
+  file: templates/addons/general_bronchoscopy_note.jinja
+  Title: General Bronchoscopy Note
+  Category: CLINICAL ASSESSMENT AND FOLLOW-UP TEMPLATES
+  CPT: None
+#}
+{% macro render(ctx=None) -%}
+BRONCHOSCOPY NOTE
+PROCEDURE: Flexible bronchoscopy with [procedures]
+OPERATORS: [Names], MD
+INDICATIONS: [indications]
+Informed consent obtained. A time out was performed prior to procedure.
+Sedation with [type]. Vitals monitored throughout procedure.
+FINDINGS:
+5 cc of 2% lidocaine was instilled into the endotracheal tube for topical anesthesia.
+The bronchoscope was then passed via the ETT into the trachea.
+The bronchoscope was first passed into the right mainstem bronchus and each segment was systematically identified and inspected. The RUL, RML and RLL were all patent. Mucosal normal without endobronchial lesions. No significant secretions.
+Next, attention was turned to the left sided airways. The bronchoscope was advanced into the left main bronchus and each segment was systematically identified and inspected. The LUL, lingular and LLL were all patent. Mucosa normal without endobronchial lesions. No significant secretions.
+BAL of the [segment] was performed. Instilled [cc] sterile saline with return of [cc].
+Summary:
+
+Pharynx: Not assessed due to Bronch introduction via ETT/Trach Tube
+Larynx: Not assessed due to Bronch introduction via ETT/Trach Tube
+Vocal Cords: Not assessed due to Bronch introduction via ETT/Trach Tube
+Trachea: Distal 1/3 Normal
+Right Lung: [findings]
+Left Lung: [findings]
+No evidence of mass, lesions, bleeding or other intra-bronchial pathology.
+Mucosa: [findings]
+Secretions: [findings]. Suctioned to clear.
+
+The flexible bronchoscope was retracted and removed.
+Patient tolerated the procedure well with no immediate complications. The attending, Dr. [Name] was present at the bedside and supervised the entire procedure.
+
+Interventional Pulmonology Operative Report
+{%- endmacro %}

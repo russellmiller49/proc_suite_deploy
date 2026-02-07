@@ -1,0 +1,24 @@
+{% set _hint_upper = (free_text_hint | default("")) | upper %}
+{% set _side = (proc.side or "unspecified") | lower %}
+
+Pigtail Catheter Placement (Modified for Drainage) The insertion site was prepped and draped in sterile fashion. Anesthesia: Lidocaine 1% was used for local anesthesia.{% if proc.side %} Entry Site: {{ proc.side | title }} hemithorax.{% endif %}
+
+Findings and Technique: A {{ proc.size_fr }} pigtail catheter was utilized. A pigtail catheter was inserted using the Seldinger technique. Entry into the pleural space was confirmed with the easy removal of pleural fluid. A guidewire was inserted using the introducer needle. The introducer needle was then removed. A dilator was then inserted over the wire with a twisting motion in order to form a tract for catheter insertion. The dilator was removed and the pigtail catheter (with trocar) was advanced over the guidewire.
+
+{% if "NO IMAGING" in _hint_upper %}
+Imaging: No imaging was utilized for this procedure (anatomic landmarks only).
+{% endif %}
+
+Drainage:
+
+{% if proc.fluid_removed_ml is not none %}Fluid Removed: {{ proc.fluid_removed_ml }} mL{% endif %}
+
+{% if proc.fluid_appearance %}Appearance: {{ proc.fluid_appearance | title }}{% endif %}
+
+{% if "CATHETER REMOVED" in _hint_upper or ("CATHTER REMOVED" in _hint_upper) or ("REMOVED" in _hint_upper and "CATHETER" in _hint_upper) %}
+Following adequate drainage, the pigtail catheter was removed. The site was dressed with occlusive gauze.
+{% else %}
+The catheter was secured and sterile dressings were applied.
+{% endif %}
+
+The patient tolerated the procedure well without immediate complications.

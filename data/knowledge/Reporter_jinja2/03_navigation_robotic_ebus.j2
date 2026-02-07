@@ -1,0 +1,243 @@
+{# ============================================================================
+   5. NAVIGATION / ROBOTIC / EBUS PROCEDURES
+   ============================================================================ #}
+
+{# --- Electromagnetic Navigation Bronchoscopy (EMN) - CPT 31627 --- #}
+{% macro emn_bronchoscopy(navigation_system, emn_catheter, lung_segment, target_size_cm, distance_from_target_cm=1.0) %}
+Electromagnetic navigation bronchoscopy was performed to target a lesion. Registration was completed; the navigation catheter was advanced. Radial EBUS confirmed intraparenchymal position. Samples were obtained. The patient tolerated the procedure well.
+
+Performed with {{ navigation_system }}. Automatic registration was used. {{ emn_catheter }} was used to engage the {{ lung_segment }}. Target lesion is about {{ target_size_cm }} cm in diameter. Under navigational guidance the catheter was advanced to {{ distance_from_target_cm }} cm away from the planned target.
+{% endmacro %}
+
+
+{# --- Fiducial Marker Placement - CPT 31626 --- #}
+{% macro fiducial_marker_placement(marker_type='0.8mm x 3mm soft tissue gold CIVCO', airway_location=None) %}
+A fiducial marker was loaded with bone wax and placed under fluoroscopic guidance at the targeted airway location{% if airway_location %} ({{ airway_location }}){% endif %}. Placement was confirmed and the bronchoscope withdrawn without complication.
+
+Marker: {{ marker_type }}.
+{% endmacro %}
+
+
+{# --- Radial EBUS Survey - CPT 31654 --- #}
+{% macro radial_ebus_survey(location, rebus_features) %}
+Radial endobronchial ultrasound was used to confirm lesion location and characterize internal echogenicity and margins prior to sampling. ROSE cytology was performed when available.
+
+Performed to confirm that the location of the nodule is {{ location }}.
+
+The following features were noted:
+{% for feature in rebus_features %}
+- {{ feature }}
+{% endfor %}
+{% endmacro %}
+
+
+{# --- Robotic Navigational Bronchoscopy (Ion/Intuitive) --- #}
+{% macro robotic_bronchoscopy_ion(vent_params, sampling_details=None, cbct_performed=true) %}
+Robotic navigation bronchoscopy was performed using the Intuitive Ion system. A navigation plan from the pre-procedure CT was loaded and registration completed. The Ion catheter was advanced under navigational guidance. Radial EBUS confirmed appropriate position. {% if cbct_performed %}Cone-beam CT was performed for trajectory verification. {% endif %}Sampling was obtained through the extended working channel as detailed. Hemostasis was confirmed. The patient tolerated the procedure well without immediate complications.
+
+CT Chest scan was placed on separate planning station to generate 3D rendering of the pathway to target. The navigational plan was reviewed and verified. This was then loaded into robotic bronchoscopy platform.
+
+Ventilation Parameters:
+- Mode: {{ vent_params.mode }}
+- RR: {{ vent_params.respiratory_rate }}
+- TV: {{ vent_params.tidal_volume }}
+- PEEP: {{ vent_params.peep }}
+- FiO2: {{ vent_params.fio2 }}
+- Flow Rate: {{ vent_params.flow_rate }}
+- Pmean: {{ vent_params.mean_pressure }}
+{% if sampling_details %}
+
+SAMPLING:
+{{ sampling_details }}
+{% endif %}
+{% endmacro %}
+
+
+{# --- Ion Registration — Complete --- #}
+{% macro ion_registration_complete(registration_method='automatic', mean_fiducial_error_mm=None, global_alignment='excellent') %}
+Registration to the pre-procedure CT was completed using {{ registration_method }} methods with adequate airway landmark matching (carina, lobar carinas, tertiary bifurcations).
+{% if mean_fiducial_error_mm %}
+Mean fiducial error: {{ mean_fiducial_error_mm }} mm.
+{% endif %}
+Global alignment quality: {{ global_alignment }}. No registration drift observed during the case. A confidence sweep confirmed stable targeting throughout the planned trajectory.
+{% endmacro %}
+
+
+{# --- Ion Registration — Partial (Efficiency Strategy, ssRAB) --- #}
+{% macro ion_registration_partial(side, lobe_segment, registered_landmarks, rationale='partial registration to reduce presampling time while maintaining localization performance', time_metrics=None, performance_checks=None) %}
+Indication: single primary nodule on the {{ side }} {{ lobe_segment }} or multiple ipsilateral nodules where partial strategy is selected to optimize efficiency.
+
+Scope of registration: ipsilateral tracheobronchial tree only to lobar/segmental landmarks.
+
+Registered landmarks: {% for lm in registered_landmarks %}{{ lm }}{% if not loop.last %}, {% endif %}{% endfor %}.
+
+Contralateral tree: not registered/registered later if needed.
+
+Rationale: {{ rationale }}.
+{% if time_metrics %}
+
+Time metrics:
+- Registration start: {{ time_metrics.registration_start }}
+- Registration complete: {{ time_metrics.registration_complete }}
+- Navigation start: {{ time_metrics.navigation_start }}
+- Tool-at-target: {{ time_metrics.tool_at_target }}
+- Combined registration + navigation time: {{ time_metrics.combined_time }} min
+- Navigation time to primary nodule: {{ time_metrics.nav_time }} min
+{% endif %}
+{% if performance_checks %}
+
+Performance checks:
+- Virtual-to-live divergence at primary nodule: {{ performance_checks.divergence }}%
+- rEBUS pattern: {{ performance_checks.rebus_pattern }}
+- Tool-in-lesion confirmation: {{ performance_checks.confirmation_method }}
+- ROSE adequacy: {{ performance_checks.rose_adequacy }}
+{% if performance_checks.diagnostic_yield %}
+- Diagnostic yield: {{ performance_checks.diagnostic_yield }}
+{% endif %}
+{% endif %}
+
+Note: For bilateral targets or secondary nodules, document whether full registration was later performed and update plan accordingly.
+{% endmacro %}
+
+
+{# --- Ion Registration — Registration Drift / Mismatch --- #}
+{% macro ion_registration_drift(cause, findings, mean_fiducial_error_mm, mitigation_steps, post_correction_alignment, proceeding_with) %}
+During navigation, registration drift/mismatch was noted due to {{ cause }}.
+
+Findings: landmark mismatch at {{ findings }} with mean fiducial error {{ mean_fiducial_error_mm }} mm.
+
+Mitigation: {% for step in mitigation_steps %}{{ step }}{% if not loop.last %}, {% endif %}{% endfor %}.
+
+Post-correction alignment: {{ post_correction_alignment }}.
+
+Proceeded using {{ proceeding_with }} as described.
+{% endmacro %}
+
+
+{# --- Linear EBUS with TBNA - CPT 31652/31653 --- #}
+{% macro linear_ebus_tbna(lymph_nodes) %}
+Linear endobronchial ultrasound with transbronchial needle aspiration was performed. The following lymph node stations were systematically evaluated and sampled:
+
+{% for node in lymph_nodes %}
+LYMPH NODE {{ loop.index }}: The Station {{ node.station }} node was {{ node.size_mm }} mm by EBUS, {{ node.ct_findings }}, and {{ node.pet_findings }}. The lymph node was photographed. {{ node.num_tbna }} TBNAs were performed with samples obtained.
+{% if node.rose %}
+Preliminary ROSE cytology was reported as {{ node.rose.adequacy }} and suggestive of {{ node.rose.findings }} (final results are pending).
+{% endif %}
+
+{% endfor %}
+{% endmacro %}
+
+
+{# --- Radial EBUS–Guided Sampling with Guide Sheath - CPT 31654 --- #}
+{% macro rebus_guide_sheath_sampling(guide_sheath_diameter, us_pattern, lesion_size_mm, sampling_tools, num_passes_per_tool, fluoroscopy_used=true, rose_result=None, specimens=None, cxr_ordered=false) %}
+After navigation to the target, a radial EBUS probe with guide sheath {{ guide_sheath_diameter }} was advanced to the lesion.
+
+Ultrasound pattern: {{ us_pattern }}, lesion size {{ lesion_size_mm }} mm.
+
+The probe was withdrawn leaving the guide sheath in situ. Sampling was performed via the guide sheath using {% for tool in sampling_tools %}{{ tool }}{% if not loop.last %}, {% endif %}{% endfor %} with {{ num_passes_per_tool }} passes for each tool.
+
+Fluoroscopy used: {{ 'Yes' if fluoroscopy_used else 'No' }}.
+{% if rose_result %}
+ROSE: {{ rose_result }}.
+{% endif %}
+
+Hemostasis was confirmed; no pneumothorax was evident on intra-procedure assessment.
+{% if specimens %}
+
+Specimens: {% for spec in specimens %}{{ spec }}{% if not loop.last %}, {% endif %}{% endfor %}.
+{% endif %}
+
+Post-procedure CXR: {{ 'ordered' if cxr_ordered else 'not indicated' }}.
+
+The patient tolerated the procedure well.
+{% endmacro %}
+
+
+{# --- Cone-Beam CT (CBCT) / Augmented Fluoroscopy–Assisted Bronchoscopy --- #}
+{% macro cbct_assisted_bronchoscopy(vent_settings, trajectory_adjustment=None, confirmatory_position='on-target', radiation_params=None) %}
+Following initial navigation, a CBCT spin was acquired with the patient on ventilation settings.
+
+Three-dimensional reconstruction and overlay were used to confirm catheter-to-target alignment{% if trajectory_adjustment %}; trajectory adjusted by {{ trajectory_adjustment }}{% endif %}.
+
+A confirmatory CBCT spin showed {{ confirmatory_position }} position.
+
+Sampling was then performed as detailed elsewhere.
+{% if radiation_params %}
+Radiation parameters recorded: {{ radiation_params }}.
+{% endif %}
+
+The patient tolerated the imaging adjunct without immediate complications.
+{% endmacro %}
+
+
+{# --- Transbronchial Dye/Marker Placement for Surgical Localization --- #}
+{% macro transbronchial_dye_marking(guidance_method, needle_gauge, distance_from_pleura_cm, dye_agent, concentration, volume_ml) %}
+Under {{ guidance_method }} guidance, a {{ needle_gauge }} gauge needle catheter was advanced to {{ distance_from_pleura_cm }} cm from the pleural surface at the target.
+
+{{ dye_agent }} {{ concentration }} was injected in {{ volume_ml }} mL to mark the lesion for surgical wedge resection.
+
+Marker diffusion was observed endoscopically/fluoroscopically. No immediate bleeding or air leak was seen.
+
+The patient tolerated the procedure well.
+{% endmacro %}
+
+
+{# --- Robotic Navigational Bronchoscopy (Monarch/Auris) --- #}
+{% macro robotic_bronchoscopy_monarch(vent_params, rebus_position, sampling_tools, cbct_used=false) %}
+Robotic navigation bronchoscopy was performed using the Monarch platform. Pre-procedure CT-based plan was loaded and airway registration completed.
+
+The robotic catheter and sheath were advanced to the target under navigational guidance. Radial EBUS verified {{ rebus_position }} position.
+
+Sampling through the working channel was performed as detailed: {% for tool in sampling_tools %}{{ tool }}{% if not loop.last %}, {% endif %}{% endfor %}.
+{% if cbct_used %}
+
+CBCT/augmented fluoroscopy was used for trajectory confirmation.
+{% endif %}
+
+Hemostasis was confirmed. The patient tolerated the procedure well.
+
+Ventilation Parameters:
+- Mode: {{ vent_params.mode }}
+- RR: {{ vent_params.respiratory_rate }}
+- TV: {{ vent_params.tidal_volume }}
+- PEEP: {{ vent_params.peep }}
+- FiO2: {{ vent_params.fio2 }}
+- Flow Rate: {{ vent_params.flow_rate }}
+- Pmean: {{ vent_params.mean_pressure }}
+{% endmacro %}
+
+
+{# --- EBUS-Guided Intranodal Forceps Biopsy (IFB) - CPT 31652/31653 --- #}
+{% macro ebus_intranodal_forceps_biopsy(station, size_mm, us_features, needle_gauge, num_samples, rose_result=None, specimen_medium='formalin', specimen_type='histology') %}
+The target lymph node station {{ station }} measured {{ size_mm }} mm with {{ us_features }}.
+
+The EBUS needle {{ needle_gauge }} gauge was used to create a tract through the bronchial wall and nodal capsule. Mini-forceps were advanced through the tract to obtain {{ num_samples }} core samples.
+{% if rose_result %}
+
+ROSE: {{ rose_result }}.
+{% endif %}
+
+Hemostasis adequate with no immediate complications.
+
+Specimens in {{ specimen_medium }} submitted for {{ specimen_type }}.
+{% endmacro %}
+
+
+{# --- EBUS-Guided 19-Gauge Core Fine-Needle Biopsy (FNB) - CPT 31652/31653 --- #}
+{% macro ebus_19g_fnb(station, num_passes, elastography_pattern=None, rose_result=None, specimen_types=None) %}
+Using a 19G EBUS needle, the station {{ station }} node was sampled for {{ num_passes }} passes with visible core tissue obtained each pass.
+{% if elastography_pattern %}
+
+Elastography: {{ elastography_pattern }}.
+{% endif %}
+{% if rose_result %}
+
+ROSE: {{ rose_result }}.
+{% endif %}
+
+No immediate complications.
+{% if specimen_types %}
+
+Specimens sent for: {% for spec in specimen_types %}{{ spec }}{% if not loop.last %}, {% endif %}{% endfor %}.
+{% endif %}
+{% endmacro %}

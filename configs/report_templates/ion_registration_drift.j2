@@ -1,0 +1,5 @@
+During navigation, registration drift or mismatch was noted{% if proc.cause %} due to {{ proc.cause }}{% endif %}.
+{% if proc.findings %}Findings: {{ proc.findings }}.{% endif %}
+{% if proc.mitigation %}Mitigation: {{ proc.mitigation }}.{% endif %}
+{% if proc.post_correction_alignment %}Post-correction alignment: {{ proc.post_correction_alignment }}.{% endif %}
+{% if proc.proceeded_strategy %}Proceeded using {{ proc.proceeded_strategy }}.{% endif %}

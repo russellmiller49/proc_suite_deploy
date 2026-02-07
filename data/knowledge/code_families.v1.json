@@ -1,0 +1,13 @@
+{
+  "families": {
+    "airway_stents": {
+      "dominant_codes": {
+        "31631": {
+          "overrides": {
+            "31636": "31637"
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,17 @@
+# Pleural Procedure Synoptic Report
+
+**Indication:** {{ report.indication }}
+
+**Anesthesia:** {{ report.anesthesia }}
+
+**Survey Findings:**
+{% for item in report.survey %}- {{ item }}
+{% endfor %}
+
+**Procedures Performed:**
+{% for therapy in report.therapeutics %}- {{ therapy }}
+{% endfor %}
+
+**Complications:** {% if report.complications %}{{ report.complications | join(', ') }}{% else %}None{% endif %}
+
+**Disposition:** {{ report.disposition }}

@@ -1,0 +1,19 @@
+id: dye_marker_placement
+label: Transbronchial Dye/Marker Placement for Surgical Localization
+category: navigation
+cpt_hints: []
+schema_id: dye_marker_placement_v1
+output_section: PROCEDURE_DETAILS
+template_path: dye_marker_placement.j2
+required_fields:
+  - guidance_method
+  - needle_gauge
+  - dye_type
+  - volume_ml
+optional_fields:
+  - distance_from_pleura_cm
+  - dye_concentration
+  - diffusion_observed
+  - notes
+proc_types:
+  - dye_marker_placement

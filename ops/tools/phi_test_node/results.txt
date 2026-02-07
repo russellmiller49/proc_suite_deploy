@@ -1,0 +1,178 @@
+================================================================================
+PHI REDACTION TEST REPORT (DistilBERT ONNX + Veto Layer)
+Sample size: 5 notes
+Model: DistilBERT ONNX
+================================================================================
+
+================================================================================
+NOTE 1: golden_278.json [entry 3]
+================================================================================
+
+ORIGINAL TEXT:
+--------------------------------------------------------------------------------
+INTERVENTIONAL PULMONOLOGY OPERATIVE REPORT
+Patient: Elaine Young  MRN: SYNIP0004  Age/Sex: 61/F
+Date: 2025-03-05
+Indication: Malignant obstruction of left mainstem and left lower lobe bronchus with dyspnea at rest.
+Procedure: Rigid and flexible bronchoscopy with mechanical dilation and placement of stents in left mainstem and left lower lobe bronchus.
+Anesthesia: General anesthesia with ETT, anesthesia by separate service.
+Findings: About 85% narrowing of the left mainstem and 80% narrowing at the origin of the left lower lobe bronchus from tumor and extrinsic compression; copious secretions.
+Intervention: Mechanical debulking with the rigid barrel and suction restored a small lumen. Balloon dilation to 12 mm in the left mainstem followed by deployment of a 12 x 40 mm metallic stent. A second 10 x 30 mm metallic stent was placed in the left lower lobe bronchus as an extension. Final appearance showed <20% residual narrowing and markedly improved ventilation.
+Complications: Brief bleeding <30 mL, controlled with iced saline; no hypoxia.
+Disposition: Extubated in OR and discharged to surgical ICU in stable condition.
+
+--------------------------------------------------------------------------------
+REDACTED TEXT:
+--------------------------------------------------------------------------------
+INTERVENTIONAL PULMONOLOGY OPERATIVE REPORT
+Patient: [REDACTED_PATIENT]  MRN: [REDACTED_ID]  Age/Sex: 61/F
+Date: [REDACTED_DATE]
+Indication: Malignant obstruction of left mainstem and left lower lobe bronchus with dyspnea at rest.
+Procedure: Rigid and flexible bronchoscopy with mechanical dilation and placement of stents in left mainstem and left lower lobe bronchus.
+Anesthesia: General anesthesia with ETT, anesthesia by separate service.
+Findings: About 85% narrowing of the left mainstem and 80% narrowing at the origin of the left lower lobe bronchus from tumor and extrinsic compression; copious secretions.
+Intervention: Mechanical debulking with the rigid barrel and suction restored a small lumen. Balloon dilation to 12 mm in the left mainstem followed by deployment of a 12 x 40 mm metallic stent. A second 10 x 30 mm metallic stent was placed in the left lower lobe bronchus as an extension. Final appearance showed <20% residual narrowing and markedly improved ventilation.
+Complications: Brief bleeding <30 mL, controlled with iced saline; no hypoxia.
+Disposition: Extubated in OR and discharged to surgical ICU in stable condition.
+
+--------------------------------------------------------------------------------
+REDACTION SUMMARY: 3 items redacted
+--------------------------------------------------------------------------------
+Detected PHI:
+  - [PATIENT] "Elaine Young" (score=1.00, source=regex_patient_header)
+  - [ID] "SYNIP0004" (score=1.00, source=regex_mrn)
+  - [DATE] "2025-03-05" (score=0.95, source=regex_date_iso)
+
+================================================================================
+NOTE 2: golden_074.json [entry 58]
+================================================================================
+
+ORIGINAL TEXT:
+--------------------------------------------------------------------------------
+bronchoscopy note - <DATE_TIME>
+
+pt Kathleen Rogers mrn 8900444 is a 85yo male here for bronch w EBUS staging and robotic biopsy of a 14.0mm LUL nodule that was ground-glass on CT, bronchus sign was negative, PET showed SUV 17.6.
+
+under general we did linear EBUS first using the Pentax EB-1990i scope with 22g needle and sampled stations 2L x3, 4L x2, 10R x2, 10L x3, 11L x2, ROSE was there and showed Atypical cells at multiple stations.
+
+then switched to Ion robot and navigated to the LUL apicoposterior (B1+2) lesion, registration was 1.5mm which is fine, got radial EBUS showing concentric view and did tool in lesion confirmation with fluoroscopy. took 7 forceps bx, 2 needle passes, brushings x2, BAL sent for cultures.
+
+ROSE from the nodule was Adequate lymphocytes, no malignancy.
+
+no bleeding no ptx   patient did well
+
+specimens to path for cyto, surgical path, cell block, flow, molecular if needed
+
+d/c home after recovery with standard precautions, f/u 1-2wks for path
+
+Rachel Goldman md
+ip attending
+
+--------------------------------------------------------------------------------
+REDACTED TEXT:
+--------------------------------------------------------------------------------
+bronchoscopy note - <DATE_TIME>
+
+pt [REDACTED_PATIENT] mrn [REDACTED_ID] is a 85yo male here for bronch w EBUS staging and robotic biopsy of a 14.0mm LUL nodule that was ground-glass on CT, bronchus sign was negative, PET showed SUV 17.6.
+
+under general we did linear EBUS first using the Pentax EB-1990i scope with 22g needle and sampled stations 2L x3, 4L x2, 10R x2, 10L x3, 11L x2, ROSE was there and showed Atypical cells at multiple stations.
+
+then switched to Ion robot and navigated to the LUL apicoposterior (B1+2) lesion, registration was 1.5mm which is fine, got radial EBUS showing concentric view and did tool in lesion confirmation with fluoroscopy. took 7 forceps bx, 2 needle passes, brushings x2, BAL sent for cultures.
+
+ROSE from the nodule was Adequate lymphocytes, no malignancy.
+
+no bleeding no ptx   patient did well
+
+specimens to path for cyto, surgical path, cell block, flow, molecular if needed
+
+d/c home after recovery with standard precautions, f/u 1-2wks for path
+
+Rachel Goldman md
+ip attending
+
+--------------------------------------------------------------------------------
+REDACTION SUMMARY: 2 items redacted
+--------------------------------------------------------------------------------
+Detected PHI:
+  - [PATIENT] "Kathleen Rogers" (score=0.95, source=regex_pt_name_mrn)
+  - [ID] "8900444" (score=1.00, source=regex_mrn)
+
+================================================================================
+NOTE 3: golden_070.json [entry 48]
+================================================================================
+
+ORIGINAL TEXT:
+--------------------------------------------------------------------------------
+Resident Note
+Patient: Noah King
+Procedure: BT Bilateral Upper Lobes
+Steps:
+1. Intubation.
+2. Treated RUL segments.
+3. Treated LUL segments.
+4. Total 58 activations.
+5. No issues.
+Plan: Admit to step-down, steroids.
+
+--------------------------------------------------------------------------------
+REDACTED TEXT:
+--------------------------------------------------------------------------------
+Resident Note
+Patient: [REDACTED_PATIENT]
+Procedure: BT Bilateral Upper Lobes
+Steps:
+1. Intubation.
+2. Treated RUL segments.
+3. Treated LUL segments.
+4. Total 58 activations.
+5. No issues.
+Plan: Admit to step-down, steroids.
+
+--------------------------------------------------------------------------------
+REDACTION SUMMARY: 1 items redacted
+--------------------------------------------------------------------------------
+Detected PHI:
+  - [PATIENT] "Noah King" (score=1.00, source=regex_patient_header)
+
+================================================================================
+NOTE 4: golden_071.json [entry 28]
+================================================================================
+
+ORIGINAL TEXT:
+--------------------------------------------------------------------------------
+PROCEDURE: Left medical thoracoscopy. Under general anesthesia and single-lung ventilation, the left pleural space was accessed. 1400 mL of straw-colored exudate were evacuated. Visualization revealed diffuse nodularity of the parietal pleura. Multiple biopsies were obtained using forceps. A 24 Fr chest tube was inserted via the access site. The patient tolerated the procedure well.
+
+--------------------------------------------------------------------------------
+REDACTED TEXT:
+--------------------------------------------------------------------------------
+PROCEDURE: Left medical thoracoscopy. Under general anesthesia and single-lung ventilation, the left pleural space was accessed. 1400 mL of straw-colored exudate were evacuated. Visualization revealed diffuse nodularity of the parietal pleura. Multiple biopsies were obtained using forceps. A 24 Fr chest tube was inserted via the access site. The patient tolerated the procedure well.
+
+--------------------------------------------------------------------------------
+REDACTION SUMMARY: 0 items redacted
+--------------------------------------------------------------------------------
+No PHI detected.
+
+================================================================================
+NOTE 5: golden_073.json [entry 7]
+================================================================================
+
+ORIGINAL TEXT:
+--------------------------------------------------------------------------------
+After obtaining informed consent, the patient was brought to the bronchoscopy suite and placed under moderate sedation. A flexible bronchoscope was introduced through the mouth. We inspected the airway and found no endobronchial abnormalities. We then targeted the subcarinal lymph node (Station 7) for staging using a conventional 21-gauge Wang needle. Four needle passes were performed based on anatomic landmarks. The on-site pathologist confirmed the presence of malignant cells. The procedure was completed without any significant complications.
+
+--------------------------------------------------------------------------------
+REDACTED TEXT:
+--------------------------------------------------------------------------------
+After obtaining informed consent, the patient was brought to the bronchoscopy suite and placed under moderate sedation. A flexible bronchoscope was introduced through the mouth. We inspected the airway and found no endobronchial abnormalities. We then targeted the subcarinal lymph node (Station 7) for staging using a conventional 21-gauge Wang needle. Four needle passes were performed based on anatomic landmarks. The on-site pathologist confirmed the presence of malignant cells. The procedure was completed without any significant complications.
+
+--------------------------------------------------------------------------------
+REDACTION SUMMARY: 0 items redacted
+--------------------------------------------------------------------------------
+No PHI detected.
+
+================================================================================
+SUMMARY
+================================================================================
+Notes processed: 5
+Total redactions: 6
+Average redactions per note: 1.2

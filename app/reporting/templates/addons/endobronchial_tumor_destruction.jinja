@@ -1,0 +1,9 @@
+{#
+  file: templates/addons/endobronchial_tumor_destruction.jinja
+  Title: Endobronchial Tumor Destruction (CPT 31641)
+  Category: CORE DIAGNOSTIC / THERAPEUTIC BRONCHOSCOPY PROCEDURES
+  CPT: 31641
+#}
+{% macro render(ctx=None) -%}
+Endobronchial obstruction was treated with electrocautery/APC/laser/cryo. Pre- and post-procedure patency recorded. Performed at [Airway Segment] with the following modalities: Modality: [Electrocautery/APC/Laser/CoreCath/Cryoprobe]; Setting/Mode: [details]; Duration: [time]; Results: Prior to treatment, affected airway was noted to be [%] patent. After treatment, the airway was [%] patent.
+{%- endmacro %}

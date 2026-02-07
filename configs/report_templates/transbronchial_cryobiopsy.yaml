@@ -1,0 +1,27 @@
+id: transbronchial_cryobiopsy
+label: Transbronchial Cryobiopsy
+category: cryo
+cpt_hints: ["31632"]
+schema_id: transbronchial_cryobiopsy_v1
+output_section: PROCEDURE_DETAILS
+template_path: transbronchial_cryobiopsy.j2
+required_fields:
+  - lung_segment
+  - num_samples
+optional_fields:
+  - cryoprobe_size_mm
+  - freeze_seconds
+  - thaw_seconds
+  - blocker_type
+  - blocker_volume_ml
+  - blocker_location
+  - tests
+  - radial_vessel_check
+  - notes
+proc_types:
+  - transbronchial_cryobiopsy
+critical_fields:
+  - lung_segment
+  - num_samples
+  - blocker_type
+  - cryoprobe_size_mm

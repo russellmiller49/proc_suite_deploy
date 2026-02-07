@@ -1,0 +1,7 @@
+PEG Discharge Instructions:
+PEG can be used for medications 6 hours post procedure. PEG (or NG tube) can be used for feeds 6 hours post procedure if tolerating initial free water flushing. No enteral feeding prior.
+OK to restart systemic anticoagulation per clinical plan.
+{% if proc.feeding_plan %}Feeding plan: {{ proc.feeding_plan }}.{% endif %}
+{% if proc.medication_plan %}Medication plan: {{ proc.medication_plan }}.{% endif %}
+{% if proc.wound_care %}Wound care: {{ proc.wound_care }}.{% endif %}
+{% if proc.contact_info %}Contact: {{ proc.contact_info }}.{% endif %}

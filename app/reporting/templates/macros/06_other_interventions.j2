@@ -1,0 +1,133 @@
+{# ============================================================================
+   9. OTHER INTERVENTIONS
+   ============================================================================ #}
+
+{# --- Whole Lung Lavage - CPT 32997 --- #}
+{% macro whole_lung_lavage(dlt_size='37Fr', dlt_side='left', lavage_side='left', patient_position='left', max_volume_liters=20) %}
+Whole lung lavage performed under general anesthesia with double lumen tube. Warm saline instilled and drained until effluent clear.
+
+The patient was induced and intubated with a double lumen endotracheal tube ({{ dlt_size }}, {{ dlt_side }} bronchial tube) without difficulty by anesthesia staff.
+
+Next, the flexible bronchoscope was advanced into the tracheal portion of the tube to confirm adequate positioning. Tube was re-adjusted to ensure that the tracheal orifice aligned with the {% if dlt_side == 'left' %}right{% else %}left{% endif %} mainstem bronchus. The bronchial lumen could be seen passing into the {{ dlt_side }} mainstem bronchus; positioning was also confirmed with direct bronchoscopic visualization through the bronchial lumen.
+
+Next, the bronchial balloon was inflated and tested for leak. Once an adequate seal had been made, the patient was positioned in the {{ patient_position }} lateral decubitus position and the position of the ETT was confirmed with bronchoscopy once again. A repeat leak test was performed and adequate seal was noted.
+
+The patient was now transitioned to single lung ventilation via the {% if lavage_side == 'left' %}right{% else %}left{% endif %} lung and the {{ lavage_side }} lumen of the ETT was connected to a 3L bag of warmed 0.9% saline.
+
+Serial aliquots of saline were instilled at roughly 1 liter increments. After each liter was instilled, it was allowed to dwell for approximately 3-5 minutes before draining by gravity. This process was repeated until the effluent became clear or a maximum volume of {{ max_volume_liters }} liters was reached.
+{% endmacro %}
+
+
+{# --- EUS-B (Esophageal Ultrasound via Bronchoscope) - CPT 43237 --- #}
+{% macro eus_b(nodes_sampled=None) %}
+Linear EBUS scope advanced into esophagus. Mediastinal nodes visualized and sampled.
+{% if nodes_sampled %}
+
+Nodes sampled:
+{% for node in nodes_sampled %}
+- Station {{ node.station }}: {{ node.size_mm }} mm, {{ node.num_passes }} passes
+{% endfor %}
+{% endif %}
+{% endmacro %}
+
+
+{# --- Paracentesis - CPT 49083 --- #}
+{% macro paracentesis(volume_removed_ml=None, testing_types=None) %}
+Ultrasound guided paracentesis performed. Ascitic fluid aspirated and sent for analysis.
+{% if volume_removed_ml %}
+
+Volume removed: {{ volume_removed_ml }} mL
+{% endif %}
+{% if testing_types %}
+
+Samples sent for: {% for test in testing_types %}{{ test }}{% if not loop.last %}, {% endif %}{% endfor %}.
+{% endif %}
+{% endmacro %}
+
+
+{# --- PEG Placement --- #}
+{% macro peg_placement(scope_time_seconds, peg_size='20Fr', bumper_depth_cm=None, procedure_time_min=None) %}
+Percutaneous endoscopic gastrostomy performed with pull-through technique. Tube secured and bumper depth documented.
+
+Under sterile prep and draping, the abdomen was evaluated and 2 cm below the costal margin on the left, the likely point of insertion was identified.
+
+The scope was introduced through the mouth without difficulty and with continuous insufflation, the stomach was reached within {{ scope_time_seconds }} seconds. Then, the point of digital pressure was identified in the stomach and transillumination was accomplished successfully and without any doubts.
+
+At this point, a 1 cm incision was carried out in the skin and a 14ga angiocath was introduced. Using modified Seldinger technique, the angiocath was advanced and a wire was introduced. Using pull through technique, the guide wire was pulled through the mouth and linked to the {{ peg_size }} PEG catheter in usual fashion.
+
+Thereafter, the wire was pulled through the abdominal wall and the PEG tube positioned correctly with the bumper at {{ bumper_depth_cm }} cm. The remaining air was suctioned out and complete apposition of the stomach and esophagus was seen. There were no complications.
+{% if procedure_time_min %}
+
+The total procedural time was {{ procedure_time_min }} min.
+{% endif %}
+
+POST-PROCEDURE INSTRUCTIONS:
+- PEG can be used for medications 6 hrs post procedure
+- PEG (or NG tube) can be used for feeds 6 hrs post procedure, as long as tolerating initial free water flushing. No enteral feeding prior.
+- OK to restart systemic anticoagulation as clinically indicated, if needed.
+{% endmacro %}
+
+
+{# --- PEG Removal/Exchange --- #}
+{% macro peg_removal_exchange(action='removed', new_tube_size=None) %}
+Existing PEG tube {{ action }}{% if action == 'exchanged' %} with new {{ new_tube_size }} tube{% endif %}. {% if action == 'exchanged' %}New tube placed and secured.{% else %}Site dressed.{% endif %}
+{% endmacro %}
+
+
+{# --- Bronchopleural Fistula (BPF) Localization and Occlusion Test --- #}
+{% macro bpf_localization(drainage_device, balloon_type, segment_localized, leak_reduction, dye_used=None, dye_result=None, intervention_performed=None) %}
+With an existing {{ drainage_device }} connected to a water seal/digital drainage device, sequential balloon occlusion of segmental/lobar bronchi was performed using a {{ balloon_type }} balloon while monitoring for cessation of bubbling/flow.
+
+Leak reduction with occlusion of {{ segment_localized }} was {{ leak_reduction }}.
+{% if dye_used %}
+
+Confirmation with instillation of {{ dye_used }} through the chest tube showed {{ dye_result }} of dye at the occluded airway.
+{% endif %}
+{% if intervention_performed %}
+
+Based on localization, {{ intervention_performed }}.
+{% else %}
+
+Based on localization, valve placement/sealant application was performed/deferred.
+{% endif %}
+
+The patient tolerated the procedure well.
+{% endmacro %}
+
+
+{# --- Endobronchial Valve Placement for Persistent Air Leak (BPF) --- #}
+{% macro ebv_for_air_leak(indication, localization_segment, valve_brand, valve_size, segment_deployed, air_leak_reduction, additional_valves=None, post_plan=None) %}
+Indication: {{ indication }} persistent air leak.
+
+Localization by sequential balloon occlusion identified {{ localization_segment }} as the source.
+
+A {{ valve_brand }} one-way valve {{ valve_size }} was deployed in {{ segment_deployed }}.
+
+Immediate reduction in air leak on digital drainage device was {{ air_leak_reduction }}.
+{% if additional_valves %}
+
+Additional valves placed: {{ additional_valves.number }} in {% for seg in additional_valves.segments %}{{ seg }}{% if not loop.last %}, {% endif %}{% endfor %}.
+{% endif %}
+
+The patient tolerated the procedure well.
+{% if post_plan %}
+
+Post-procedure plan: {{ post_plan }}.
+{% endif %}
+{% endmacro %}
+
+
+{# --- Endobronchial Sealant Application for Bronchopleural Fistula (BPF) --- #}
+{% macro bpf_sealant_application(segment, sealant_type, volume_ml, dwell_minutes, air_leak_reduction, additional_applications=0) %}
+After localization of the culprit airway (see separate BPF localization template), a catheter was wedged into {{ segment }}.
+
+{{ sealant_type }} was instilled in {{ volume_ml }} mL and allowed to dwell for {{ dwell_minutes }} minutes.
+
+Immediate reduction of air leak on digital drainage system: {{ air_leak_reduction }}.
+{% if additional_applications > 0 %}
+
+Additional applications: {{ additional_applications }}.
+{% endif %}
+
+The patient tolerated the procedure without immediate complications.
+{% endmacro %}

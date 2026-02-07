@@ -1,0 +1,266 @@
+{# ============================================================================
+   10. CLINICAL ASSESSMENT AND FOLLOW-UP TEMPLATES
+   ============================================================================ #}
+
+{# --- Pre-Anesthesia Assessment for Moderate Sedation --- #}
+{% macro pre_anesthesia_assessment(anticoagulant_used=false, anticoagulant_meds=None, prophylactic_abx_required=false, asa_grade=None, anesthesia_plan=None, prior_sedation_complications=false) %}
+Prior to the procedure, the risks and benefits of the procedure and the sedation options and sedation-related risks were discussed with the patient/surrogate. All questions were answered and written informed consent was obtained.
+
+RECENT ANTICOAGULANT OR ANTIPLATELET USE:
+The patient has {% if anticoagulant_used %}taken {{ anticoagulant_meds }}{% else %}not taken anticoagulant medications{% endif %}.
+
+PROPHYLACTIC ANTIBIOTICS:
+The patient does {% if not prophylactic_abx_required %}not {% endif %}require prophylactic antibiotics.
+
+ASA GRADE ASSESSMENT: {{ asa_grade | default('ASA Status to be determined') }}
+
+ANESTHESIA PLAN: {{ anesthesia_plan | default('To be determined') }}
+
+The patient's prior sedation history was reviewed and there is {% if prior_sedation_complications %}a{% else %}no{% endif %} known history of sedation-related complications. The anesthesia plan was reviewed with the patient and deemed appropriate for the patient.
+
+Prior to the initiation of sedation and the start of the procedure, a time-out was performed and patient identification and the proposed procedure were verified by the physician and clinical staff involved in the patient procedure. Immediately prior to administration of medications, the patient was re-assessed for adequacy to receive sedatives and deemed in satisfactory (stable) condition to undergo the procedure.
+{% endmacro %}
+
+
+{# --- General Bronchoscopy Note --- #}
+{% macro general_bronchoscopy_note(procedures, operators, indications, sedation_type, lidocaine_volume=5, lidocaine_concentration=2, bal_performed=false, bal_segment=None, bal_instilled=None, bal_returned=None, findings=None) %}
+BRONCHOSCOPY NOTE
+
+PROCEDURE: Flexible bronchoscopy with {% for proc in procedures %}{{ proc }}{% if not loop.last %}, {% endif %}{% endfor %}
+
+OPERATORS: {% for op in operators %}{{ op }}, MD{% if not loop.last %}; {% endif %}{% endfor %}
+
+INDICATIONS: {% for ind in indications %}{{ ind }}{% if not loop.last %}, {% endif %}{% endfor %}
+
+Informed consent obtained. A time out was performed prior to procedure.
+
+Sedation with {{ sedation_type }}. Vitals monitored throughout procedure.
+
+FINDINGS:
+{{ lidocaine_volume }} cc of {{ lidocaine_concentration }}% lidocaine was instilled into the endotracheal tube for topical anesthesia.
+
+The bronchoscope was then passed via the ETT into the trachea.
+
+The bronchoscope was first passed into the right mainstem bronchus and each segment was systematically identified and inspected. The RUL, RML and RLL were all patent. Mucosal normal without endobronchial lesions. No significant secretions.
+
+Next, attention was turned to the left sided airways. The bronchoscope was advanced into the left main bronchus and each segment was systematically identified and inspected. The LUL, lingular and LLL were all patent. Mucosa normal without endobronchial lesions. No significant secretions.
+{% if bal_performed %}
+
+BAL of the {{ bal_segment }} was performed. Instilled {{ bal_instilled }} cc sterile saline with return of {{ bal_returned }} cc.
+{% endif %}
+
+SUMMARY:
+Pharynx: {% if findings and findings.pharynx %}{{ findings.pharynx }}{% else %}Not assessed due to Bronch introduction via ETT/Trach Tube{% endif %}
+Larynx: {% if findings and findings.larynx %}{{ findings.larynx }}{% else %}Not assessed due to Bronch introduction via ETT/Trach Tube{% endif %}
+Vocal Cords: {% if findings and findings.vocal_cords %}{{ findings.vocal_cords }}{% else %}Not assessed due to Bronch introduction via ETT/Trach Tube{% endif %}
+Trachea: {% if findings and findings.trachea %}{{ findings.trachea }}{% else %}Distal 1/3 Normal{% endif %}
+Right Lung: {% if findings and findings.right_lung %}{{ findings.right_lung }}{% else %}No abnormalities{% endif %}
+Left Lung: {% if findings and findings.left_lung %}{{ findings.left_lung }}{% else %}No abnormalities{% endif %}
+{% if not findings or not findings.pathology %}
+No evidence of mass, lesions, bleeding or other intra-bronchial pathology.
+{% endif %}
+Mucosa: {% if findings and findings.mucosa %}{{ findings.mucosa }}{% else %}Normal{% endif %}
+Secretions: {% if findings and findings.secretions %}{{ findings.secretions }}{% else %}Minimal{% endif %}. Suctioned to clear.
+
+The flexible bronchoscope was retracted and removed.
+
+Patient tolerated the procedure well with no immediate complications. The attending, Dr. {{ operators[0] }} was present at the bedside and supervised the entire procedure.
+{% endmacro %}
+
+
+{# --- Interventional Pulmonology Operative Report --- #}
+{% macro ip_operative_report(
+    procedure_date,
+    referring_physician,
+    patient_name,
+    patient_age,
+    patient_sex,
+    indication,
+    preop_dx,
+    postop_dx,
+    cpt_codes,
+    attending,
+    anesthesia_type,
+    equipment_used,
+    ebl,
+    patient_position,
+    airway_findings,
+    procedure_details,
+    consent_type='standard',
+    modifier_codes=None,
+    hcpcs_codes=None,
+    fellow=None,
+    rn=None,
+    rt=None,
+    anesthesia_details=None,
+    complications='None',
+    specimens=None,
+    impression_plan=None
+) %}
+INTERVENTIONAL PULMONOLOGY OPERATIVE REPORT
+
+DATE OF PROCEDURE: {{ procedure_date }}
+CC Referred Physician: {{ referring_physician }}
+
+INDICATION FOR OPERATION: {{ patient_name }} is a {{ patient_age }}-year-old {{ patient_sex }} who presents with {{ indication }}. The nature, purpose, risks, benefits and alternatives to Bronchoscopy were discussed with the patient in detail. Patient indicated a wish to proceed with surgery and informed consent was signed.
+
+{% if consent_type == 'standard' %}
+CONSENT: Obtained before the procedure. Its indications and potential complications and alternatives were discussed with the patient or surrogate. The patient or surrogate read and signed the provided consent form. The consent was witnessed by an assisting medical professional.
+{% elif consent_type == 'phone' %}
+CONSENT: Obtained before the procedure. Its indications and potential complications and alternatives were discussed with the patient or surrogate. The patient or surrogate provided consent over the phone. The consent was witnessed by an assisting medical professional.
+{% endif %}
+
+PREOPERATIVE DIAGNOSIS: {% for dx in preop_dx %}{{ dx }}{% if not loop.last %}, {% endif %}{% endfor %}
+
+POSTOPERATIVE DIAGNOSIS: {% for dx in postop_dx %}{{ dx }}{% if not loop.last %}, {% endif %}{% endfor %}
+
+PROCEDURE: {% for cpt in cpt_codes %}{{ cpt }}{% if not loop.last %}, {% endif %}{% endfor %}
+{% if modifier_codes %}
+MODIFIERS: {% for mod in modifier_codes %}{{ mod }}{% if not loop.last %}, {% endif %}{% endfor %}
+{% endif %}
+{% if hcpcs_codes %}
+HCPCS: {% for hcpcs in hcpcs_codes %}{{ hcpcs }}{% if not loop.last %}, {% endif %}{% endfor %}
+{% endif %}
+
+ATTENDING: {{ attending }}
+{% if fellow %}ASSISTANT: {{ fellow }}{% endif %}
+
+Support Staff:
+{% if rn %}RN: {{ rn }}{% endif %}
+{% if rt %}RT: {{ rt }}{% endif %}
+
+ANESTHESIA: {{ anesthesia_type }}{% if anesthesia_details %} - {{ anesthesia_details }}{% endif %}
+
+MONITORING: Pulse oximetry, heart rate, telemetry, and BP were continuously monitored by an independent trained observer that was present throughout the entire procedure.
+
+INSTRUMENT: {{ equipment_used }}
+
+ESTIMATED BLOOD LOSS: {{ ebl }}
+
+COMPLICATIONS: {{ complications }}
+
+PROCEDURE IN DETAIL:
+After the successful induction of anesthesia, a timeout was performed (confirming the patient's name, procedure type, and procedure location). All procedure related images were saved and archived in Media folder on OneDrive behind UCSD firewall, relevant images are also uploaded to PACS system or in the media section of the patient's chart.
+
+PATIENT POSITION: {{ patient_position }}
+
+INITIAL AIRWAY INSPECTION FINDINGS:
+{{ airway_findings }}
+
+{{ procedure_details }}
+
+The patient tolerated the procedure well. There were no immediate complications. At the conclusion of the operation, the patient was extubated in the operating room and transported to the recovery room in stable condition.
+{% if specimens %}
+
+SPECIMEN(S): {% for spec in specimens %}{{ spec }}{% if not loop.last %}, {% endif %}{% endfor %}
+{% endif %}
+
+IMPRESSION/PLAN: {{ patient_name }} is a {{ patient_age }}-year-old {{ patient_sex }} who presents for bronchoscopy for {{ indication }}.
+{% if impression_plan %}
+
+{{ impression_plan }}
+{% endif %}
+{% endmacro %}
+
+
+{# --- Tunneled Pleural Catheter Instructions --- #}
+{% macro tpc_discharge_instructions(followup_timeframe='2 weeks') %}
+DISCHARGE INSTRUCTIONS FOR TUNNELED PLEURAL CATHETER (PleurX)
+
+DAILY DRAINAGE INSTRUCTIONS:
+1. Wash hands thoroughly before handling the catheter
+2. Gather supplies: drainage kit, alcohol pads, gloves
+3. Clean the valve cap with alcohol pad for 15 seconds
+4. Connect the drainage line to the catheter valve
+5. Open the clamp to allow drainage
+6. Monitor drainage amount and color
+7. Stop drainage when flow stops or if experiencing chest pain/shortness of breath
+8. Close clamp and disconnect drainage line
+9. Clean valve cap again with alcohol pad
+10. Replace valve cap securely
+11. Record amount and color of fluid drained
+
+WHEN TO CALL:
+- Fever >100.4°F
+- Increasing shortness of breath
+- Chest pain during or after drainage
+- Redness, swelling, or drainage at catheter site
+- Catheter appears to be coming out
+- Less than 50ml drainage for 3 consecutive sessions
+- Sudden increase in drainage amount
+
+EMERGENCY SITUATIONS:
+- Catheter completely falls out
+- Severe chest pain or difficulty breathing
+- Air leak from catheter (pinch tubing and go to ER immediately)
+
+FOLLOW-UP:
+- Scheduled appointment in {{ followup_timeframe }}
+- Bring drainage log to all appointments
+{% endmacro %}
+
+
+{# --- BLVR Discharge Instructions --- #}
+{% macro blvr_discharge_instructions() %}
+BLVR DISCHARGE INSTRUCTIONS:
+
+Patient instructed to:
+- Avoid exertion for one week
+- No driving for one week
+- No travel for one week
+
+Monitor for and report immediately:
+- Shortness of breath
+- Chest pain
+- Fever
+
+Follow-up: Arrange follow up with interventional pulmonology as scheduled.
+{% endmacro %}
+
+
+{# --- Chest Tube/PleurX Catheter Discharge Instructions --- #}
+{% macro chest_tube_discharge_instructions() %}
+CHEST TUBE/PLEURX CATHETER DISCHARGE INSTRUCTIONS:
+
+Patient advised to:
+- Maintain drainage system care per instructions provided
+- Monitor for infection (fever, redness, swelling, purulent drainage)
+- Follow scheduled drainage protocol
+- Keep all follow-up appointments
+
+Return immediately for:
+- Fever >100.4°F
+- Increased shortness of breath
+- Chest pain
+- Signs of infection at insertion site
+{% endmacro %}
+
+
+{# --- PEG Discharge Instructions --- #}
+{% macro peg_discharge_instructions() %}
+PEG DISCHARGE INSTRUCTIONS:
+
+WOUND CARE:
+- Keep site clean and dry
+- Change dressing daily for first week
+- Monitor for signs of infection (redness, swelling, drainage, fever)
+
+FLUSHING PROTOCOLS:
+- Flush with 30-60 mL water before and after each feed
+- Flush with 30 mL water before and after medications
+- Flush every 4-6 hours if not in use
+
+MEDICATIONS:
+- Crush pills thoroughly and mix with water
+- Use liquid formulations when available
+- Do not mix medications together
+
+DIET:
+- Begin with clear liquids as tolerated
+- Advance to formula as directed
+- Maintain adequate hydration
+
+FOLLOW-UP:
+- Return to clinic as scheduled
+- Contact provider for any concerns
+{% endmacro %}

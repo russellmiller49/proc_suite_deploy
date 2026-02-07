@@ -1,0 +1,14 @@
+id: chest_tube_discharge
+label: Chest Tube/PleurX Catheter Discharge
+category: instructions
+cpt_hints: []
+schema_id: chest_tube_discharge_v1
+output_section: DISCHARGE
+template_path: chest_tube_discharge.j2
+required_fields: []
+optional_fields:
+  - drainage_plan
+  - infection_signs
+  - followup_timeframe
+proc_types:
+  - chest_tube_discharge

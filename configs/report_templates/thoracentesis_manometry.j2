@@ -1,0 +1,17 @@
+Ultrasound confirmed a {{ proc.side }} effusion{% if proc.guidance %} with {{ proc.guidance|lower }} guidance{% endif %}. Thoracentesis was performed as per sterile protocol with pleural manometry monitoring.
+{% if proc.opening_pressure_cmh2o is not none %}Opening pressure: {{ proc.opening_pressure_cmh2o }} cmH₂O.{% endif %}
+{% if proc.pressure_readings %}Pressures during drainage: {{ proc.pressure_readings | join('; ') }}.{% endif %}
+{% if proc.stopping_criteria %}Stopping criteria: {{ proc.stopping_criteria }}.{% endif %}
+Total removed: {{ proc.total_removed_ml }} mL.
+{% if proc.post_procedure_imaging %}Post-procedure imaging: {{ proc.post_procedure_imaging }}.{% endif %}
+{% if proc.effusion_size or proc.effusion_echogenicity or proc.loculations or proc.diaphragm_motion or proc.lung_sliding_pre or proc.lung_sliding_post or proc.lung_consolidation or proc.pleura_description %}CHEST ULTRASOUND FINDINGS:
+Hemithorax: {{ proc.side|title }}
+{% if proc.effusion_size %}Effusion size: {{ proc.effusion_size }}{% endif %}
+{% if proc.effusion_echogenicity %}Echogenicity: {{ proc.effusion_echogenicity }}{% endif %}
+{% if proc.loculations %}Loculations: {{ proc.loculations }}{% endif %}
+{% if proc.diaphragm_motion %}Diaphragmatic Motion: {{ proc.diaphragm_motion }}{% endif %}
+{% if proc.lung_sliding_pre %}Lung sliding before procedure: {{ proc.lung_sliding_pre }}{% endif %}
+{% if proc.lung_sliding_post %}Lung sliding post procedure: {{ proc.lung_sliding_post }}{% endif %}
+{% if proc.lung_consolidation %}Lung consolidation/atelectasis: {{ proc.lung_consolidation }}{% endif %}
+{% if proc.pleura_description %}Pleura: {{ proc.pleura_description }}{% endif %}{% endif %}
+The patient tolerated the procedure without cough, chest pain, or hypotension.

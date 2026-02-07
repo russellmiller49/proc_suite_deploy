@@ -1,0 +1,15 @@
+id: transthoracic_needle_biopsy
+label: Transthoracic Needle Biopsy
+category: pleural
+cpt_hints: ["32408"]
+schema_id: transthoracic_needle_biopsy_v1
+output_section: PROCEDURE_DETAILS
+template_path: transthoracic_needle_biopsy.j2
+required_fields:
+  - needle_gauge
+  - samples_collected
+optional_fields:
+  - imaging_modality
+  - cxr_ordered
+proc_types:
+  - transthoracic_needle_biopsy

@@ -1,0 +1,14 @@
+id: endobronchial_tumor_destruction
+label: Argon Plasma Coagulation (APC) Ablation
+category: bronchoscopy
+cpt_hints: []
+schema_id: endobronchial_tumor_destruction_v1
+output_section: PROCEDURE_DETAILS
+template_path: endobronchial_tumor_destruction.j2
+required_fields: []
+optional_fields:
+  - modality
+  - airway_segment
+  - notes
+proc_types:
+  - endobronchial_tumor_destruction

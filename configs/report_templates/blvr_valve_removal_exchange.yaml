@@ -1,0 +1,19 @@
+id: blvr_valve_removal_exchange
+label: Endobronchial Valve Removal / Exchange
+category: blvr
+cpt_hints: []
+schema_id: blvr_valve_removal_exchange_v1
+output_section: PROCEDURE_DETAILS
+template_path: blvr_valve_removal_exchange.j2
+required_fields:
+  - indication
+  - valves_removed
+optional_fields:
+  - device_brand
+  - locations
+  - valves_exchanged
+  - replacement_sizes
+  - mucosa_status
+  - tolerance_notes
+proc_types:
+  - blvr_valve_removal_exchange

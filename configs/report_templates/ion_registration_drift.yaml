@@ -1,0 +1,16 @@
+id: ion_registration_drift
+label: Ion Registration — Drift/Mismatch
+category: robotic
+cpt_hints: []
+schema_id: ion_registration_drift_v1
+output_section: PROCEDURE_DETAILS
+template_path: ion_registration_drift.j2
+required_fields: []
+optional_fields:
+  - cause
+  - findings
+  - mitigation
+  - post_correction_alignment
+  - proceeded_strategy
+proc_types:
+  - ion_registration_drift

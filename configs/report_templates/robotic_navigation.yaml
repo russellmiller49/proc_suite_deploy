@@ -1,0 +1,16 @@
+id: robotic_navigation
+label: Robotic Navigation
+category: navigation
+cpt_hints: []
+schema_id: robotic_navigation_v1
+output_section: PROCEDURE_DETAILS
+template_path: robotic_navigation.j2
+required_fields:
+  - platform
+optional_fields:
+  - lesion_location
+  - registration_method
+  - registration_error_mm
+  - notes
+proc_types:
+  - robotic_navigation

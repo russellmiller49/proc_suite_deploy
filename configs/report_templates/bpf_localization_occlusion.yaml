@@ -1,0 +1,19 @@
+id: bpf_localization_occlusion
+label: Bronchopleural Fistula Localization and Occlusion Test
+category: bpf
+cpt_hints: []
+schema_id: bpf_localization_occlusion_v1
+output_section: PROCEDURE_DETAILS
+template_path: bpf_localization_occlusion.j2
+required_fields:
+  - culprit_segment
+optional_fields:
+  - balloon_type
+  - balloon_size_mm
+  - leak_reduction
+  - methylene_blue_used
+  - contrast_used
+  - instillation_findings
+  - notes
+proc_types:
+  - bpf_localization_occlusion

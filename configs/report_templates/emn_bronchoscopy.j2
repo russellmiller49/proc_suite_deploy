@@ -1,0 +1,5 @@
+{% set _hint_upper = (free_text_hint | default("")) | upper %}
+Electromagnetic Navigation Bronchoscopy{% if proc.target_lung_segment %} — {{ proc.target_lung_segment }} Nodule{% endif %} A CT-based navigation plan was loaded and registration was completed using the {{ proc.navigation_system }} system.{% if proc.target_lung_segment %} The navigation catheter was advanced to the planned target in the {{ proc.target_lung_segment }} segment.{% endif %}
+{% if proc.lesion_size_cm is not none %}Target lesion is approximately {{ proc.lesion_size_cm }} cm in diameter.{% endif %}
+{% if "CBCT" in _hint_upper or "CONE BEAM" in _hint_upper %}Cone-beam CT imaging with trajectory adjustment and confirmation.{% endif %}
+{% if proc.notes %}{{ proc.notes }}.{% endif %}

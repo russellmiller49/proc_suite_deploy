@@ -1,0 +1,13 @@
+id: pleurx_instructions
+label: Tunneled Pleural Catheter Instructions
+category: instructions
+cpt_hints: []
+schema_id: pleurx_instructions_v1
+output_section: DISCHARGE
+template_path: pleurx_instructions.j2
+required_fields: []
+optional_fields:
+  - followup_timeframe
+  - contact_info
+proc_types:
+  - pleurx_instructions

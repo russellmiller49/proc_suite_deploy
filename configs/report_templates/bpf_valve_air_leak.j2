@@ -1,0 +1,5 @@
+Indication: {% if proc.etiology %}{{ proc.etiology }}{% else %}persistent air leak{% endif %}. Localization identified {{ proc.culprit_location }} as the source.
+A{% if proc.valve_type %} {{ proc.valve_type }}{% endif %}{% if proc.valve_size %} {{ proc.valve_size }}{% endif %} one-way valve was deployed{% if proc.valves_placed is not none %} with {{ proc.valves_placed }} valve(s) placed{% endif %}.{% if proc.additional_valves %} Additional valves placed: {{ proc.additional_valves }}.{% endif %}
+Immediate reduction in air leak on digital drainage device was{% if proc.leak_reduction %} {{ proc.leak_reduction }}{% else %} documented{% endif %}.
+{% if proc.post_plan %}Post-procedure plan: {{ proc.post_plan }}.{% endif %}
+The patient tolerated the procedure well.

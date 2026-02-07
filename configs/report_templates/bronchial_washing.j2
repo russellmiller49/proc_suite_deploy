@@ -1,0 +1,5 @@
+Bronchial washing was performed{% if proc.airway_segment %} in the {{ proc.airway_segment }}{% endif %}.
+{% if proc.instilled_volume_ml is not none or proc.returned_volume_ml is not none %}
+Instilled{% if proc.instilled_volume_ml is not none %} {{ proc.instilled_volume_ml }} mL{% endif %} of normal saline{% if proc.returned_volume_ml is not none %} with {{ proc.returned_volume_ml }} mL returned{% endif %}.{% if proc.airway_segment %} Location: {{ proc.airway_segment }}.{% endif %}
+{% endif %}
+{% if proc.tests %}Samples were sent for {{ proc.tests | join(', ') }}.{% endif %}

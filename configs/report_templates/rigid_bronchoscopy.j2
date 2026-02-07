@@ -1,0 +1,21 @@
+{% set _target = proc.target_airway or "target airway" %}
+
+{% if proc.dilation_sizes_mm %}
+Airway Inspection{% if proc.flexible_scope_used %} The flexible bronchoscope was introduced through the endotracheal conduit.{% else %} A flexible bronchoscope was introduced.{% endif %} The {{ _target }} was inspected, and a tight stenosis was visualized.
+
+Rigid Bronchoscopy and Dilation The rigid bronchoscope was introduced via the mouth under direct visualization. The stenosis at the {{ _target }} was engaged.
+
+{% set _sizes = proc.dilation_sizes_mm %}
+Sequential mechanical dilation was performed using rigid dilators. The stenosis was dilated progressively using{% if _sizes|length == 1 %} {{ _sizes[0] }} mm dilators{% elif _sizes|length == 2 %} {{ _sizes[0] }} mm and {{ _sizes[1] }} mm dilators{% else %} {{ _sizes[:-1] | join(" mm, ") }} mm, and {{ _sizes[-1] }} mm dilators{% endif %}.{% if proc.post_dilation_diameter_mm %} Following the intervention, the airway was inspected and estimated to be patent to approximately {{ proc.post_dilation_diameter_mm }} mm.{% endif %}
+
+Completion Hemostasis was confirmed. The bronchoscope and adjunct instruments were withdrawn. The patient tolerated the procedure well without immediate complications.
+{% else %}
+After induction of general anesthesia, a rigid bronchoscope{% if proc.size_or_model %} ({{ proc.size_or_model }}){% endif %} was introduced via the mouth under direct visualization.{% if proc.hf_jv is not none %} High-frequency jet ventilation (HFJV): {% if proc.hf_jv %}Yes{% else %}No{% endif %}.{% endif %} A complete airway survey was performed.
+Therapeutic interventions performed: {{ proc.interventions | join(', ') }}.
+{% if proc.flexible_scope_used is not none %}A flexible bronchoscope was{% if not proc.flexible_scope_used %} not{% endif %} used through the rigid barrel for segmental inspection and suctioning.{% endif %}
+Hemostasis was confirmed and all instruments were withdrawn. The patient tolerated the procedure well without immediate complications.
+{% endif %}
+
+{% if proc.estimated_blood_loss_ml is not none %}Estimated blood loss: {{ proc.estimated_blood_loss_ml }} mL.{% endif %}
+{% if proc.specimens %}Specimens: {{ proc.specimens | join(', ') }}.{% endif %}
+{% if proc.post_procedure_plan %}Post-procedure plan: {{ proc.post_procedure_plan }}.{% endif %}

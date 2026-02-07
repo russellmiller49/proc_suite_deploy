@@ -1,0 +1,477 @@
+{
+  "template_system": "Interventional Pulmonology Procedural Reports",
+  "version": "1.0",
+  "categories": {
+    "01_minor_trach_laryngoscopy": {
+      "description": "Minor procedures, tracheostomy, and laryngoscopy",
+      "macros": {
+        "minor_trach_bleeding": {
+          "cpt": "12001",
+          "params": ["fio2"],
+          "defaults": {"fio2": 40}
+        },
+        "chemical_cauterization": {
+          "cpt": "17250",
+          "params": []
+        },
+        "trach_tube_change": {
+          "cpt": "31502",
+          "params": ["old_trach_type", "old_size", "new_trach_type", "new_size"],
+          "required": true
+        },
+        "percutaneous_trach": {
+          "cpt": "31600",
+          "params": ["trach_type", "lidocaine_volume", "ring_location"],
+          "defaults": {"lidocaine_volume": 3, "ring_location": "1st and 2nd"}
+        },
+        "trach_revision": {
+          "cpt": "31613",
+          "params": ["trach_type", "lidocaine_volume"],
+          "defaults": {"lidocaine_volume": 3}
+        },
+        "tracheobronchoscopy_via_trach": {
+          "cpt": "31615",
+          "params": []
+        },
+        "trach_decannulation": {
+          "cpt": "verify",
+          "params": ["indication", "trach_type", "trach_size", "observation_hours"],
+          "required": true
+        },
+        "trach_downsize": {
+          "cpt": "31502",
+          "params": ["old_type", "old_size", "new_type", "new_size", "fenestrated", "cuff_status", "indication"],
+          "defaults": {"fenestrated": false, "cuff_status": "inflated", "indication": "weaning"}
+        },
+        "granulation_debridement": {
+          "cpt": "verify",
+          "params": ["site", "debridement_tool", "hemostasis_method", "trach_exchanged"],
+          "defaults": {"trach_exchanged": false}
+        },
+        "flexible_laryngoscopy": {
+          "cpt": "31575",
+          "params": ["findings"],
+          "defaults": {"findings": null}
+        }
+      }
+    },
+    "02_core_bronchoscopy": {
+      "description": "Core diagnostic and therapeutic bronchoscopy procedures",
+      "macros": {
+        "bronchial_washing": {
+          "cpt": "31622",
+          "params": ["volume_instilled", "volume_returned", "airway_segment", "testing_types"],
+          "required": true
+        },
+        "bronchial_brushings": {
+          "cpt": "31623",
+          "params": ["num_samples", "brush_tool", "lung_segment", "testing_types", "endobronchial"],
+          "defaults": {"endobronchial": true}
+        },
+        "bronchoalveolar_lavage": {
+          "cpt": "31624",
+          "params": ["lung_segment", "volume_instilled", "volume_returned", "testing_types"],
+          "required": true
+        },
+        "endobronchial_biopsy": {
+          "cpt": "31625",
+          "params": ["airway_segment", "testing_types", "lesion_removed"],
+          "defaults": {"lesion_removed": true}
+        },
+        "transbronchial_lung_biopsy": {
+          "cpt": "31628",
+          "params": ["num_samples", "forceps_tool", "lung_segment", "testing_types"],
+          "required": true
+        },
+        "transbronchial_needle_aspiration": {
+          "cpt": "31629/31633",
+          "params": ["num_samples", "needle_tool", "lung_segment", "testing_types"],
+          "required": true,
+          "essential": ["num_samples", "lung_segment"],
+          "essential_labels": {
+            "num_samples": "Number of needle passes",
+            "lung_segment": "Target segment"
+          }
+        },
+        "balloon_dilation": {
+          "cpt": "31630",
+          "params": ["airway_segment", "balloon_type", "dilation_size_mm", "num_inflations", "duration_seconds"],
+          "required": true
+        },
+        "airway_stent_placement": {
+          "cpt": "31631/31636/31637",
+          "params": ["stent_type", "airway_segment", "fluoroscopy_used"],
+          "defaults": {"fluoroscopy_used": true}
+        },
+        "endobronchial_tumor_destruction": {
+          "cpt": "31641",
+          "params": ["airway_segment", "modality", "setting_mode", "duration", "patency_before", "patency_after"],
+          "required": true
+        },
+        "tumor_destruction_multimodal": {
+          "cpt": "31641",
+          "params": ["airway_segment", "treatments"],
+          "note": "treatments is list of {modality, setting, duration, patency_before, patency_after}"
+        },
+        "therapeutic_aspiration": {
+          "cpt": "31645/31646",
+          "params": ["airway_segment", "aspirate_type"],
+          "required": true
+        },
+        "endobronchial_tumor_excision": {
+          "cpt": "31640",
+          "params": ["method"],
+          "defaults": {"method": "mechanical debridement"}
+        },
+        "rigid_bronchoscopy": {
+          "cpt": "verify",
+          "params": ["scope_size", "scope_model", "hfjv", "interventions", "flexible_used", "ebl_ml", "specimens", "post_plan"],
+          "defaults": {"hfjv": false, "flexible_used": true, "ebl_ml": 0}
+        },
+        "foreign_body_removal": {
+          "cpt": "verify",
+          "params": ["airway_segment", "retrieval_tool", "num_passes", "removed_intact", "mucosal_trauma", "bleeding", "hemostasis_method", "cxr_ordered"],
+          "defaults": {"removed_intact": true, "mucosal_trauma": "no", "bleeding": "no", "hemostasis_method": "none", "cxr_ordered": true}
+        },
+        "endobronchial_hemostasis": {
+          "cpt": "verify",
+          "params": ["bleeding_source", "iced_saline_volume", "epinephrine_details", "txa_details", "thrombin_dose", "balloon_details", "hemostasis_achieved"],
+          "defaults": {"hemostasis_achieved": "Yes"}
+        },
+        "endobronchial_blocker": {
+          "cpt": "verify",
+          "params": ["blocker_type", "blocker_size", "side", "location", "balloon_volume", "inflation_medium", "indication", "secured_to"],
+          "defaults": {"inflation_medium": "air", "indication": "hemoptysis", "secured_to": "ETT"}
+        },
+        "awake_foi": {
+          "cpt": "verify",
+          "params": ["lidocaine_concentration", "lidocaine_volume", "sedation_agent", "sedation_dose", "ett_size", "route", "depth_cm"],
+          "required": true
+        },
+        "dlt_confirmation": {
+          "cpt": "verify",
+          "params": ["side", "dlt_size", "adjustments"],
+          "defaults": {"adjustments": null}
+        },
+        "stent_surveillance": {
+          "cpt": "verify",
+          "params": ["stent_type", "location", "findings", "interventions", "final_patency"],
+          "required": true
+        }
+      }
+    },
+    "03_navigation_robotic_ebus": {
+      "description": "Navigation, robotic bronchoscopy, and EBUS procedures",
+      "macros": {
+        "emn_bronchoscopy": {
+          "cpt": "31627",
+          "params": ["navigation_system", "emn_catheter", "lung_segment", "target_size_cm", "distance_from_target_cm"],
+          "defaults": {"distance_from_target_cm": 1.0}
+        },
+        "fiducial_marker_placement": {
+          "cpt": "31626",
+          "params": ["marker_type", "airway_location"],
+          "defaults": {"marker_type": "0.8mm x 3mm soft tissue gold CIVCO"}
+        },
+        "radial_ebus_survey": {
+          "cpt": "31654",
+          "params": ["location", "rebus_features"],
+          "required": true,
+          "essential": ["location", "rebus_features"],
+          "essential_labels": {
+            "location": "Target location",
+            "rebus_features": "Radial EBUS pattern (concentric/eccentric)"
+          }
+        },
+        "robotic_bronchoscopy_ion": {
+          "cpt": "verify",
+          "params": ["vent_params", "sampling_details", "cbct_performed", "lesion_location", "lesion_size_cm", "radial_pattern", "notes"],
+          "defaults": {"cbct_performed": true},
+          "essential": ["lesion_location", "sampling_details"],
+          "essential_labels": {
+            "lesion_location": "Lesion segment (e.g., RB1/RB3)",
+            "sampling_details": "Sampling method and count"
+          },
+          "note": "vent_params is dict with mode, respiratory_rate, tidal_volume, peep, fio2, flow_rate, mean_pressure"
+        },
+        "ion_registration_complete": {
+          "cpt": "N/A",
+          "params": ["registration_method", "mean_fiducial_error_mm", "global_alignment"],
+          "defaults": {"registration_method": "automatic", "global_alignment": "excellent"}
+        },
+        "ion_registration_partial": {
+          "cpt": "N/A",
+          "params": ["side", "lobe_segment", "registered_landmarks", "rationale", "time_metrics", "performance_checks"],
+          "defaults": {"rationale": "partial registration to reduce presampling time"}
+        },
+        "ion_registration_drift": {
+          "cpt": "N/A",
+          "params": ["cause", "findings", "mean_fiducial_error_mm", "mitigation_steps", "post_correction_alignment", "proceeding_with"],
+          "required": true
+        },
+        "linear_ebus_tbna": {
+          "cpt": "31652/31653",
+          "params": ["lymph_nodes"],
+          "essential": ["lymph_nodes"],
+          "essential_labels": {
+            "lymph_nodes": "Lymph node stations sampled with TBNA counts"
+          },
+          "note": "lymph_nodes is list of {station, size_mm, ct_findings, pet_findings, num_tbna, rose}"
+        },
+        "rebus_guide_sheath_sampling": {
+          "cpt": "31654",
+          "params": ["guide_sheath_diameter", "us_pattern", "lesion_size_mm", "sampling_tools", "num_passes_per_tool", "fluoroscopy_used", "rose_result", "specimens", "cxr_ordered"],
+          "defaults": {"fluoroscopy_used": true, "cxr_ordered": false}
+        },
+        "cbct_assisted_bronchoscopy": {
+          "cpt": "verify",
+          "params": ["vent_settings", "trajectory_adjustment", "confirmatory_position", "radiation_params"],
+          "defaults": {"confirmatory_position": "on-target"}
+        },
+        "transbronchial_dye_marking": {
+          "cpt": "verify",
+          "params": ["guidance_method", "needle_gauge", "distance_from_pleura_cm", "dye_agent", "concentration", "volume_ml"],
+          "required": true
+        },
+        "robotic_bronchoscopy_monarch": {
+          "cpt": "verify",
+          "params": ["vent_params", "rebus_position", "sampling_tools", "cbct_used"],
+          "defaults": {"cbct_used": false}
+        },
+        "ebus_intranodal_forceps_biopsy": {
+          "cpt": "31652/31653",
+          "params": ["station", "size_mm", "us_features", "needle_gauge", "num_samples", "rose_result", "specimen_medium", "specimen_type"],
+          "defaults": {"specimen_medium": "formalin", "specimen_type": "histology"}
+        },
+        "ebus_19g_fnb": {
+          "cpt": "31652/31653",
+          "params": ["station", "num_passes", "elastography_pattern", "rose_result", "specimen_types"],
+          "defaults": {}
+        }
+      }
+    },
+    "04_blvr_cryo": {
+      "description": "BLVR and cryotherapy procedures",
+      "macros": {
+        "endobronchial_valve_placement": {
+          "cpt": "31647/31648",
+          "params": ["balloon_occlusion", "chartis_used", "air_leak_confirmed", "lobes_treated", "valve_brand", "valve_details"],
+          "defaults": {"balloon_occlusion": true, "chartis_used": true, "air_leak_confirmed": true, "valve_brand": "Zephyr"}
+        },
+        "endobronchial_valve_removal_exchange": {
+          "cpt": "verify",
+          "params": ["indication", "valve_brand", "locations", "removal_tool", "num_removed", "num_exchanged", "exchange_sizes", "mucosa_post"],
+          "defaults": {"num_exchanged": 0, "mucosa_post": "normal"}
+        },
+        "post_blvr_protocol": {
+          "cpt": "N/A",
+          "params": [],
+          "note": "Returns full post-BLVR management protocol"
+        },
+        "transbronchial_cryobiopsy": {
+          "cpt": "31632",
+          "params": ["forceps_tool", "lung_segment", "num_samples", "testing_types", "blocker_used", "blocker_volume_cc", "rebus_performed"],
+          "defaults": {"blocker_used": true, "blocker_volume_cc": 6, "rebus_performed": true},
+          "essential": ["num_samples", "lung_segment"],
+          "essential_labels": {
+            "num_samples": "Number of cryobiopsy samples",
+            "lung_segment": "Target segment"
+          }
+        },
+        "endobronchial_cryoablation": {
+          "cpt": "31641",
+          "params": ["probe_size", "freeze_duration", "thaw_duration", "num_cycles", "ablation_pattern"],
+          "defaults": {"probe_size": "1.7mm", "freeze_duration": 15, "thaw_duration": 15, "num_cycles": 5}
+        },
+        "cryoablation_alternative": {
+          "cpt": "31641",
+          "params": ["probe_size", "freeze_duration", "thaw_duration", "num_overlapping", "orientations"],
+          "defaults": {"probe_size": "1.7mm", "freeze_duration": 30, "thaw_duration": 15, "num_overlapping": 5}
+        }
+      }
+    },
+    "05_pleural": {
+      "description": "Pleural procedures",
+      "macros": {
+        "chest_tube_placement": {
+          "cpt": "32551",
+          "params": ["side", "intercostal_space", "line", "fluid_type", "us_findings", "specimens", "cxr_ordered"],
+          "defaults": {"cxr_ordered": true}
+        },
+        "thoracentesis": {
+          "cpt": "32555",
+          "params": ["side", "intercostal_space", "location", "volume_removed", "fluid_appearance", "lidocaine_volume", "us_findings", "drainage_device", "suction", "suction_pressure", "specimens", "cxr_ordered", "sutured"],
+          "defaults": {"drainage_device": "Pleurovac", "suction": false, "cxr_ordered": true, "sutured": false},
+          "essential": ["side", "volume_removed", "fluid_appearance"],
+          "essential_labels": {
+            "side": "Laterality (right/left)",
+            "volume_removed": "Volume of fluid removed (mL)",
+            "fluid_appearance": "Fluid appearance"
+          }
+        },
+        "thoracentesis_manometry": {
+          "cpt": "32555",
+          "params": ["side", "total_removed_ml", "opening_pressure", "pressure_readings", "stopping_criteria", "us_findings", "cxr_ordered"],
+          "defaults": {"cxr_ordered": false}
+        },
+        "tpc_placement": {
+          "cpt": "32550",
+          "params": ["side", "intercostal_space", "location", "tunnel_length_cm", "exit_site_location", "volume_removed", "fluid_appearance", "lidocaine_volume", "us_findings", "pleural_pressures", "drainage_device", "suction", "specimens", "cxr_ordered", "sutured"],
+          "defaults": {"drainage_device": "Capped", "suction": false, "cxr_ordered": true, "sutured": true},
+          "essential": ["side", "volume_removed", "fluid_appearance"],
+          "essential_labels": {
+            "side": "Laterality (right/left)",
+            "volume_removed": "Volume of fluid removed (mL)",
+            "fluid_appearance": "Fluid appearance"
+          }
+        },
+        "tpc_removal": {
+          "cpt": "32552",
+          "params": ["insertion_date", "side", "removal_reason", "catheter_site_status", "anesthesia_used", "lidocaine_volume", "sutured", "complications", "complications_detail", "antibiotics", "antibiotics_reason", "us_findings"],
+          "defaults": {"catheter_site_status": "Clean/dry", "anesthesia_used": true, "sutured": false, "complications": false, "antibiotics": false}
+        },
+        "intrapleural_fibrinolysis": {
+          "cpt": "32561/32562",
+          "params": ["tpa_dose", "dnase_dose", "dwell_time_hours", "delivery_method"],
+          "defaults": {"delivery_method": "chest tube"}
+        },
+        "medical_thoracoscopy": {
+          "cpt": "32650/32653",
+          "params": ["findings", "biopsy_performed", "adhesiolysis", "pleurodesis", "chest_tube_left"],
+          "defaults": {"biopsy_performed": true, "adhesiolysis": false, "pleurodesis": false, "chest_tube_left": true}
+        },
+        "pigtail_catheter_placement": {
+          "cpt": "32557",
+          "params": ["side", "intercostal_space", "location", "catheter_size", "volume_removed", "fluid_appearance", "lidocaine_volume", "us_findings", "specimens", "cxr_ordered", "sutured"],
+          "defaults": {"cxr_ordered": true, "sutured": false}
+        },
+        "transthoracic_needle_biopsy": {
+          "cpt": "32408",
+          "params": ["needle_gauge", "num_samples", "cxr_ordered"],
+          "defaults": {"needle_gauge": 18, "num_samples": 3, "cxr_ordered": true}
+        },
+        "thoravent_placement": {
+          "cpt": "verify",
+          "params": []
+        },
+        "chemical_pleurodesis_chest_tube": {
+          "cpt": "32560",
+          "params": ["indication", "prerequisites", "agent", "agent_dose", "volume_ml", "analgesia_details", "clamp_duration_min", "patient_positions", "post_suction_setting", "tolerance"],
+          "defaults": {"post_suction_setting": "-20 cmH₂O", "tolerance": "no"}
+        },
+        "chemical_pleurodesis_ipc": {
+          "cpt": "verify",
+          "params": ["indication", "agent", "agent_dose", "volume_ml", "patient_positions", "drainage_resumed_after_hours"],
+          "required": true
+        },
+        "ipc_exchange": {
+          "cpt": "verify",
+          "params": ["indication", "new_catheter_brand", "new_catheter_size"],
+          "required": true
+        },
+        "chest_tube_exchange": {
+          "cpt": "verify",
+          "params": ["indication", "new_size_fr", "tube_type", "suction_setting"],
+          "defaults": {"tube_type": "pigtail", "suction_setting": "-20 cmH₂O"}
+        },
+        "chest_tube_removal": {
+          "cpt": "verify",
+          "params": ["removal_criteria", "closure_method"],
+          "required": true
+        },
+        "us_guided_pleural_biopsy": {
+          "cpt": "32507",
+          "params": ["interspace", "location", "needle_gauge", "device_brand", "num_cores", "specimen_medium", "specimen_type"],
+          "defaults": {"specimen_medium": "formalin", "specimen_type": "histology"}
+        },
+        "focused_thoracic_ultrasound": {
+          "cpt": "76604",
+          "params": ["right_findings", "left_findings", "impression"],
+          "required": true
+        }
+      }
+    },
+    "06_other_interventions": {
+      "description": "Other interventions (WLL, EUS-B, PEG, BPF)",
+      "macros": {
+        "whole_lung_lavage": {
+          "cpt": "32997",
+          "params": ["dlt_size", "dlt_side", "lavage_side", "patient_position", "max_volume_liters"],
+          "defaults": {"dlt_size": "37Fr", "dlt_side": "left", "lavage_side": "left", "patient_position": "left", "max_volume_liters": 20}
+        },
+        "eus_b": {
+          "cpt": "43237",
+          "params": ["nodes_sampled"],
+          "defaults": {}
+        },
+        "paracentesis": {
+          "cpt": "49083",
+          "params": ["volume_removed_ml", "testing_types"],
+          "defaults": {}
+        },
+        "peg_placement": {
+          "cpt": "verify",
+          "params": ["scope_time_seconds", "peg_size", "bumper_depth_cm", "procedure_time_min"],
+          "defaults": {"peg_size": "20Fr"}
+        },
+        "peg_removal_exchange": {
+          "cpt": "verify",
+          "params": ["action", "new_tube_size"],
+          "defaults": {"action": "removed"}
+        },
+        "bpf_localization": {
+          "cpt": "verify",
+          "params": ["drainage_device", "balloon_type", "segment_localized", "leak_reduction", "dye_used", "dye_result", "intervention_performed"],
+          "defaults": {}
+        },
+        "ebv_for_air_leak": {
+          "cpt": "verify",
+          "params": ["indication", "localization_segment", "valve_brand", "valve_size", "segment_deployed", "air_leak_reduction", "additional_valves", "post_plan"],
+          "defaults": {}
+        },
+        "bpf_sealant_application": {
+          "cpt": "verify",
+          "params": ["segment", "sealant_type", "volume_ml", "dwell_minutes", "air_leak_reduction", "additional_applications"],
+          "defaults": {"additional_applications": 0}
+        }
+      }
+    },
+    "07_clinical_assessment": {
+      "description": "Clinical assessments, operative reports, and discharge instructions",
+      "macros": {
+        "pre_anesthesia_assessment": {
+          "cpt": "N/A",
+          "params": ["anticoagulant_used", "anticoagulant_meds", "prophylactic_abx_required", "asa_grade", "anesthesia_plan", "prior_sedation_complications"],
+          "defaults": {"anticoagulant_used": false, "prophylactic_abx_required": false, "prior_sedation_complications": false}
+        },
+        "general_bronchoscopy_note": {
+          "cpt": "N/A",
+          "params": ["procedures", "operators", "indications", "sedation_type", "lidocaine_volume", "lidocaine_concentration", "bal_performed", "bal_segment", "bal_instilled", "bal_returned", "findings"],
+          "defaults": {"lidocaine_volume": 5, "lidocaine_concentration": 2, "bal_performed": false}
+        },
+        "ip_operative_report": {
+          "cpt": "N/A",
+          "params": ["procedure_date", "referring_physician", "patient_name", "patient_age", "patient_sex", "indication", "consent_type", "preop_dx", "postop_dx", "cpt_codes", "modifier_codes", "hcpcs_codes", "attending", "fellow", "rn", "rt", "anesthesia_type", "anesthesia_details", "equipment_used", "ebl", "complications", "patient_position", "airway_findings", "procedure_details", "specimens", "impression_plan"],
+          "defaults": {"consent_type": "standard", "complications": "None"}
+        },
+        "tpc_discharge_instructions": {
+          "cpt": "N/A",
+          "params": ["followup_timeframe"],
+          "defaults": {"followup_timeframe": "2 weeks"}
+        },
+        "blvr_discharge_instructions": {
+          "cpt": "N/A",
+          "params": []
+        },
+        "chest_tube_discharge_instructions": {
+          "cpt": "N/A",
+          "params": []
+        },
+        "peg_discharge_instructions": {
+          "cpt": "N/A",
+          "params": []
+        }
+      }
+    }
+  }
+}

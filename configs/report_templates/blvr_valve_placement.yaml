@@ -1,0 +1,24 @@
+id: blvr_valve_placement
+label: Endobronchial Valve Placement (BLVR)
+category: blvr
+cpt_hints: ["31647", "31648"]
+schema_id: blvr_valve_placement_v1
+output_section: PROCEDURE_DETAILS
+template_path: blvr_valve_placement.j2
+required_fields:
+  - lobes_treated
+  - valves
+optional_fields:
+  - balloon_occlusion_performed
+  - chartis_used
+  - collateral_ventilation_absent
+  - air_leak_reduction
+  - notes
+proc_types:
+  - blvr_valve_placement
+critical_fields:
+  - lobes_treated
+  - valves[].valve_size
+  - valves[].valve_type
+  - balloon_occlusion_performed
+  - chartis_used

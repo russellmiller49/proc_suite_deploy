@@ -1,0 +1,17 @@
+id: bpf_endobronchial_sealant
+label: Endobronchial Sealant Application for BPF
+category: bpf
+cpt_hints: []
+schema_id: bpf_endobronchial_sealant_v1
+output_section: PROCEDURE_DETAILS
+template_path: bpf_endobronchial_sealant.j2
+required_fields:
+  - sealant_type
+optional_fields:
+  - volume_ml
+  - dwell_minutes
+  - leak_reduction
+  - applications
+  - notes
+proc_types:
+  - bpf_endobronchial_sealant

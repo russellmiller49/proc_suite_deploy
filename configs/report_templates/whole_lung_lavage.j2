@@ -1,0 +1,4 @@
+Whole lung lavage was performed on the {{ proc.side }} lung{% if proc.dlt_size_fr is not none %} with a double lumen tube {{ proc.dlt_size_fr }} Fr{% endif %}{% if proc.position %} in the {{ proc.position }} position{% endif %}.
+Serial aliquots{% if proc.aliquot_volume_l is not none %} of approximately {{ proc.aliquot_volume_l }} liters{% endif %} of warmed saline were instilled{% if proc.dwell_time_min is not none %} with dwell time of {{ proc.dwell_time_min }} minutes{% endif %} and drained by gravity{% if proc.num_cycles is not none %} for {{ proc.num_cycles }} cycles{% endif %}.
+{% if proc.max_volume_l is not none %}Maximum planned volume: {{ proc.max_volume_l }} liters.{% endif %}{% if proc.total_volume_l is not none %} Total volume instilled: {{ proc.total_volume_l }} liters.{% endif %}
+{% if proc.notes %}Notes: {{ proc.notes }}.{% endif %}

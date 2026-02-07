@@ -1,0 +1,16 @@
+id: medical_thoracoscopy
+label: Medical Thoracoscopy (Diagnostic)
+category: pleural
+cpt_hints: []
+schema_id: medical_thoracoscopy_v1
+output_section: PROCEDURE_DETAILS
+template_path: medical_thoracoscopy.j2
+required_fields: []
+optional_fields:
+  - side
+  - findings
+  - interventions
+  - specimens
+  - notes
+proc_types:
+  - medical_thoracoscopy

@@ -1,0 +1,4 @@
+After localization of the culprit airway, a catheter was wedged into the segment and {{ proc.sealant_type }} was instilled{% if proc.volume_ml is not none %} in {{ proc.volume_ml }} mL{% endif %}{% if proc.dwell_minutes is not none %} and allowed to dwell for {{ proc.dwell_minutes }} minutes{% endif %}.
+Immediate reduction of air leak was{% if proc.leak_reduction %} {{ proc.leak_reduction }}{% else %} assessed{% endif %}.{% if proc.applications is not none %} Additional applications: {{ proc.applications }}.{% endif %}
+{% if proc.notes %}Notes: {{ proc.notes }}.{% endif %}
+The patient tolerated the procedure without immediate complications.

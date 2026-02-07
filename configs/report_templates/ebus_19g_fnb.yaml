@@ -1,0 +1,16 @@
+id: ebus_19g_fnb
+label: EBUS-Guided 19-Gauge Core FNB
+category: ebus
+cpt_hints: ["31652", "31653"]
+schema_id: ebus_19g_fnb_v1
+output_section: PROCEDURE_DETAILS
+template_path: ebus_19g_fnb.j2
+required_fields:
+  - station_name
+  - passes
+optional_fields:
+  - rose_result
+  - elastography_pattern
+  - findings
+proc_types:
+  - ebus_19g_fnb

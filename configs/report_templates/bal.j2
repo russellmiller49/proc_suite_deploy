@@ -1,0 +1,3 @@
+BAL: Bronchoalveolar lavage was performed{% if proc.lung_segment %} in the {{ proc.lung_segment }}{% endif %} with saline instilled and returned. Specimens were submitted.
+{% if proc.instilled_volume_cc is not none or proc.returned_volume_cc is not none %}A total of{% if proc.instilled_volume_cc is not none %} {{ proc.instilled_volume_cc }} mL{% else %} an unspecified volume{% endif %} of normal saline was instilled{% if proc.returned_volume_cc is not none %} with {{ proc.returned_volume_cc }} mL returned{% endif %}.{% endif %}
+{% if proc.tests %}Samples were sent for {{ proc.tests | join(', ') }}.{% endif %}

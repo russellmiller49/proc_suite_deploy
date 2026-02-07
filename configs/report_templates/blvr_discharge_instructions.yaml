@@ -1,0 +1,15 @@
+id: blvr_discharge_instructions
+label: BLVR Discharge Instructions
+category: blvr
+cpt_hints: []
+schema_id: blvr_discharge_instructions_v1
+output_section: INSTRUCTIONS
+template_path: blvr_discharge_instructions.j2
+required_fields: []
+optional_fields:
+  - activity_restrictions
+  - monitoring_plan
+  - follow_up_plan
+  - contact_info
+proc_types:
+  - blvr_discharge_instructions

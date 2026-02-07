@@ -1,0 +1,10 @@
+devices:
+  ion:
+    type: "robotic_platform"
+    manufacturer: "Intuitive"
+  monarch:
+    type: "robotic_platform"
+    manufacturer: "J&J"
+  ebus_scope:
+    type: "scope"
+    manufacturer: "Olympus"

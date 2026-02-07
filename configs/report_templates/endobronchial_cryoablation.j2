@@ -1,0 +1,3 @@
+Endobronchial obstruction at {{ proc.site }} was treated with a{% if proc.cryoprobe_size_mm %} {{ proc.cryoprobe_size_mm }} mm{% endif %} cryoprobe using{% if proc.freeze_seconds and proc.thaw_seconds %} {{ proc.freeze_seconds }} second freeze and {{ proc.thaw_seconds }} second thaw{% else %} freeze–thaw cycles{% endif %}{% if proc.cycles is not none %} for a total of {{ proc.cycles }} cycles{% endif %}{% if proc.pattern %} in a {{ proc.pattern }} pattern{% endif %}.
+Post-treatment patency improved{% if proc.post_patency %} to {{ proc.post_patency }}{% endif %} and hemostasis was adequate.
+{% if proc.notes %}Notes: {{ proc.notes }}.{% endif %}

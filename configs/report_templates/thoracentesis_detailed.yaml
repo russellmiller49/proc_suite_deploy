@@ -1,0 +1,68 @@
+id: thoracentesis_detailed
+label: Thoracentesis (Detailed)
+category: pleural
+cpt_hints: ["32555"]
+schema_id: thoracentesis_detailed_v1
+output_section: PROCEDURE_DETAILS
+template_path: thoracentesis_detailed.j2
+required_fields:
+  - side
+  - intercostal_space
+  - entry_location
+  - volume_removed_ml
+  - fluid_appearance
+optional_fields:
+  - ultrasound_feasible
+  - pleural_guidance
+  - anesthesia_lidocaine_ml
+  - drainage_device
+  - suction_cmh2o
+  - specimen_tests
+  - cxr_ordered
+  - sutured
+  - effusion_volume
+  - effusion_echogenicity
+  - loculations
+  - diaphragm_motion
+  - lung_sliding_pre
+  - lung_sliding_post
+  - lung_consolidation
+  - pleura_description
+proc_types:
+  - thoracentesis_detailed
+  - thoracentesis
+critical_fields:
+  - side
+  - volume_removed_ml
+  - fluid_appearance
+  - intercostal_space
+fields:
+  side:
+    required: true
+    critical: true
+  volume_removed_ml:
+    required: true
+    critical: true
+    validation:
+      warn_if:
+        op: lt
+        value: 50
+        message: Low drainage volume; confirm units
+  fluid_appearance:
+    required: true
+    critical: true
+  intercostal_space:
+    required: true
+    critical: true
+  entry_location:
+    required: true
+  pleural_guidance:
+    consistency_check:
+      target: volume_removed_ml
+      message: Document pleural guidance when drainage performed
+  cxr_ordered:
+    validation:
+      warn_if:
+        op: eq
+        value: false
+        message: Post-procedure CXR not ordered

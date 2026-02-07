@@ -1,0 +1,22 @@
+{
+  "id": "ip_or_main_oper_report_shell",
+  "label": "Interventional Pulmonology Operative Report",
+  "category": "shell",
+  "cpt_hints": [],
+  "schema_id": "ip_or_main_oper_report_shell_v1",
+  "output_section": "DOCUMENT",
+  "template_path": "ip_or_main_oper_report_shell.j2",
+  "required_fields": [],
+  "optional_fields": [
+    "indication_text",
+    "preop_diagnosis_text",
+    "postop_diagnosis_text",
+    "procedures_summary",
+    "estimated_blood_loss",
+    "complications_text",
+    "specimens_text",
+    "impression_plan",
+    "cpt_summary"
+  ],
+  "proc_types": []
+}

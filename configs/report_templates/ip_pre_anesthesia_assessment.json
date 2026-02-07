@@ -1,0 +1,20 @@
+{
+  "id": "ip_pre_anesthesia_assessment",
+  "label": "Pre-Anesthesia Assessment for Moderate Sedation",
+  "category": "shell",
+  "cpt_hints": [],
+  "schema_id": "pre_anesthesia_assessment_v1",
+  "output_section": "PRE_ANESTHESIA",
+  "template_path": "ip_pre_anesthesia_assessment.j2",
+  "required_fields": [
+    "asa_status",
+    "anesthesia_plan"
+  ],
+  "optional_fields": [
+    "anticoagulant_use",
+    "prophylactic_antibiotics",
+    "sedation_history",
+    "time_out_confirmed"
+  ],
+  "proc_types": []
+}

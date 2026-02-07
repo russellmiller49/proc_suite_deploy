@@ -1,0 +1,6 @@
+Following initial navigation, a CBCT spin was acquired{% if proc.ventilation_settings %} with the patient on {{ proc.ventilation_settings }}{% endif %}.
+Three-dimensional reconstruction and overlay were used to confirm catheter-to-target alignment; trajectory was adjusted{% if proc.adjustment_description %} by {{ proc.adjustment_description }}{% endif %} as indicated.
+A confirmatory CBCT spin showed {% if proc.final_position %}{{ proc.final_position }}{% else %}updated{% endif %} position. Sampling was then performed as detailed elsewhere.
+{% if proc.radiation_parameters %}Radiation parameters: {{ proc.radiation_parameters }}.{% endif %}
+{% if proc.notes %}Notes: {{ proc.notes }}.{% endif %}
+The patient tolerated the imaging adjunct without immediate complications.

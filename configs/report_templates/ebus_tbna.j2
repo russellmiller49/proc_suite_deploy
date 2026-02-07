@@ -1,0 +1,90 @@
+{# Golden-ish EBUS staging block (deterministic; no LLM). #}
+
+{% set _note = free_text_hint | default("", true) %}
+{% set _render_style = (render_style | default("", true)) | lower %}
+{% set _bundle_only = (_render_style == "builder") or ((_note | trim) == "") %}
+
+{% set _needle = (proc.needle_gauge or "") | trim %}
+{% set _needle_desc = _needle %}
+{% if _needle and (_needle | upper).endswith("G") and (_needle[:-1].isdigit()) %}
+{% set _needle_desc = _needle[:-1] ~ "-gauge" %}
+{% endif %}
+
+{% set _station_desc = {
+  "2R": "Right Upper Paratracheal",
+  "2L": "Left Upper Paratracheal",
+  "4R": "Right Lower Paratracheal",
+  "4L": "Left Lower Paratracheal",
+  "5": "Aortopulmonary Window",
+  "7": "Subcarinal",
+  "10R": "Right Hilar",
+  "10L": "Left Hilar",
+  "11R": "Right Interlobar",
+  "11L": "Left Interlobar"
+} %}
+
+{% if _bundle_only %}
+EBUS-TBNA Staging
+
+A systematic EBUS survey was performed.
+
+{% if proc.needle_gauge %}
+Needle: {{ proc.needle_gauge }} needle
+{% endif %}
+
+{% if proc.stations %}
+{% for st in proc.stations %}
+{% if st.station_name %}
+Station: {{ st.station_name | upper }}
+{% if st.passes %}
+Number of Passes: {{ st.passes }}
+{% endif %}
+{% if st.size_mm %}
+Size: {{ st.size_mm | fmt_unit("mm") }}
+{% endif %}
+{% if st.echo_features %}
+Echo Features: {{ st.echo_features }}
+{% endif %}
+{% if st.biopsy_tools %}
+Biopsy Tools: {{ st.biopsy_tools | join(", ") }}
+{% endif %}
+{% if st.rose_result %}
+ROSE Results: {{ st.rose_result }}
+{% endif %}
+
+{% endif %}
+{% endfor %}
+{% endif %}
+
+{% if proc.overall_rose_diagnosis %}Overall ROSE Diagnosis: {{ proc.overall_rose_diagnosis }}.{% endif %}
+{% else %}
+EBUS-TBNA Staging The endobronchial ultrasound-capable bronchoscope was introduced and a systematic mediastinal and hilar survey was performed.{% if _needle_desc %} The following lymph node stations were identified and sampled based on ultrasound criteria using a {{ _needle_desc }} needle:{% else %} The following lymph node stations were identified and sampled based on ultrasound criteria:{% endif %}
+
+{% if proc.stations %}
+{% for st in proc.stations %}
+{% if st.station_name %}
+{% set _st = (st.station_name | upper) %}
+{% set _loc = _station_desc.get(_st) %}
+{% set _rose = (st.rose_result or "") | trim %}
+{% if _rose and ("Adeno" in _rose) and ("Adenocarcinoma" not in _rose) %}
+{% set _rose = _rose | replace("Adeno", "Adenocarcinoma") %}
+{% endif %}
+
+{% if st.size_mm and not st.passes and _rose %}
+Station {{ _st }}{% if _loc %} ({{ _loc }}){% endif %}: The node measured {{ st.size_mm | fmt_unit("mm") }} by EBUS. 3-4 passes were performed.
+
+Result: {{ _rose }}.
+{% else %}
+Station {{ _st }}{% if _loc %} ({{ _loc }}){% endif %}:{% if st.size_mm %} The node measured {{ st.size_mm | fmt_unit("mm") }} by EBUS.{% endif %}{% if st.passes %} {{ st.passes }} passes were performed.{% endif %}
+{% if st.biopsy_tools %}Biopsy Tools: {{ st.biopsy_tools | join(", ") }}.{% endif %}
+{% if _rose %}ROSE Results: {{ _rose }}.{% endif %}
+{% endif %}
+
+{% endif %}
+{% endfor %}
+{% endif %}
+
+Prior to withdrawal of the bronchoscope, inspection demonstrated no evidence of bleeding. The patient tolerated the procedure well. There were no immediate complications.
+
+{% if proc.overall_rose_diagnosis %}ROSE Results (Nodes): {{ proc.overall_rose_diagnosis }}.{% endif %}
+{% endif %}

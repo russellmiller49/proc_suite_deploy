@@ -1,0 +1,112 @@
+{# ============================================================================
+   1. MINOR PROCEDURES
+   ============================================================================ #}
+
+{# --- Control of Minor Tracheostomy Bleeding (Electrocautery) - CPT 12001 --- #}
+{% macro minor_trach_bleeding(fio2=40) %}
+Minor bleeding was noted from the tracheostomy incision site. Hemostasis did not occur after holding pressure; electrocautery (cautery loop tip) was applied to the bleeding area with FiO₂ confirmed at {{ fio2 }}%. Bleeding ceased after Bovie application. The patient tolerated the intervention well without immediate complications.
+{% endmacro %}
+
+
+{# --- Chemical Cauterization of Granulation Tissue - CPT 17250 --- #}
+{% macro chemical_cauterization() %}
+Silver nitrate applicators (75% silver nitrate and 25% potassium nitrate) were moistened and applied directly to granulation tissue surrounding the stoma until the tissue was ablated. No complications were observed.
+{% endmacro %}
+
+
+{# ============================================================================
+   2. TRACHEOSTOMY / UPPER AIRWAY PROCEDURES
+   ============================================================================ #}
+
+{# --- Tracheostomy Tube Change - CPT 31502 --- #}
+{% macro trach_tube_change(old_trach_type, old_size, new_trach_type, new_size) %}
+Upper airway was suctioned and cleared. Endotracheal suctioning performed. The cuff was deflated and the existing tracheostomy tube removed. The stoma was widely patent without granulation tissue. A new tracheostomy tube was placed with obturator in place, the obturator was removed, the inner cannula inserted, and the cuff inflated. Position and patency were confirmed. The patient tolerated the procedure well.
+
+Percutaneous tracheostomy was changed from:
+{{ old_trach_type }} Trach ISO/ID size {{ old_size }}
+To
+{{ new_trach_type }} Trach ISO/ID size {{ new_size }}
+without issue.
+{% endmacro %}
+
+
+{# --- Tracheostomy, Planned (Percutaneous, Bronchoscopic Assistance) - CPT 31600 --- #}
+{% macro percutaneous_trach(trach_type, lidocaine_volume=3, ring_location='1st and 2nd') %}
+With bronchoscopic visualization, the anterior neck was prepped and draped in sterile fashion. Local anesthesia was infiltrated. A vertical skin incision was made just inferior to the cricoid. A needle was inserted into the trachea under direct bronchoscopic visualization and a guidewire advanced between the {{ ring_location }} tracheal rings. After sequential dilation, the tracheostomy tube was placed over a guiding catheter into the trachea, the obturator removed, and ventilation transferred to the tube. Position was confirmed bronchoscopically.
+
+DETAILED PROCEDURE:
+The bronchoscope was retracted into the ETT tube and the ET tube retracted into the subglottic space under direct visualization. The inferior border of the cricoid along with the proximal tracheal rings were visualized. Lidocaine 1% {{ lidocaine_volume }}ml was injected into the anterior neck. A 1 cm incision was made vertically with a #10 blade down through the subcutaneous tissue, just inferior to the cricoid cartilage. A syringe with 1% Lidocaine was then attached to the introducer needle and passed between the {{ ring_location }} tracheal rings and into the trachea under direct visualization. This needle was removed and the 18 gauge introducer catheter over needle was then advanced into this position under direct visualization. The inner needle was removed and the introducer catheter left in place. Next, a J-wire was passed through the catheter, also visualized with the bronchoscope. The site was then dilated using the 14Fr introducing dilator passed over the wire.
+
+The 14 Fr dilator was then removed from the guide wire and an 8 Fr guiding catheter placed over the guide wire until the safety ridge on the guiding catheter was at skin level. The Blue Rhino dilator was placed over the guiding catheter until the positioning mark was visualized via the bronchoscope. The Blue Rhino dilator was then removed leaving the guiding catheter and guide wire assembly in place, all under direct visualization bronchoscopically.
+
+Finally a {{ trach_type }} tracheostomy tube with appropriate dilator was introduced over the guiding catheter into the trachea under direct visualization. The dilator, guiding catheter, and J-wire were then removed and the tracheostomy tube left in place. This was confirmed to be in good position bronchoscopically. The Endotracheal tube was then removed and the ventilator connected to the tracheostomy tube. Surgicel was placed preemptively around the tracheostomy site to reduce bleeding. A Lyofoam drain sponge was placed under the tracheostomy tube prior to suturing into place.
+
+The patient tolerated the procedure well. There were no complications. The staff physician was present throughout the entire procedure.
+{% endmacro %}
+
+
+{# --- Percutaneous Tracheostomy Revision - CPT 31613 --- #}
+{% macro trach_revision(trach_type, lidocaine_volume=3) %}
+Patient was intubated with ET tube. The bronchoscope was introduced through the ET tube. The ET tube was retracted into the subglottic space under direct visualization. The inferior border of the cricoid along with the proximal tracheal rings were visualized.
+
+Next, the anterior neck was prepped and draped in the usual sterile fashion. Lidocaine 1% {{ lidocaine_volume }}ml was injected into the anterior neck. The prior tracheostomy tube was removed with minimal resistance. A J-wire was passed through the prior tracheostomy site, also visualized with the bronchoscope. The site was then dilated using the Blue Rhino dilator placed over the guiding catheter until the positioning mark was visualized via the bronchoscope. The Blue Rhino dilator was then removed leaving the guiding catheter and guide wire assembly in place, all under direct visualization bronchoscopically.
+
+Finally a {{ trach_type }} tracheostomy tube with appropriate dilator was introduced over the guiding catheter into the trachea under direct visualization. The dilator, guiding catheter, and J-wire were then removed and the tracheostomy tube left in place. This was confirmed to be in good position bronchoscopically. The ET tube was then removed and the ventilator connected to the tracheostomy tube. Surgicel was placed preemptively around the tracheostomy site to reduce bleeding. A Lyofoam drain sponge was placed under the tracheostomy tube prior to suturing into place.
+
+The patient tolerated the procedure well. There were no complications. The staff physician was present throughout the entire procedure.
+{% endmacro %}
+
+
+{# --- Tracheobronchoscopy via Tracheostomy - CPT 31615 --- #}
+{% macro tracheobronchoscopy_via_trach() %}
+Tracheobronchoscopy was performed with insertion of bronchoscope through the tracheostomy to perform airway clearance and confirm tracheostomy position.
+{% endmacro %}
+
+
+{# --- Tracheostomy Decannulation (Bedside) --- #}
+{% macro trach_decannulation(indication, trach_type, trach_size, observation_hours) %}
+Indication: {{ indication }}.
+
+The tracheostomy tube {{ trach_type }} {{ trach_size }} was removed at bedside after oropharyngeal and tracheal suctioning. The stoma was dressed with occlusive gauze and secured. Patient instructed to apply pressure over stoma during speech/cough. Observation for {{ observation_hours }} hours with pulse oximetry was uneventful.
+
+Follow-up: Dressing changes daily; return precautions reviewed.
+{% endmacro %}
+
+
+{# --- Tracheostomy Downsizing / Fenestrated Tube Placement - CPT 31502 --- #}
+{% macro trach_downsize(old_type, old_size, new_type, new_size, fenestrated=false, cuff_status='inflated', indication='weaning') %}
+The tracheostomy site was inspected and suctioned. The existing tube {{ old_type }} {{ old_size }} was removed. A {% if fenestrated %}fenestrated {% endif %}{{ new_type }} tracheostomy tube {{ new_size }} was inserted with obturator in place, obturator removed, inner cannula inserted, and cuff {{ cuff_status }}.
+
+Position and patency were confirmed.
+
+Indication: {{ indication }}.
+
+The patient tolerated the exchange without complications.
+{% endmacro %}
+
+
+{# --- Stoma or Tracheal Granulation — Mechanical Debridement --- #}
+{% macro granulation_debridement(site, debridement_tool, hemostasis_method, trach_exchanged=false) %}
+Granulation tissue at the {{ site }} site was identified. Mechanical debridement was performed using {{ debridement_tool }} until healthy mucosa was seen. Topical hemostasis with {{ hemostasis_method }} achieved.
+
+The tracheostomy tube was {% if trach_exchanged %}exchanged{% else %}not exchanged{% endif %}.
+
+The patient tolerated the procedure without immediate complications.
+{% endmacro %}
+
+
+{# ============================================================================
+   3. LARYNGOSCOPY AND AIRWAY INSPECTION
+   ============================================================================ #}
+
+{# --- Flexible Fiberoptic Laryngoscopy - CPT 31575 --- #}
+{% macro flexible_laryngoscopy(findings=None) %}
+Flexible laryngoscopy was performed by advancing the scope along the floor of the nose. Nasal cavity, nasopharynx, vallecula, supraglottis, glottis, post-cricoid region, and piriform sinuses were systematically evaluated without suspicious mass or mucosal lesions.
+
+{% if findings %}
+FINDINGS:
+{{ findings }}
+{% else %}
+Vocal folds adducted and abducted normally and symmetrically. No obvious abnormalities noted along the nasal chamber. Pharyngeal walls, tongue base, vallecula, epiglottis, supraglottis, glottis, post-cricoid, and piriform sinuses were evaluated and found to be without evidence of suspicious mass or mucosal lesions.
+{% endif %}
+{% endmacro %}

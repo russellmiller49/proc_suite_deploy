@@ -1,0 +1,9 @@
+Balloon occlusion was{% if proc.balloon_occlusion_performed is not none %} {% if proc.balloon_occlusion_performed %}performed{% else %}not performed{% endif %}{% else %} performed{% endif %} to confirm lobe selection.{% if proc.chartis_used is not none %} The Chartis system was{% if proc.chartis_used %} used{% else %} not used{% endif %} to assess for collateral ventilation{% if proc.collateral_ventilation_absent is not none %} (collateral ventilation {% if proc.collateral_ventilation_absent %}absent{% else %}present{% endif %}){% endif %}.{% endif %}
+Based on criteria, lobes were selected for endobronchial one-way valve therapy: {{ proc.lobes_treated | join(', ') }}.
+Valves deployed:
+{% for valve in proc.valves %}
+- {{ valve.valve_type }}{% if valve.valve_size %} ({{ valve.valve_size }}){% endif %} placed in {{ valve.lobe }}{% if valve.segment %} - {{ valve.segment }}{% endif %}
+{% endfor -%}
+{% if proc.air_leak_reduction %}Air leak reduction: {{ proc.air_leak_reduction }}.{% endif %}
+{% if proc.notes %}Notes: {{ proc.notes }}.{% endif %}
+Airflow occlusion and target-lobe atelectasis were confirmed. No immediate complications were observed.

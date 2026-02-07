@@ -1,0 +1,17 @@
+id: cryo_extraction_mucus
+label: Cryo-Extraction of Mucus Casts/Secretions
+category: cryo
+cpt_hints: []
+schema_id: cryo_extraction_mucus_v1
+output_section: PROCEDURE_DETAILS
+template_path: cryo_extraction_mucus.j2
+required_fields:
+  - airway_segment
+optional_fields:
+  - probe_size_mm
+  - freeze_seconds
+  - num_casts
+  - ventilation_result
+  - notes
+proc_types:
+  - cryo_extraction_mucus

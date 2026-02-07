@@ -1,0 +1,17 @@
+Chest Ultrasound Findings
+
+{% if proc.side %}Hemithorax: {{ proc.side | title }}{% endif %}
+
+Findings: Pleural effusion identified and site marked for procedure.
+
+Catheter Placement{% if proc.side %} The {{ proc.side | lower }} chest{% else %} The chest{% endif %} was prepped and draped in sterile fashion. Local anesthesia was infiltrated at the insertion site. A finder needle was used to enter the pleural space; pleural fluid was aspirated to confirm location. The needle was withdrawn and a guidewire was placed into the pleural space.
+
+Two 5 mm skin incisions were made at the guidewire entry site, as well as 5-6 cm away. The tunneling device was used to tunnel the catheter in the subcutaneous tissue. Serial dilation over the guidewire was then achieved. The introducer sheath was placed and the guidewire removed.
+
+{% if proc.drainage_device %}The {{ proc.drainage_device }}{% else %}The tunneled pleural catheter{% endif %} was then placed into the pleural space via the introducer sheath. The pleural entry site was closed with an absorbable suture. The catheter was secured to the skin using 2-0 nylon. Sterile dressings were applied.
+
+PROCEDURE FINDINGS
+
+{% if proc.fluid_removed_ml is not none %}{% set _liters = (proc.fluid_removed_ml / 1000) %}Fluid Removed: {{ proc.fluid_removed_ml }} mL ({{ "%.1f"|format(_liters) }} L){% endif %}
+
+{% set _appearance_raw = (proc.fluid_appearance or "") | lower %}{% if _appearance_raw %}Appearance: {% if "clear" in _appearance_raw and "yellow" in _appearance_raw %}Clear yellow (Serous){% else %}{{ proc.fluid_appearance | trim | title }}{% endif %}{% endif %}

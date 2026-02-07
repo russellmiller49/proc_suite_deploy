@@ -1,0 +1,9 @@
+{#
+  file: templates/addons/intra_procedural_cbct_cact_fusion_registration_correction_e_g_navilink_3d.jinja
+  Title: Intra‑Procedural CBCT/CACT Fusion & Registration Correction (e.g., NaviLink 3D)
+  Category: NAVIGATION / ROBOTIC / EBUS PROCEDURES
+  CPT: None
+#}
+{% macro render(ctx=None) -%}
+A CBCT/CACT spin was obtained intra‑procedurally. NaviLink 3D image fusion was performed to align intra‑op imaging with the pre‑procedure CT. Registration correction applied: [translation mm] / [rotation degrees] to the catheter path. The updated overlay demonstrated [on‑target/adjacent] trajectory; navigation plan was updated accordingly. A confirmatory spin verified corrected alignment. The patient tolerated the imaging without complications.
+{%- endmacro %}

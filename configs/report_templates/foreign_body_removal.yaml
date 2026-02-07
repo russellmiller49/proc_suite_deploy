@@ -1,0 +1,19 @@
+id: foreign_body_removal
+label: Foreign Body Removal (Flexible/Rigid)
+category: airway_therapy
+cpt_hints: []
+schema_id: foreign_body_removal_v1
+output_section: PROCEDURE_DETAILS
+template_path: foreign_body_removal.j2
+required_fields:
+  - airway_segment
+  - tools_used
+optional_fields:
+  - passes
+  - removed_intact
+  - mucosal_trauma
+  - bleeding
+  - hemostasis_method
+  - cxr_ordered
+proc_types:
+  - foreign_body_removal

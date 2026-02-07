@@ -1,0 +1,2 @@
+Ultrasound guided paracentesis was performed{% if proc.site_description %} at {{ proc.site_description }}{% endif %}. Ascitic fluid was aspirated with {{ proc.volume_removed_ml }} mL removed{% if proc.fluid_character %} of {{ proc.fluid_character }} fluid{% endif %}.
+{% if proc.tests %}Samples were sent for {{ proc.tests | join(', ') }}.{% endif %}

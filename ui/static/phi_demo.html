@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PHI Demo - Procedure Suite</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css">
+    <style>
+        body { background: #f8f9fa; }
+        .scrubbed-preview { white-space: pre-wrap; word-break: break-word; background: #fff; border: 1px solid #dee2e6; border-radius: .375rem; padding: 1rem; min-height: 180px; }
+        .entity-badge { margin: 0 4px 4px 0; }
+        .phi-safe { background: #fff3cd; border: 1px solid #ffeeba; padding: .75rem; border-radius: .375rem; }
+        .case-list { max-height: 260px; overflow-y: auto; }
+    </style>
+</head>
+<body>
+<div class="container py-4">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <div>
+            <a href="/ui/" class="text-decoration-none">&larr; Back to Workbench</a>
+            <h2 class="mb-0">PHI Demo (Synthetic Only)</h2>
+            <p class="text-muted mb-0 small">Preview scrubbing, vault PHI, review, and reidentify in a PHI-safe view.</p>
+        </div>
+        <span class="badge bg-secondary" id="phi-status">Ready</span>
+    </div>
+
+    <div class="row g-4">
+        <div class="col-lg-5">
+            <div class="card shadow-sm">
+                <div class="card-header bg-white">
+                    <strong>Procedure Note (synthetic)</strong>
+                </div>
+                <div class="card-body">
+                    <textarea id="note-input" class="form-control mb-3" rows="12" placeholder="Use synthetic data only, e.g., 'Patient X underwent bronchoscopy with BAL at RUL.'"></textarea>
+                    <div class="d-flex gap-2">
+                        <button id="btn-preview" class="btn btn-primary">Preview PHI</button>
+                        <button id="btn-submit" class="btn btn-success" disabled>Confirm &amp; Submit</button>
+                        <button id="btn-mark-reviewed" class="btn btn-warning" disabled>Approve &amp; Extract</button>
+                    </div>
+                    <div class="form-text mt-2">No logs/analytics capture this text. Only synthetic PHI is allowed.</div>
+                </div>
+            </div>
+
+            <div class="card shadow-sm mt-4">
+                <div class="card-header bg-white d-flex justify-content-between align-items-center">
+                    <strong>PHI Demo Cases (non-PHI metadata)</strong>
+                    <button id="btn-create-case" class="btn btn-sm btn-outline-primary">Create Demo Case</button>
+                </div>
+                <div class="card-body">
+                    <ul id="case-list" class="list-group case-list small"></ul>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-lg-7">
+            <div class="card shadow-sm mb-3">
+                <div class="card-header bg-white d-flex justify-content-between align-items-center">
+                    <strong>Scrub Preview</strong>
+                    <span id="preview-meta" class="text-muted small"></span>
+                </div>
+                <div class="card-body">
+                    <div id="scrubbed-preview" class="scrubbed-preview text-muted">Run Preview to see scrubbed text.</div>
+                    <div class="mt-3">
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <h6 class="mb-0">Entities</h6>
+                            <small class="text-muted">Click "x" to un-flag (remove) an entity before submitting.</small>
+                        </div>
+                        <div id="entity-list" class="d-flex flex-wrap"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card shadow-sm mb-3">
+                <div class="card-header bg-white d-flex justify-content-between align-items-center">
+                    <strong>Status &amp; Extraction</strong>
+                    <button id="btn-refresh-status" class="btn btn-sm btn-outline-secondary" disabled>Refresh</button>
+                </div>
+                <div class="card-body">
+                    <div class="mb-2">Procedure ID: <code id="procedure-id">-</code></div>
+                    <div class="mb-2">Status: <span class="badge bg-info text-dark" id="procedure-status">-</span></div>
+                    <div id="extraction-prompt" class="small text-muted">Submit and approve PHI review to run extraction.</div>
+                </div>
+            </div>
+
+            <div class="card shadow-sm mb-3" id="extraction-results-card" style="display: none;">
+                <div class="card-header bg-white d-flex justify-content-between align-items-center">
+                    <strong>Extraction Results</strong>
+                    <span id="extraction-time" class="text-muted small"></span>
+                </div>
+                <div class="card-body">
+                    <div class="mb-3">
+                        <h6 class="d-flex justify-content-between align-items-center">
+                            CPT Codes
+                            <span id="cpt-rvu" class="badge bg-secondary"></span>
+                        </h6>
+                        <div id="cpt-codes-list" class="d-flex flex-wrap gap-2"></div>
+                    </div>
+                    <div class="mb-3">
+                        <h6>Registry Fields</h6>
+                        <div id="registry-fields" class="small" style="max-height: 200px; overflow-y: auto;"></div>
+                    </div>
+                    <div id="audit-warnings-section" style="display: none;">
+                        <h6 class="text-warning">Audit Warnings</h6>
+                        <ul id="audit-warnings-list" class="small text-warning mb-0"></ul>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card shadow-sm">
+                <div class="card-header bg-white d-flex justify-content-between align-items-center">
+                    <strong>PHI-safe View (reidentify)</strong>
+                    <button id="btn-reidentify" class="btn btn-sm btn-warning" disabled>Reidentify</button>
+                </div>
+                <div class="card-body">
+                    <div class="phi-safe mb-2 small text-muted">This section may show PHI (still synthetic). Do not record or log.</div>
+                    <textarea id="reid-text" class="form-control" rows="6" readonly placeholder="Reidentified text will appear here."></textarea>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Entity Edit Modal -->
+<div class="modal fade" id="entityEditModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Edit Entity</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="edit-entity-index">
+        <div class="mb-3">
+          <label for="edit-entity-type" class="form-label">Entity Type</label>
+          <input type="text" class="form-control" id="edit-entity-type">
+        </div>
+        <div class="mb-3">
+          <label for="edit-entity-placeholder" class="form-label">Placeholder</label>
+          <input type="text" class="form-control" id="edit-entity-placeholder">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-primary" id="btn-save-entity">Save changes</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/dayjs@1/dayjs.min.js"></script>
+<script src="phi_demo.js"></script>
+</body>
+</html>

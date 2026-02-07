@@ -1,0 +1,19 @@
+id: bpf_valve_air_leak
+label: Endobronchial Valve Placement for Persistent Air Leak
+category: bpf
+cpt_hints: []
+schema_id: bpf_valve_air_leak_v1
+output_section: PROCEDURE_DETAILS
+template_path: bpf_valve_air_leak.j2
+required_fields:
+  - culprit_location
+optional_fields:
+  - etiology
+  - valve_type
+  - valve_size
+  - valves_placed
+  - leak_reduction
+  - additional_valves
+  - post_plan
+proc_types:
+  - bpf_valve_air_leak

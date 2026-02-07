@@ -1,0 +1,17 @@
+id: cbct_cact_fusion
+label: Intra-Procedural CBCT/CACT Fusion & Registration Correction
+category: navigation
+cpt_hints: []
+schema_id: cbct_cact_fusion_v1
+output_section: PROCEDURE_DETAILS
+template_path: cbct_cact_fusion.j2
+required_fields: []
+optional_fields:
+  - ventilation_settings
+  - translation_mm
+  - rotation_degrees
+  - overlay_result
+  - confirmatory_spin_result
+  - notes
+proc_types:
+  - cbct_cact_fusion

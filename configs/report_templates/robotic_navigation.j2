@@ -1,0 +1,13 @@
+{% set _platform = (proc.platform or "") | trim %}
+{% set _target_lobe = (proc.lesion_location or "") | trim %}
+{% set _target_seg = (survey.location if survey is defined and survey else "") | trim %}
+{% set _size = (sampling.lesion_size_mm if sampling is defined and sampling else none) %}
+{% set _render_style = (render_style | default("", true)) | lower %}
+
+{% if _render_style == "builder" %}
+Robotic navigation{% if _platform %} using the {{ _platform | title }} platform{% endif %}{% if _target_lobe %} to {{ _target_lobe }} target{% endif %}.
+{% else %}
+Robotic Navigational Bronchoscopy{% if _platform %} ({{ _platform }}){% endif %}{% if _target_lobe %} — {{ _target_lobe }} Nodule{% endif %} A CT-based navigation plan was loaded and registration was completed{% if proc.registration_error_mm is not none %} with a registration error of {{ proc.registration_error_mm }} mm{% endif %}.{% if _target_lobe or _target_seg %} The robotic catheter was advanced to the planned{% if _target_lobe %} {{ _target_lobe }}{% endif %} target{% if _size is not none %} ({{ _size | fmt_unit("mm") }}){% endif %}{% if _target_seg and _target_seg not in _target_lobe %} in the {{ _target_seg }} segment{% endif %}.{% endif %}
+
+{% if proc.notes %}{{ proc.notes }}{% endif %}
+{% endif %}

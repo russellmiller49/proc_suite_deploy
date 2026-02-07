@@ -1,0 +1,18 @@
+id: rigid_bronchoscopy
+label: Rigid Bronchoscopy (Diagnostic/Therapeutic)
+category: bronchoscopy
+cpt_hints: []
+schema_id: rigid_bronchoscopy_v1
+output_section: PROCEDURE_DETAILS
+template_path: rigid_bronchoscopy.j2
+required_fields:
+  - interventions
+optional_fields:
+  - size_or_model
+  - hf_jv
+  - flexible_scope_used
+  - estimated_blood_loss_ml
+  - specimens
+  - post_procedure_plan
+proc_types:
+  - rigid_bronchoscopy

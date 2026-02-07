@@ -1,0 +1,80 @@
+# EBUS Coding Configuration
+# This file defines valid EBUS stations and aliases for CPT code selection.
+# Per CPT guidelines:
+#   - 31652: 1-2 nodal stations sampled
+#   - 31653: 3+ nodal stations sampled
+
+settings:
+  # The trigger action in EBUS evidence logs
+  target_action: "Sampling"
+
+  # Valid EBUS Stations (Allow List)
+  # Only stations listed here will be counted toward the station threshold.
+  # Standard mediastinal and hilar lymph node stations per IASLC map.
+  valid_stations:
+    # Upper mediastinal
+    - "2R"
+    - "2L"
+    # Lower paratracheal
+    - "4R"
+    - "4L"
+    # Subcarinal
+    - "7"
+    # Hilar
+    - "10R"
+    - "10L"
+    # Interlobar
+    - "11R"
+    - "11L"
+    # Additional stations sometimes sampled
+    - "3A"
+    - "3P"
+    - "8"
+    - "9"
+
+  # Aliases: Map common text variations to canonical station codes
+  # Keys are normalized to uppercase before lookup.
+  aliases:
+    # Subcarinal variations
+    "SUBCARINAL": "7"
+    "STATION 7": "7"
+    "SUB-CARINAL": "7"
+    "SUBCARINA": "7"
+    # Upper paratracheal variations
+    "UPPER PARATRACHEAL RIGHT": "2R"
+    "UPPER PARATRACHEAL LEFT": "2L"
+    "RIGHT UPPER PARATRACHEAL": "2R"
+    "LEFT UPPER PARATRACHEAL": "2L"
+    # Lower paratracheal variations
+    "LOWER PARATRACHEAL RIGHT": "4R"
+    "LOWER PARATRACHEAL LEFT": "4L"
+    "RIGHT LOWER PARATRACHEAL": "4R"
+    "LEFT LOWER PARATRACHEAL": "4L"
+    # Hilar variations
+    "RIGHT HILAR": "10R"
+    "LEFT HILAR": "10L"
+    "R HILAR": "10R"
+    "L HILAR": "10L"
+    # Interlobar variations
+    "RIGHT INTERLOBAR": "11R"
+    "LEFT INTERLOBAR": "11L"
+    # Station prefix variations
+    "STATION 2R": "2R"
+    "STATION 2L": "2L"
+    "STATION 4R": "4R"
+    "STATION 4L": "4L"
+    "STATION 10R": "10R"
+    "STATION 10L": "10L"
+    "STATION 11R": "11R"
+    "STATION 11L": "11L"
+    # Pre-vascular and retrotracheal
+    "PREVASCULAR": "3A"
+    "PRE-VASCULAR": "3A"
+    "RETROTRACHEAL": "3P"
+    "STATION 3A": "3A"
+    "STATION 3P": "3P"
+    # Paraesophageal and pulmonary ligament
+    "PARAESOPHAGEAL": "8"
+    "STATION 8": "8"
+    "PULMONARY LIGAMENT": "9"
+    "STATION 9": "9"

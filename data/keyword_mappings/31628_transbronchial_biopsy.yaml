@@ -1,0 +1,20 @@
+code: "31628"
+description: "Transbronchial biopsy"
+positive_phrases:
+  - "transbronchial biopsy"
+  - "TBBx"
+  - "TBLB"
+  - "forceps biopsy"
+  - "transbronchial lung biopsy"
+  - "lung biopsy via bronchoscopy"
+negative_phrases:
+  - "planned"
+  - "scheduled"
+  - "will consider"
+  - "attempted biopsy"
+  - "biopsy aborted"
+  - "no biopsy obtained"
+  - "unable to biopsy"
+context_window_chars: 200
+version: "2025-01-01"
+notes: "Initial mapping for transbronchial biopsy verification"

@@ -1,0 +1,33 @@
+id: chest_tube
+label: Image-Guided Chest Tube
+category: pleural
+cpt_hints: ["32551"]
+schema_id: chest_tube_v1
+output_section: PROCEDURE_DETAILS
+template_path: chest_tube.j2
+required_fields:
+  - side
+  - intercostal_space
+  - entry_line
+optional_fields:
+  - guidance
+  - fluid_removed_ml
+  - fluid_appearance
+  - specimen_tests
+  - cxr_ordered
+  - effusion_volume
+  - effusion_echogenicity
+  - loculations
+  - diaphragm_motion
+  - lung_sliding_pre
+  - lung_sliding_post
+  - lung_consolidation
+  - pleura_description
+proc_types:
+  - chest_tube
+critical_fields:
+  - side
+  - intercostal_space
+  - entry_line
+  - fluid_removed_ml
+  - fluid_appearance

@@ -1,0 +1,25 @@
+id: ion_registration_partial
+label: Ion Registration — Partial
+category: robotic
+cpt_hints: []
+schema_id: ion_registration_partial_v1
+output_section: PROCEDURE_DETAILS
+template_path: ion_registration_partial.j2
+required_fields:
+  - indication
+optional_fields:
+  - scope_of_registration
+  - registered_landmarks
+  - registration_start_time
+  - registration_complete_time
+  - navigation_start_time
+  - time_to_primary_nodule_min
+  - navigation_time_min
+  - divergence_pct
+  - rebus_pattern
+  - tool_in_lesion_confirmation
+  - rose_adequacy
+  - diagnostic_yield_pct
+  - followup_plan
+proc_types:
+  - ion_registration_partial

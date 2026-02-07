@@ -1,0 +1,19 @@
+id: tunneled_pleural_catheter_remove
+label: Tunneled Pleural Catheter Removal
+category: pleural
+cpt_hints: ["32552"]
+schema_id: tunneled_pleural_catheter_remove_v1
+output_section: PROCEDURE_DETAILS
+template_path: tunneled_pleural_catheter_remove.j2
+required_fields:
+  - side
+optional_fields:
+  - insertion_date
+  - reason
+  - site_assessment
+  - anesthesia_lidocaine_ml
+  - sutured
+  - complications
+  - antibiotics
+proc_types:
+  - tunneled_pleural_catheter_remove

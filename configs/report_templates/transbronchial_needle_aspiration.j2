@@ -1,0 +1,2 @@
+TBNA: Transbronchial needle aspiration was performed.{% if proc.samples_collected is not none %} A total of {{ proc.samples_collected }} pass{% if proc.samples_collected != 1 %}es{% endif %} were obtained{% if proc.lung_segment %} from the {{ proc.lung_segment }} target{% endif %}.{% elif proc.lung_segment %} Sampling was obtained from the {{ proc.lung_segment }} target.{% endif %}
+{% if proc.tests %}Samples were sent for {{ proc.tests | join(', ') }}.{% endif %}

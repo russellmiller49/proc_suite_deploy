@@ -1,0 +1,295 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Procedure Suite - Reporter Builder</title>
+    <link rel="stylesheet" href="./styles.css" />
+    <style>
+      .builder-textarea {
+        width: 100%;
+        min-height: 200px;
+        resize: vertical;
+        border: 1px solid var(--border-color);
+        border-radius: var(--radius-md);
+        background: var(--bg-input);
+        color: var(--text-primary);
+        padding: 12px;
+        font-family: "SF Mono", Monaco, Consolas, monospace;
+        font-size: 13px;
+      }
+
+      .builder-textarea:focus {
+        outline: none;
+        border-color: var(--primary);
+      }
+
+      .builder-toolbar {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        align-items: center;
+        margin-top: 12px;
+      }
+
+      .builder-toolbar .spacer {
+        flex: 1;
+      }
+
+      .inline-check {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        color: var(--text-secondary);
+        font-size: 12px;
+      }
+
+      .summary-grid {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 10px;
+        margin-bottom: 14px;
+      }
+
+      .summary-card {
+        border: 1px solid var(--border-color);
+        border-radius: var(--radius-md);
+        background: var(--bg-input);
+        padding: 10px 12px;
+      }
+
+      .summary-label {
+        color: var(--text-secondary);
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+      }
+
+      .summary-value {
+        color: var(--text-primary);
+        font-size: 22px;
+        font-weight: 700;
+        line-height: 1.2;
+      }
+
+      .builder-section {
+        margin-top: 14px;
+      }
+
+      .builder-section h4 {
+        margin: 0 0 8px;
+        font-size: 14px;
+      }
+
+      .builder-list {
+        margin: 0;
+        padding-left: 18px;
+        color: var(--text-secondary);
+      }
+
+      .builder-list li {
+        margin-bottom: 4px;
+      }
+
+      .question-group {
+        margin-bottom: 14px;
+        border: 1px solid var(--border-color);
+        border-radius: var(--radius-md);
+        overflow: hidden;
+      }
+
+      .question-group-header {
+        background: var(--bg-input);
+        border-bottom: 1px solid var(--border-color);
+        color: var(--text-primary);
+        font-weight: 600;
+        font-size: 13px;
+        padding: 8px 10px;
+      }
+
+      .question-row {
+        padding: 10px;
+        border-bottom: 1px solid var(--border-color);
+      }
+
+      .question-row:last-child {
+        border-bottom: none;
+      }
+
+      .question-label {
+        color: var(--text-primary);
+        display: block;
+        margin-bottom: 6px;
+        font-weight: 600;
+        font-size: 13px;
+      }
+
+      .question-label .req {
+        color: var(--danger);
+      }
+
+      .question-meta {
+        color: var(--text-muted);
+        font-size: 11px;
+        margin-left: 6px;
+      }
+
+      .question-help {
+        color: var(--text-secondary);
+        font-size: 12px;
+        margin-top: 6px;
+      }
+
+      .question-input,
+      .question-select,
+      .question-textarea {
+        width: 100%;
+        border: 1px solid var(--border-color);
+        border-radius: var(--radius-md);
+        background: var(--bg-input);
+        color: var(--text-primary);
+        padding: 8px 10px;
+        font-size: 13px;
+        font-family: inherit;
+      }
+
+      .question-select[multiple] {
+        min-height: 90px;
+      }
+
+      .question-input:focus,
+      .question-select:focus,
+      .question-textarea:focus {
+        outline: none;
+        border-color: var(--primary);
+      }
+
+      .builder-codeblock {
+        background: var(--bg-input);
+        border: 1px solid var(--border-color);
+        border-radius: var(--radius-md);
+        padding: 12px;
+        margin: 0;
+        white-space: pre-wrap;
+        overflow-x: auto;
+        font-size: 12px;
+      }
+
+      .empty-state {
+        color: var(--text-secondary);
+        font-size: 13px;
+        padding: 10px;
+        border: 1px dashed var(--border-color);
+        border-radius: var(--radius-md);
+        background: var(--bg-input);
+      }
+
+      @media (max-width: 900px) {
+        .summary-grid {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+      }
+    </style>
+    <script type="module" src="./reporter_builder.js"></script>
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="title">
+        <div class="h1">Procedure Suite - Reporter Builder</div>
+        <div class="subtle">Text to bundle, questions, JSON Patch, and re-render loop.</div>
+      </div>
+      <div class="topbar-links">
+        <a class="topbar-link" href="./">Dashboard</a>
+        <a class="topbar-link" href="./workflow.html">Workflow</a>
+      </div>
+      <div class="status">
+        <span id="statusText">Ready</span>
+      </div>
+    </header>
+
+    <main class="page-container">
+      <section class="page-hero">
+        <h2>Interactive Reporter Builder</h2>
+        <p>
+          Enter procedure details in natural language. The server seeds a structured bundle,
+          validates missing fields, generates follow-up questions, and accepts RFC6902 patch ops
+          until the report is complete.
+        </p>
+      </section>
+
+      <section class="content-card">
+        <h3>1. Seed From Text</h3>
+        <label class="subtle" for="seedText">
+          Procedure details (use scrubbed text when possible)
+        </label>
+        <textarea
+          id="seedText"
+          class="builder-textarea"
+          placeholder="Example: EBUS biopsied station 7"
+        >EBUS biopsied station 7</textarea>
+        <div class="builder-toolbar">
+          <button id="seedBtn" class="primary">Seed Bundle</button>
+          <button id="refreshBtn" class="secondary" disabled>Refresh Questions</button>
+          <button id="clearBtn" class="secondary">Clear</button>
+          <button id="transferToDashboardBtn" class="success" disabled>Send to Dashboard</button>
+          <div class="spacer"></div>
+          <label class="inline-check">
+            <input id="strictToggle" type="checkbox" />
+            Strict mode
+          </label>
+        </div>
+        <div id="actionBanner" class="status-banner hidden"></div>
+      </section>
+
+      <section class="content-card">
+        <h3>2. Prompt Loop</h3>
+        <div class="summary-grid">
+          <div class="summary-card">
+            <div class="summary-label">Questions</div>
+            <div class="summary-value" id="summaryQuestions">0</div>
+          </div>
+          <div class="summary-card">
+            <div class="summary-label">Issues</div>
+            <div class="summary-value" id="summaryIssues">0</div>
+          </div>
+          <div class="summary-card">
+            <div class="summary-label">Warnings</div>
+            <div class="summary-value" id="summaryWarnings">0</div>
+          </div>
+          <div class="summary-card">
+            <div class="summary-label">Suggestions</div>
+            <div class="summary-value" id="summarySuggestions">0</div>
+          </div>
+        </div>
+
+        <div class="builder-section">
+          <h4>Rendered Draft</h4>
+          <pre id="markdownOutput" class="builder-codeblock">No rendered markdown yet.</pre>
+        </div>
+
+        <div class="builder-section">
+          <h4>Questions</h4>
+          <div id="questionsHost" class="empty-state">No bundle loaded yet.</div>
+          <div class="builder-toolbar">
+            <button id="applyPatchBtn" class="primary" disabled>Apply Answers &amp; Re-render</button>
+          </div>
+        </div>
+
+        <div class="builder-section">
+          <h4>Validation Details</h4>
+          <div id="validationHost" class="empty-state">No validation output yet.</div>
+        </div>
+
+        <details class="builder-section">
+          <summary class="subtle">Bundle JSON</summary>
+          <pre id="bundleJson" class="builder-codeblock">No bundle yet.</pre>
+        </details>
+
+        <details class="builder-section">
+          <summary class="subtle">Last JSON Patch</summary>
+          <pre id="patchJson" class="builder-codeblock">[]</pre>
+        </details>
+      </section>
+    </main>
+  </body>
+</html>

@@ -1,0 +1,21 @@
+{
+  "id": "ip_general_bronchoscopy_shell",
+  "label": "General Bronchoscopy Shell",
+  "category": "bronchoscopy",
+  "cpt_hints": ["31622", "31624", "31625", "31628"],
+  "schema_id": "bronchoscopy_shell_v1",
+  "output_section": "PROCEDURE_DETAILS",
+  "template_path": "ip_general_bronchoscopy_shell.j2",
+  "required_fields": [],
+  "optional_fields": [
+    "sedation_type",
+    "airway_route",
+    "airway_overview",
+    "right_lung_overview",
+    "left_lung_overview",
+    "mucosa_overview",
+    "secretions_overview",
+    "summary"
+  ],
+  "proc_types": ["bronchoscopy_core"]
+}

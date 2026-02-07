@@ -1,0 +1,11 @@
+suppliers:
+  - payer: "VA"
+    replaces:
+      - cpt: "31652"
+        with: "31653"
+        reason: "Regional policy counts first station as add-on"
+  - payer: "Default"
+    modifiers:
+      - cpt: "31631"
+        add: ["Q0"]
+        reason: "Clinical trial tracking"

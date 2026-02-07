@@ -1,0 +1,12 @@
+{
+  "name": "phi-redactor-test",
+  "version": "1.0.0",
+  "description": "Test PHI redaction using DistilBERT ONNX model",
+  "type": "module",
+  "scripts": {
+    "test": "node test_phi_redaction.mjs"
+  },
+  "dependencies": {
+    "@huggingface/transformers": "^3.0.0"
+  }
+}

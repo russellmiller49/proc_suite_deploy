@@ -1,0 +1,9 @@
+{#
+  file: templates/addons/photodynamic_therapy_pdt_light_application.jinja
+  Title: Photodynamic Therapy (PDT) — Light Application  [CPT: verify]
+  Category: CORE DIAGNOSTIC / THERAPEUTIC BRONCHOSCOPY PROCEDURES
+  CPT: None
+#}
+{% macro render(ctx=None) -%}
+Photosensitizer [agent/dose] administered on [date/time]. Under bronchoscopic visualization, a diffuser fiber was positioned across the [lesion site]. Laser activation at [wavelength nm] delivered [fluence J/cm²] for [time] minutes. Airway was inspected for immediate edema or bleeding; none noted. Standard light‑precaution instructions were reviewed. The patient tolerated the procedure well.
+{%- endmacro %}

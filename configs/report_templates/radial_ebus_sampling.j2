@@ -1,0 +1,20 @@
+{% set _hint = (free_text_hint | default("")) %}
+{% set _hint_upper = _hint | upper %}
+{% set _view = (proc.ultrasound_pattern or "") | lower %}
+{% set _lobe = (nav.lesion_location if nav is defined and nav else "") | trim %}
+{% set _target = (_lobe or (survey.location if survey is defined and survey else "") or "") | trim %}
+
+{% if "VERIF:" in _hint_upper %}
+Verification and Target Confirmation
+{% if _view %}Radial EBUS: A {{ _view }} ultrasound pattern was obtained to confirm lesion location.{% endif %}
+{% if "FLUORO" in _hint_upper %}Fluoroscopy: Fluoroscopic imaging was used to confirm catheter-to-target alignment.{% endif %}
+{% elif "CBCT" in _hint_upper or "CONE BEAM" in _hint_upper %}
+Localization: Radial EBUS was performed.
+{% if _view %}Target Confirmation: rEBUS demonstrated an {{ _view }} view of the lesion.{% endif %}
+Cone-beam CT imaging: Tool-in-lesion was confirmed by CBCT.
+{% else %}
+Localization: Radial EBUS was performed.
+{% if _view %}Target Confirmation: rEBUS demonstrated an {{ _view }} view of the lesion.{% endif %}
+{% endif %}
+
+{% if _target %}{{ _target }} Target Sampling{% else %}Target Sampling{% endif %}

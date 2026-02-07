@@ -1,0 +1,11 @@
+segments:
+  ruls: {lobe: RUL, station: 3}
+  rml: {lobe: RML, station: 7}
+  rll: {lobe: RLL, station: 9}
+  luls: {lobe: LUL, station: 5}
+  lll: {lobe: LLL, station: 9}
+stations:
+  "2R": {name: Right paratracheal}
+  "4R": {name: Right lower paratracheal}
+  "4L": {name: Left lower paratracheal}
+  "7": {name: Subcarinal}

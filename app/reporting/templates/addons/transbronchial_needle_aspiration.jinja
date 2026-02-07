@@ -1,0 +1,9 @@
+{#
+  file: templates/addons/transbronchial_needle_aspiration.jinja
+  Title: Transbronchial Needle Aspiration (CPT 31629/31633)
+  Category: CORE DIAGNOSTIC / THERAPEUTIC BRONCHOSCOPY PROCEDURES
+  CPT: 31629, 31633
+#}
+{% macro render(ctx=None) -%}
+Transbronchial needle aspiration was performed targeting designated lymph nodes. Samples collected. Performed with [Needle Tools] at [Lung Segment]. Total [number] samples were collected. Samples sent for [Testing type].
+{%- endmacro %}

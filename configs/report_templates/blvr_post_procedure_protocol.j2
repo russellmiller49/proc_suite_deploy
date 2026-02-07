@@ -1,0 +1,24 @@
+Post-procedure COPD Endobronchial Valve Management Protocol
+
+25%-40% of patients are expected to develop a pneumothorax, most within 3-4 days; this is an expectation, not an adverse event. A pneumothorax kit will be at the patient's bedside at all times.
+If there are new symptoms or concerns: order a stat chest x-ray and call the Interventional Pulmonary attending and MICU team while waiting for the CXR. Clinical judgment to place a chest tube may be needed in urgent/emergent situations.
+
+Continuous pulse oximetry and telemetry.
+Monitor for persistent desaturation ≥4% of baseline, desaturation <90%, tachypnea, arrhythmias, unexplained tachycardia, or unexplained hypotension.
+
+Day-to-Day Management:
+Day 1 (Day of procedure):
+{% if proc.cxr_schedule %}Chest x-ray schedule: {{ proc.cxr_schedule | join('; ') }}{% else %}Chest x-ray immediately post-procedure and ~4 hours post-procedure{% endif %}; bedrest; resume home COPD inhalers/medications; {% if proc.steroids_plan %}{{ proc.steroids_plan }}{% else %}steroids and antibiotics given in OR (Day 1/3){% endif %}.
+
+Day 2:
+Chest x-ray at 6:00 am; ambulate in the room with physical therapy; continue home COPD inhalers/medications; {% if proc.steroids_plan %}{{ proc.steroids_plan }}{% else %}steroids and antibiotics PO (Day 2/3){% endif %}.
+
+Day 3:
+Daily chest x-ray at 6:00 am; ambulate outside the room; continue home COPD inhalers/medications; {% if proc.steroids_plan %}{{ proc.steroids_plan }}{% else %}steroids and antibiotics PO (Day 3/3){% endif %}{% if proc.antibiotics_plan %}; antibiotics plan: {{ proc.antibiotics_plan }}{% endif %}.
+
+Day 4:
+Daily chest x-ray at 6:00 am; consider discharge; discuss with interventional pulmonary before discharge; set up clinical follow-up with IP in two weeks; continue all COPD medications and follow up with primary COPD doctor within 4 weeks.
+
+{% if proc.monitoring_plan %}Monitoring plan: {{ proc.monitoring_plan }}.{% endif %}
+{% if proc.ambulation_plan %}Ambulation plan: {{ proc.ambulation_plan }}.{% endif %}
+{% if proc.discharge_plan %}Discharge plan: {{ proc.discharge_plan }}.{% endif %}

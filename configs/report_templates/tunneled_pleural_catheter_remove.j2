@@ -1,0 +1,8 @@
+The tunneled pleural catheter{% if proc.insertion_date %} placed on {{ proc.insertion_date }}{% endif %} on the {{ proc.side }} side was dissected free and removed.
+{% if proc.reason %}Reason for removal: {{ proc.reason }}.{% endif %}
+{% if proc.site_assessment %}Catheter site: {{ proc.site_assessment }}.{% endif %}
+{% if proc.anesthesia_lidocaine_ml is not none %}Local anesthesia with {{ proc.anesthesia_lidocaine_ml }} mL of 1% lidocaine was used.{% endif %}
+{% if proc.sutured is not none %}Site sutured: {% if proc.sutured %}Yes{% else %}No{% endif %}.{% endif %}
+{% if proc.antibiotics %}Antibiotics: {{ proc.antibiotics }}.{% endif %}
+{% if proc.complications %}Complications: {{ proc.complications }}.{% else %}No immediate complications.{% endif %}
+The site was dressed with a clean dry dressing.

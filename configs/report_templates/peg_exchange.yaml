@@ -1,0 +1,14 @@
+id: peg_exchange
+label: PEG Removal/Exchange
+category: other_intervention
+cpt_hints: []
+schema_id: peg_exchange_v1
+output_section: PROCEDURE_DETAILS
+template_path: peg_exchange.j2
+required_fields: []
+optional_fields:
+  - new_tube_size_fr
+  - bumper_depth_cm
+  - complications
+proc_types:
+  - peg_exchange

@@ -1,0 +1,18 @@
+id: pdt_light
+label: Photodynamic Therapy — Light Application
+category: airway_therapy
+cpt_hints: []
+schema_id: pdt_light_v1
+output_section: PROCEDURE_DETAILS
+template_path: pdt_light.j2
+required_fields:
+  - agent
+  - lesion_site
+optional_fields:
+  - administration_time
+  - wavelength_nm
+  - fluence_j_cm2
+  - duration_minutes
+  - notes
+proc_types:
+  - pdt_light

@@ -1,0 +1,4 @@
+Endobronchial biopsies were obtained at the {{ proc.airway_segment }} with a total of {{ proc.samples_collected }} samples collected.
+Hemostasis{% if proc.hemostasis_method %} using {{ proc.hemostasis_method }}{% endif %} was achieved and tissue was submitted for pathology.
+{% if proc.lesion_removed %}The lesion was successfully removed.{% endif %}
+{% if proc.tests %}Samples were sent for {{ proc.tests | join(', ') }}.{% endif %}

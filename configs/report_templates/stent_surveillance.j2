@@ -1,0 +1,4 @@
+Surveillance bronchoscopy was performed for previously placed {{ proc.stent_type }} stent at {{ proc.location }}.
+The stent was inspected{% if proc.findings %} for {{ proc.findings | join(', ') }}{% endif %}.{% if proc.interventions %} Interventions performed: {{ proc.interventions | join(', ') }}.{% endif %}
+{% if proc.final_patency_pct is not none %}Final patency estimated at {{ proc.final_patency_pct }}%.{% endif %}
+No immediate complications.

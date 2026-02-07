@@ -1,0 +1,103 @@
+# EBUS-TBNA Synoptic Report
+
+{% set overview_lines = [] %}
+{% if core and core.type %}{% set _ = overview_lines.append("- Procedure Type: " ~ core.type) %}{% endif %}
+{% if core and core.laterality %}{% set _ = overview_lines.append("- Laterality: " ~ core.laterality) %}{% endif %}
+{% if core and core.stations_sampled %}{% set _ = overview_lines.append("- Stations Sampled: " ~ (core.stations_sampled | join(", "))) %}{% endif %}
+{% if targets and targets[0].guidance %}{% set _ = overview_lines.append("- Guidance: " ~ targets[0].guidance) %}{% endif %}
+{% if report and report.nlp and report.nlp.paragraph_hashes %}{% set _ = overview_lines.append("- Narrative Hashes: " ~ (report.nlp.paragraph_hashes | length) ~ " segments") %}{% endif %}
+
+{% if overview_lines %}
+## Procedure Overview
+{{ overview_lines | join("\n") }}
+{% endif %}
+
+{% if targets %}
+{% set any_rows = false %}
+{% for target in targets %}
+{% if target.segment or target.lobe or target.guidance or target.specimens %}
+{% if not any_rows %}
+{% set any_rows = true %}
+## Targets & Specimens
+| Target | Guidance | Specimens |
+|--------|----------|-----------|
+{% endif %}
+| {{ target.segment or target.lobe or "" }} | {{ target.guidance or "" }} | {{ summarize_specimens(target.specimens) if target.specimens else "" }} |
+{% endif %}
+{% endfor %}
+{% endif %}
+
+{% if core and core.devices %}
+## Devices
+| Device | Value |
+|--------|-------|
+{% for key, value in core.devices.items() %}
+{% if value %}
+| {{ key | replace('_', ' ') | title }} | {{ value }} |
+{% endif %}
+{% endfor %}
+{% endif %}
+
+{% set dose = report.intraop.get("dose") if report and report.intraop else None %}
+{% if dose is mapping %}
+## Dose
+| Parameter | Value |
+|-----------|-------|
+{% for key, value in dose.items() %}
+{% if value %}
+| {{ key | replace('_', ' ') | title }} | {{ value }} |
+{% endif %}
+{% endfor %}
+{% elif dose %}
+## Dose
+{{ dose }}
+{% endif %}
+
+{% set comps = report.postop.get("complications") if report and report.postop else None %}
+{% if comps is mapping %}
+## Complications
+| Event | Status |
+|-------|--------|
+{% for key, value in comps.items() %}
+{% if value %}
+| {{ key | replace('_', ' ') | title }} | {{ value }} |
+{% endif %}
+{% endfor %}
+{% elif comps %}
+## Complications
+{{ comps }}
+{% endif %}
+
+{% set plan = report.postop.get("plan") if report and report.postop else None %}
+{% if plan is mapping %}
+## Plan
+| Action | Detail |
+|--------|--------|
+{% for key, value in plan.items() %}
+{% if value %}
+| {{ key | replace('_', ' ') | title }} | {{ value }} |
+{% endif %}
+{% endfor %}
+{% elif plan %}
+## Plan
+{{ plan }}
+{% endif %}
+
+{% if report and report.addons %}
+## Additional Procedures / Events
+{% for slug in report.addons %}
+{% set addon_text = get_addon_body(slug) %}
+{% if addon_text %}
+- {{ addon_text }}
+{% endif %}
+{% endfor %}
+{% endif %}
+
+{% if report and report.acknowledged_omissions %}
+## Missing Details (not present in original dictation)
+{% for key, items in report.acknowledged_omissions.items() %}
+{% if items %}
+- **{{ key }}**: {{ items | join('; ') }}
+{% endif %}
+{% endfor %}
+{% endif %}

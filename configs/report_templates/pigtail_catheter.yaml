@@ -1,0 +1,20 @@
+id: pigtail_catheter
+label: Pigtail Catheter Placement
+category: pleural
+cpt_hints: ["32557"]
+schema_id: pigtail_catheter_v1
+output_section: PROCEDURE_DETAILS
+template_path: pigtail_catheter.j2
+required_fields:
+  - side
+  - intercostal_space
+  - entry_location
+  - size_fr
+optional_fields:
+  - anesthesia_lidocaine_ml
+  - fluid_removed_ml
+  - fluid_appearance
+  - specimen_tests
+  - cxr_ordered
+proc_types:
+  - pigtail_catheter

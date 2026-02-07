@@ -1,0 +1,4 @@
+A cryoprobe{% if proc.probe_size_mm %} ({{ proc.probe_size_mm }} mm){% endif %} was applied to adherent secretions at {{ proc.airway_segment }} for{% if proc.freeze_seconds %} {{ proc.freeze_seconds }}{% else %} several{% endif %} seconds until adherence was achieved; the probe and bronchoscope were withdrawn en bloc.
+{% if proc.num_casts is not none %}This was repeated for {{ proc.num_casts }} casts/occlusions.{% endif %} The airway was cleared{% if proc.ventilation_result %} with {{ proc.ventilation_result }}{% endif %}.
+{% if proc.notes %}Notes: {{ proc.notes }}.{% endif %}
+No complications occurred.

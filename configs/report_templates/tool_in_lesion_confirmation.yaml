@@ -1,0 +1,19 @@
+id: tool_in_lesion_confirmation
+label: Tool-in-Lesion Confirmation
+category: navigation
+cpt_hints: []
+schema_id: tool_in_lesion_confirmation_v1
+output_section: PROCEDURE_DETAILS
+template_path: tool_in_lesion_confirmation.j2
+required_fields:
+  - confirmation_method
+optional_fields:
+  - margin_mm
+  - rebus_pattern
+  - lesion_size_mm
+  - fluoro_angle_deg
+  - projection
+  - screenshots_saved
+  - notes
+proc_types:
+  - tool_in_lesion_confirmation

@@ -1,0 +1,16 @@
+id: dlt_placement
+label: Bronchoscopy-Guided Double-Lumen Tube Placement/Confirmation
+category: airway_therapy
+cpt_hints: []
+schema_id: dlt_placement_v1
+output_section: PROCEDURE_DETAILS
+template_path: dlt_placement.j2
+required_fields:
+  - side
+  - size_fr
+optional_fields:
+  - alignment
+  - adjustments
+  - tolerated
+proc_types:
+  - dlt_placement

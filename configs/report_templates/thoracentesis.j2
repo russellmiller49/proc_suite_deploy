@@ -1,0 +1,10 @@
+Thoracentesis was performed on the {{ proc.side }} hemithorax under ultrasound guidance.
+Ultrasound identified a {{ proc.effusion_size }} pleural effusion with
+{{ proc.effusion_echogenicity }} echogenicity{% if proc.loculations %} and {{ proc.loculations }} loculations{% endif %}.
+Following sterile prep and local anesthesia{% if proc.anesthesia_lidocaine_1_pct_ml is not none %} with {{ proc.anesthesia_lidocaine_1_pct_ml }} mL of 1% lidocaine{% endif %},
+a thoracentesis kit was used to access the pleural space at the
+{{ proc.intercostal_space }} intercostal space along the {{ proc.entry_location }} line.
+A total of {{ proc.volume_removed_ml }} mL of {{ proc.fluid_appearance }} fluid was removed.
+{% if proc.specimen_tests %}Samples were sent for {{ proc.specimen_tests | join(', ') }}.{% endif %}
+{% if proc.cxr_ordered %}A post-procedure chest x-ray was ordered.{% endif %}
+The patient tolerated the procedure well without immediate complications.

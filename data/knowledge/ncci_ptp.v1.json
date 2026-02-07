@@ -1,0 +1,53 @@
+{
+  "source_year": 2026,
+  "pairs": [
+    {
+      "column1": "31653",
+      "column2": "31645",
+      "modifier_indicator": "0",
+      "modifier_allowed": false
+    },
+    {
+      "column1": "31653",
+      "column2": "31646",
+      "modifier_indicator": "0",
+      "modifier_allowed": false
+    },
+    {
+      "column1": "31652",
+      "column2": "31645",
+      "modifier_indicator": "0",
+      "modifier_allowed": false
+    },
+    {
+      "column1": "31652",
+      "column2": "31646",
+      "modifier_indicator": "0",
+      "modifier_allowed": false
+    },
+    {
+      "column1": "31628",
+      "column2": "31629",
+      "modifier_indicator": "0",
+      "modifier_allowed": false
+    },
+    {
+      "column1": "31623",
+      "column2": "31622",
+      "modifier_indicator": "0",
+      "modifier_allowed": false
+    },
+    {
+      "column1": "31624",
+      "column2": "31622",
+      "modifier_indicator": "0",
+      "modifier_allowed": false
+    },
+    {
+      "column1": "32555",
+      "column2": "32554",
+      "modifier_indicator": "0",
+      "modifier_allowed": false
+    }
+  ]
+}

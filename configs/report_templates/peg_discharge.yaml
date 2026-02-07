@@ -1,0 +1,15 @@
+id: peg_discharge
+label: PEG Discharge
+category: instructions
+cpt_hints: []
+schema_id: peg_discharge_v1
+output_section: DISCHARGE
+template_path: peg_discharge.j2
+required_fields: []
+optional_fields:
+  - feeding_plan
+  - medication_plan
+  - wound_care
+  - contact_info
+proc_types:
+  - peg_discharge

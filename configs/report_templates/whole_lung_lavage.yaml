@@ -1,0 +1,20 @@
+id: whole_lung_lavage
+label: Whole Lung Lavage
+category: other_intervention
+cpt_hints: ["32997"]
+schema_id: whole_lung_lavage_v1
+output_section: PROCEDURE_DETAILS
+template_path: whole_lung_lavage.j2
+required_fields:
+  - side
+optional_fields:
+  - dlt_size_fr
+  - position
+  - total_volume_l
+  - max_volume_l
+  - aliquot_volume_l
+  - dwell_time_min
+  - num_cycles
+  - notes
+proc_types:
+  - whole_lung_lavage

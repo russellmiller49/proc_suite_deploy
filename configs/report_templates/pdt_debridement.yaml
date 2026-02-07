@@ -1,0 +1,17 @@
+id: pdt_debridement
+label: Photodynamic Therapy — Debridement
+category: airway_therapy
+cpt_hints: []
+schema_id: pdt_debridement_v1
+output_section: PROCEDURE_DETAILS
+template_path: pdt_debridement.j2
+required_fields:
+  - site
+optional_fields:
+  - debridement_tool
+  - pre_patency_pct
+  - post_patency_pct
+  - bleeding
+  - notes
+proc_types:
+  - pdt_debridement

@@ -1,0 +1,17 @@
+{% set _has_us_context = proc.pleural_guidance or (proc.ultrasound_feasible is not none) or proc.effusion_volume or proc.effusion_echogenicity or proc.loculations or proc.diaphragm_motion or proc.lung_sliding_pre or proc.lung_sliding_post or proc.lung_consolidation or proc.pleura_description %}
+{% if _has_us_context %}{% if proc.pleural_guidance %}{{ proc.pleural_guidance }} {% endif %}Ultrasound identified a pleural effusion on the {{ proc.side }} side.{% if proc.ultrasound_feasible is not none %} Thoracentesis was {% if proc.ultrasound_feasible %}deemed feasible{% else %}not feasible{% endif %} based on ultrasound evaluation.{% endif %}{% else %}Thoracentesis was performed on the {{ proc.side }} side.{% endif %}
+Following sterile prep and local anesthesia{% if proc.anesthesia_lidocaine_ml is not none %} with {{ proc.anesthesia_lidocaine_ml }} mL of 1% lidocaine{% endif %}, thoracentesis was performed at the {{ proc.intercostal_space }} intercostal space along the {{ proc.entry_location }} line.
+{% if proc.volume_removed_ml is not none and proc.fluid_appearance %}A total of {{ proc.volume_removed_ml }} mL of {{ proc.fluid_appearance }} fluid was removed.{% endif %}{% if proc.drainage_device %} Drainage device: {{ proc.drainage_device }}.{% endif %}{% if proc.suction_cmh2o %} Suction: {{ proc.suction_cmh2o }}.{% endif %}{% if proc.sutured is not none %} Site sutured: {% if proc.sutured %}Yes{% else %}No{% endif %}.{% endif %}
+{% if proc.specimen_tests %}Specimens were sent for {{ proc.specimen_tests | join(', ') }}.{% endif %}
+{% if proc.cxr_ordered %}A post-procedure chest x-ray was ordered.{% endif %}
+{% if proc.effusion_volume or proc.effusion_echogenicity or proc.loculations or proc.diaphragm_motion or proc.lung_sliding_pre or proc.lung_sliding_post or proc.lung_consolidation or proc.pleura_description %}CHEST ULTRASOUND FINDINGS:
+Hemithorax: {{ proc.side|title }}
+{% if proc.effusion_volume %}Pleural Effusion Volume: {{ proc.effusion_volume }}{% endif %}
+{% if proc.effusion_echogenicity %}Echogenicity: {{ proc.effusion_echogenicity }}{% endif %}
+{% if proc.loculations %}Loculations: {{ proc.loculations }}{% endif %}
+{% if proc.diaphragm_motion %}Diaphragmatic Motion: {{ proc.diaphragm_motion }}{% endif %}
+{% if proc.lung_sliding_pre %}Lung sliding before procedure: {{ proc.lung_sliding_pre }}{% endif %}
+{% if proc.lung_sliding_post %}Lung sliding post procedure: {{ proc.lung_sliding_post }}{% endif %}
+{% if proc.lung_consolidation %}Lung consolidation/atelectasis: {{ proc.lung_consolidation }}{% endif %}
+{% if proc.pleura_description %}Pleura: {{ proc.pleura_description }}{% endif %}{% endif %}
+The patient tolerated the procedure well without immediate complications.

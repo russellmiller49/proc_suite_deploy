@@ -1,0 +1,32 @@
+{
+  "id": "thoracentesis",
+  "label": "Ultrasound-guided Thoracentesis",
+  "category": "pleural",
+  "cpt_hints": ["32555"],
+  "schema_id": "thoracentesis_v1",
+  "output_section": "PROCEDURE_DETAILS",
+  "template_path": "thoracentesis.j2",
+  "required_fields": [
+    "side",
+    "effusion_size",
+    "effusion_echogenicity",
+    "intercostal_space",
+    "entry_location",
+    "volume_removed_ml",
+    "fluid_appearance",
+    "specimen_tests"
+  ],
+  "critical_fields": [
+    "side",
+    "volume_removed_ml",
+    "fluid_appearance",
+    "specimen_tests",
+    "cxr_ordered"
+  ],
+  "optional_fields": [
+    "loculations",
+    "anesthesia_lidocaine_1_pct_ml",
+    "cxr_ordered"
+  ],
+  "proc_types": ["thoracentesis"]
+}

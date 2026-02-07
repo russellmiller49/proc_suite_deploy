@@ -1,0 +1,9 @@
+{#
+  file: templates/addons/thoracentesis_with_pleural_manometry.jinja
+  Title: Thoracentesis with Pleural Manometry  [CPT: 32555 + manometry — verify]
+  Category: PLEURAL PROCEDURES
+  CPT: 32555
+#}
+{% macro render(ctx=None) -%}
+Ultrasound confirmed a [side] effusion. The thoracentesis was performed as per sterile protocol. Pleural pressure was measured with a digital/manometer system at baseline and after each [250/500] mL removed. Opening pressure: [cmH₂O]. Pressures at volumes: [table]. Stopping criteria: [elastance rise/pressure ≤ –20 cmH₂O/symptoms]. Total removed: [mL]. The patient tolerated the procedure without cough, chest pain, or hypotension. Post‑procedure ultrasound/CXR: [ordered/not indicated].
+{%- endmacro %}

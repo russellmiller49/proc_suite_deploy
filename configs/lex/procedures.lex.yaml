@@ -1,0 +1,15 @@
+procedures:
+  ebus_tbna:
+    synonyms: ["ebus", "tbna", "endobronchial ultrasound"]
+  bronchoscopy:
+    synonyms: ["bronch", "bronchoscope"]
+  cryobiopsy:
+    synonyms: ["cryo biopsy", "tbbx"]
+  thoracentesis:
+    synonyms: ["thora", "pleural tap"]
+  pleuroscopy:
+    synonyms: ["medical thoracoscopy"]
+  ipc:
+    synonyms: ["indwelling catheter", "pleurx"]
+  stent:
+    synonyms: ["airway stent", "stenting"]

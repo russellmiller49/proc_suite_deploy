@@ -1,0 +1,16 @@
+id: endobronchial_biopsy
+label: Endobronchial Biopsy
+category: bronchoscopy
+cpt_hints: ["31625"]
+schema_id: endobronchial_biopsy_v1
+output_section: PROCEDURE_DETAILS
+template_path: endobronchial_biopsy.j2
+required_fields:
+  - airway_segment
+  - samples_collected
+  - tests
+optional_fields:
+  - hemostasis_method
+  - lesion_removed
+proc_types:
+  - endobronchial_biopsy

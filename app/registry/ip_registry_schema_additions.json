@@ -1,0 +1,590 @@
+{
+  "$comment": "IP Registry Schema Additions - Granular Per-Site Data Structures",
+  "additionalProperties": {
+    "linear_ebus_stations_detail": {
+      "type": ["array", "null"],
+      "description": "Per-station EBUS-TBNA data for mediastinal staging",
+      "items": {
+        "type": "object",
+        "properties": {
+          "station": {
+            "type": "string",
+            "enum": ["2R", "2L", "3p", "4R", "4L", "7", "10R", "10L", "11R", "11L", "12R", "12L"],
+            "description": "IASLC lymph node station"
+          },
+          "short_axis_mm": {
+            "type": ["number", "null"],
+            "minimum": 0,
+            "description": "Short-axis diameter in mm"
+          },
+          "long_axis_mm": {
+            "type": ["number", "null"],
+            "minimum": 0
+          },
+          "shape": {
+            "type": ["string", "null"],
+            "enum": ["oval", "round", "irregular", null]
+          },
+          "margin": {
+            "type": ["string", "null"],
+            "enum": ["distinct", "indistinct", "irregular", null]
+          },
+          "echogenicity": {
+            "type": ["string", "null"],
+            "enum": ["homogeneous", "heterogeneous", null]
+          },
+          "chs_present": {
+            "type": ["boolean", "null"],
+            "description": "Central hilar structure present"
+          },
+          "necrosis_present": {
+            "type": ["boolean", "null"],
+            "description": "Central necrosis or coagulation necrosis sign"
+          },
+          "calcification_present": {
+            "type": ["boolean", "null"]
+          },
+          "elastography_performed": {
+            "type": ["boolean", "null"]
+          },
+          "elastography_score": {
+            "type": ["integer", "null"],
+            "minimum": 1,
+            "maximum": 5
+          },
+          "elastography_strain_ratio": {
+            "type": ["number", "null"]
+          },
+          "elastography_pattern": {
+            "type": ["string", "null"],
+            "enum": ["predominantly_blue", "blue_green", "green", "predominantly_green", null]
+          },
+          "doppler_performed": {
+            "type": ["boolean", "null"]
+          },
+          "doppler_pattern": {
+            "type": ["string", "null"],
+            "enum": ["avascular", "hilar_vessel", "peripheral", "mixed", null]
+          },
+          "morphologic_impression": {
+            "type": ["string", "null"],
+            "enum": ["benign", "suspicious", "malignant", "indeterminate", null],
+            "description": "Overall EBUS morphologic impression based on features (NOT pathology)"
+          },
+          "sampled": {
+            "type": "boolean",
+            "default": true,
+            "description": "Whether this station was actually sampled"
+          },
+          "needle_gauge": {
+            "type": ["integer", "null"],
+            "enum": [19, 21, 22, 25, null]
+          },
+          "needle_type": {
+            "type": ["string", "null"],
+            "enum": ["Standard FNA", "FNB/ProCore", "Acquire", "ViziShot Flex", null]
+          },
+          "number_of_passes": {
+            "type": ["integer", "null"],
+            "minimum": 1,
+            "maximum": 10
+          },
+          "intranodal_forceps_used": {
+            "type": ["boolean", "null"]
+          },
+          "rose_performed": {
+            "type": ["boolean", "null"]
+          },
+          "rose_result": {
+            "type": ["string", "null"],
+            "enum": ["Adequate lymphocytes", "Malignant", "Suspicious for malignancy", "Atypical cells", "Granuloma", "Necrosis only", "Nondiagnostic", "Deferred", null]
+          },
+          "rose_adequacy": {
+            "type": ["boolean", "null"]
+          },
+          "specimen_sent_for": {
+            "type": ["array", "null"],
+            "items": {
+              "type": "string",
+              "enum": ["Cytology", "Cell block", "Flow cytometry", "Molecular/NGS", "Culture", "AFB", "Fungal", "Research"]
+            }
+          },
+          "final_pathology": {
+            "type": ["string", "null"]
+          },
+          "n_stage_contribution": {
+            "type": ["string", "null"],
+            "enum": ["N0", "N1", "N2", "N3", null]
+          },
+          "notes": {
+            "type": ["string", "null"]
+          }
+        },
+        "required": ["station"]
+      }
+    },
+
+    "navigation_targets": {
+      "type": ["array", "null"],
+      "description": "Per-target data for navigation/robotic bronchoscopy",
+      "items": {
+        "type": "object",
+        "properties": {
+          "target_number": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Sequential target number"
+          },
+          "target_location_text": {
+            "type": "string",
+            "description": "Full anatomic description"
+          },
+          "target_lobe": {
+            "type": ["string", "null"],
+            "enum": ["RUL", "RML", "RLL", "LUL", "LLL", "Lingula", null]
+          },
+          "target_segment": {
+            "type": ["string", "null"]
+          },
+          "lesion_size_mm": {
+            "type": ["number", "null"]
+          },
+          "distance_from_pleura_mm": {
+            "type": ["number", "null"]
+          },
+          "bronchus_sign": {
+            "type": ["string", "null"],
+            "enum": ["Positive", "Negative", "Not assessed", null]
+          },
+          "ct_characteristics": {
+            "type": ["string", "null"],
+            "enum": ["Solid", "Part-solid", "Ground-glass", "Cavitary", "Calcified", null]
+          },
+          "pet_suv_max": {
+            "type": ["number", "null"]
+          },
+          "registration_error_mm": {
+            "type": ["number", "null"]
+          },
+          "navigation_successful": {
+            "type": ["boolean", "null"]
+          },
+          "rebus_used": {
+            "type": ["boolean", "null"]
+          },
+          "rebus_view": {
+            "type": ["string", "null"],
+            "enum": ["Concentric", "Eccentric", "Adjacent", "Not visualized", null]
+          },
+          "rebus_lesion_appearance": {
+            "type": ["string", "null"]
+          },
+          "tool_in_lesion_confirmed": {
+            "type": ["boolean", "null"]
+          },
+          "confirmation_method": {
+            "type": ["string", "null"],
+            "enum": ["CBCT", "Augmented fluoroscopy", "Fluoroscopy", "Radial EBUS", "None", null]
+          },
+          "cbct_til_confirmed": {
+            "type": ["boolean", "null"]
+          },
+          "sampling_tools_used": {
+            "type": ["array", "null"],
+            "items": {
+              "type": "string",
+              "enum": ["Forceps", "Needle (21G)", "Needle (19G)", "Brush", "Cryoprobe (1.1mm)", "Cryoprobe (1.7mm)", "Cryoprobe (1.9mm)", "NeedleInNeedle"]
+            }
+          },
+          "number_of_forceps_biopsies": {
+            "type": ["integer", "null"]
+          },
+          "number_of_needle_passes": {
+            "type": ["integer", "null"]
+          },
+          "number_of_cryo_biopsies": {
+            "type": ["integer", "null"]
+          },
+          "rose_performed": {
+            "type": ["boolean", "null"]
+          },
+          "rose_result": {
+            "type": ["string", "null"]
+          },
+          "immediate_complication": {
+            "type": ["string", "null"],
+            "enum": ["None", "Bleeding - mild", "Bleeding - moderate", "Bleeding - severe", "Pneumothorax", null]
+          },
+          "bleeding_management": {
+            "type": ["string", "null"]
+          },
+          "specimen_sent_for": {
+            "type": ["array", "null"],
+            "items": {
+              "type": "string"
+            }
+          },
+          "final_pathology": {
+            "type": ["string", "null"]
+          },
+          "notes": {
+            "type": ["string", "null"]
+          }
+        },
+        "required": ["target_number", "target_location_text"]
+      }
+    },
+
+    "cao_interventions_detail": {
+      "type": ["array", "null"],
+      "description": "Per-site CAO intervention data with modality details",
+      "items": {
+        "type": "object",
+        "properties": {
+          "location": {
+            "type": "string",
+            "enum": ["Trachea - proximal", "Trachea - mid", "Trachea - distal", "Carina", "RMS", "LMS", "BI", "RUL", "RML", "RLL", "LUL", "LLL", "Other"]
+          },
+          "obstruction_type": {
+            "type": ["string", "null"],
+            "enum": ["Intraluminal", "Extrinsic", "Mixed", null]
+          },
+          "etiology": {
+            "type": ["string", "null"],
+            "enum": ["Malignant - primary lung", "Malignant - metastatic", "Malignant - other", "Benign - post-intubation", "Benign - post-tracheostomy", "Benign - anastomotic", "Benign - inflammatory", "Benign - granulation", "Benign - web/stenosis", "Other", null]
+          },
+          "length_mm": {
+            "type": ["number", "null"]
+          },
+          "pre_obstruction_pct": {
+            "type": ["integer", "null"],
+            "minimum": 0,
+            "maximum": 100
+          },
+          "post_obstruction_pct": {
+            "type": ["integer", "null"],
+            "minimum": 0,
+            "maximum": 100
+          },
+          "pre_diameter_mm": {
+            "type": ["number", "null"]
+          },
+          "post_diameter_mm": {
+            "type": ["number", "null"]
+          },
+          "modalities_applied": {
+            "type": ["array", "null"],
+            "items": {
+              "type": "object",
+              "properties": {
+                "modality": {
+                  "type": "string",
+                  "enum": ["APC", "Electrocautery - snare", "Electrocautery - knife", "Electrocautery - probe", "Cryotherapy - spray", "Cryotherapy - contact", "Cryoextraction", "Laser - Nd:YAG", "Laser - CO2", "Laser - diode", "Mechanical debulking", "Rigid coring", "Microdebrider", "Balloon dilation", "PDT"]
+                },
+                "power_setting_watts": {
+                  "type": ["number", "null"]
+                },
+                "apc_flow_rate_lpm": {
+                  "type": ["number", "null"]
+                },
+                "balloon_diameter_mm": {
+                  "type": ["number", "null"]
+                },
+                "balloon_pressure_atm": {
+                  "type": ["number", "null"]
+                },
+                "freeze_time_seconds": {
+                  "type": ["integer", "null"]
+                },
+                "number_of_applications": {
+                  "type": ["integer", "null"]
+                },
+                "duration_seconds": {
+                  "type": ["integer", "null"]
+                }
+              },
+              "required": ["modality"]
+            }
+          },
+          "hemostasis_required": {
+            "type": ["boolean", "null"]
+          },
+          "hemostasis_methods": {
+            "type": ["array", "null"],
+            "items": {
+              "type": "string",
+              "enum": ["Cold saline", "Epinephrine", "APC", "Electrocautery", "Balloon tamponade", "Bronchial blocker", "Tranexamic acid"]
+            }
+          },
+          "secretions_present": {
+            "type": ["boolean", "null"]
+          },
+          "secretions_drained": {
+            "type": ["boolean", "null"]
+          },
+          "stent_placed_at_site": {
+            "type": ["boolean", "null"]
+          },
+          "notes": {
+            "type": ["string", "null"]
+          }
+        },
+        "required": ["location"]
+      }
+    },
+
+    "blvr_valve_placements": {
+      "type": ["array", "null"],
+      "description": "Individual valve placement data",
+      "items": {
+        "type": "object",
+        "properties": {
+          "valve_number": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "target_lobe": {
+            "type": "string",
+            "enum": ["RUL", "RML", "RLL", "LUL", "LLL", "Lingula"]
+          },
+          "segment": {
+            "type": "string",
+            "description": "Specific segment (e.g., 'LB1+2', 'LB6', 'apical')"
+          },
+          "airway_diameter_mm": {
+            "type": ["number", "null"]
+          },
+          "valve_size": {
+            "type": "string",
+            "description": "Valve size (e.g., '4.0', '4.0-LP', '5.5', '6.0', '7.0')"
+          },
+          "valve_type": {
+            "type": "string",
+            "enum": ["Zephyr (Pulmonx)", "Spiration (Olympus)"]
+          },
+          "deployment_method": {
+            "type": ["string", "null"],
+            "enum": ["Standard", "Retroflexed", null]
+          },
+          "deployment_successful": {
+            "type": "boolean"
+          },
+          "seal_confirmed": {
+            "type": ["boolean", "null"]
+          },
+          "repositioned": {
+            "type": ["boolean", "null"]
+          },
+          "notes": {
+            "type": ["string", "null"]
+          }
+        },
+        "required": ["valve_number", "target_lobe", "segment", "valve_size", "valve_type", "deployment_successful"]
+      }
+    },
+
+    "blvr_chartis_measurements": {
+      "type": ["array", "null"],
+      "items": {
+        "type": "object",
+        "properties": {
+          "lobe_assessed": {
+            "type": "string",
+            "enum": ["RUL", "RML", "RLL", "LUL", "LLL", "Lingula"]
+          },
+          "segment_assessed": {
+            "type": ["string", "null"]
+          },
+          "measurement_duration_seconds": {
+            "type": ["integer", "null"]
+          },
+          "adequate_seal": {
+            "type": ["boolean", "null"]
+          },
+          "cv_result": {
+            "type": "string",
+            "enum": ["CV Negative", "CV Positive", "Indeterminate", "Low flow", "No seal", "Aborted"]
+          },
+          "flow_pattern_description": {
+            "type": ["string", "null"]
+          },
+          "notes": {
+            "type": ["string", "null"]
+          }
+        },
+        "required": ["lobe_assessed", "cv_result"]
+      }
+    },
+
+    "cryobiopsy_sites": {
+      "type": ["array", "null"],
+      "description": "Per-site transbronchial cryobiopsy data",
+      "items": {
+        "type": "object",
+        "properties": {
+          "site_number": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "lobe": {
+            "type": "string",
+            "enum": ["RUL", "RML", "RLL", "LUL", "LLL", "Lingula"]
+          },
+          "segment": {
+            "type": ["string", "null"]
+          },
+          "distance_from_pleura": {
+            "type": ["string", "null"],
+            "enum": [">2cm", "1-2cm", "<1cm", "Not documented", null]
+          },
+          "fluoroscopy_position": {
+            "type": ["string", "null"]
+          },
+          "radial_ebus_used": {
+            "type": ["boolean", "null"]
+          },
+          "rebus_view": {
+            "type": ["string", "null"]
+          },
+          "probe_size_mm": {
+            "type": ["number", "null"],
+            "enum": [1.1, 1.7, 1.9, 2.4, null]
+          },
+          "freeze_time_seconds": {
+            "type": ["integer", "null"],
+            "minimum": 1,
+            "maximum": 10
+          },
+          "number_of_biopsies": {
+            "type": ["integer", "null"],
+            "minimum": 1
+          },
+          "specimen_size_mm": {
+            "type": ["number", "null"]
+          },
+          "blocker_used": {
+            "type": ["boolean", "null"]
+          },
+          "blocker_type": {
+            "type": ["string", "null"],
+            "enum": ["Fogarty", "Arndt", "Cohen", "Cryoprobe sheath", null]
+          },
+          "bleeding_severity": {
+            "type": ["string", "null"],
+            "enum": ["None/Scant", "Mild", "Moderate", "Severe", null]
+          },
+          "bleeding_controlled_with": {
+            "type": ["string", "null"]
+          },
+          "pneumothorax_after_site": {
+            "type": ["boolean", "null"]
+          },
+          "notes": {
+            "type": ["string", "null"]
+          }
+        },
+        "required": ["site_number", "lobe"]
+      }
+    },
+
+    "thoracoscopy_findings_detail": {
+      "type": ["array", "null"],
+      "items": {
+        "type": "object",
+        "properties": {
+          "location": {
+            "type": "string",
+            "enum": ["Parietal pleura - chest wall", "Parietal pleura - diaphragm", "Parietal pleura - mediastinum", "Visceral pleura", "Lung parenchyma", "Costophrenic angle", "Apex"]
+          },
+          "finding_type": {
+            "type": "string",
+            "enum": ["Normal", "Nodules", "Plaques", "Studding", "Mass", "Adhesions - filmy", "Adhesions - dense", "Inflammation", "Thickening", "Trapped lung", "Loculations", "Empyema", "Other"]
+          },
+          "extent": {
+            "type": ["string", "null"],
+            "enum": ["Focal", "Multifocal", "Diffuse", null]
+          },
+          "size_description": {
+            "type": ["string", "null"]
+          },
+          "biopsied": {
+            "type": ["boolean", "null"]
+          },
+          "number_of_biopsies": {
+            "type": ["integer", "null"]
+          },
+          "biopsy_tool": {
+            "type": ["string", "null"],
+            "enum": ["Rigid forceps", "Flexible forceps", "Cryoprobe", null]
+          },
+          "impression": {
+            "type": ["string", "null"],
+            "enum": ["Benign appearing", "Malignant appearing", "Infectious appearing", "Indeterminate", null]
+          },
+          "notes": {
+            "type": ["string", "null"]
+          }
+        },
+        "required": ["location", "finding_type"]
+      }
+    },
+
+    "specimens_collected": {
+      "type": ["array", "null"],
+      "description": "All specimens collected with source linkage",
+      "items": {
+        "type": "object",
+        "properties": {
+          "specimen_number": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "source_procedure": {
+            "type": "string",
+            "enum": ["EBUS-TBNA", "Navigation biopsy", "Endobronchial biopsy", "Transbronchial biopsy", "Transbronchial cryobiopsy", "BAL", "Bronchial wash", "Brushing", "Pleural biopsy", "Pleural fluid", "Other"]
+          },
+          "source_location": {
+            "type": "string",
+            "description": "Anatomic location (e.g., '4R', 'RUL apical', 'Left pleura')"
+          },
+          "collection_tool": {
+            "type": ["string", "null"]
+          },
+          "specimen_count": {
+            "type": ["integer", "null"],
+            "minimum": 1
+          },
+          "specimen_adequacy": {
+            "type": ["string", "null"],
+            "enum": ["Adequate", "Limited", "Inadequate", "Pending", null]
+          },
+          "destinations": {
+            "type": ["array", "null"],
+            "items": {
+              "type": "string",
+              "enum": ["Histology/Surgical pathology", "Cytology", "Cell block", "Flow cytometry", "Molecular/NGS", "PD-L1", "Bacterial culture", "AFB culture", "Fungal culture", "Viral studies", "Research protocol", "Biobank"]
+            }
+          },
+          "rose_performed": {
+            "type": ["boolean", "null"]
+          },
+          "rose_result": {
+            "type": ["string", "null"]
+          },
+          "final_pathology_diagnosis": {
+            "type": ["string", "null"]
+          },
+          "molecular_markers": {
+            "type": ["object", "null"],
+            "additionalProperties": true,
+            "description": "Key:value pairs for molecular results"
+          },
+          "notes": {
+            "type": ["string", "null"]
+          }
+        },
+        "required": ["specimen_number", "source_procedure", "source_location"]
+      }
+    }
+  }
+}

@@ -1,0 +1,16 @@
+After chest ultrasound documentation{% if proc.guidance %} with {{ proc.guidance|lower }} guidance{% endif %}, the {{ proc.side }} chest was prepped and draped in sterile fashion.
+A thoracostomy tube was inserted into the {{ proc.intercostal_space }} intercostal space along the {{ proc.entry_line }} using the Seldinger technique and connected to a drainage system.
+Placement was confirmed and secured.{% if proc.fluid_removed_ml is not none %} Return of {{ proc.fluid_removed_ml }} mL of{% if proc.fluid_appearance %} {{ proc.fluid_appearance|lower }}{% else %} fluid{% endif %}.{% endif %}
+{% if proc.specimen_tests %}Specimens were sent for {{ proc.specimen_tests | join(', ') }}.{% endif %}
+{% if proc.cxr_ordered %}A post-procedure chest x-ray was ordered.{% endif %}
+{% if proc.effusion_volume or proc.effusion_echogenicity or proc.loculations or proc.diaphragm_motion or proc.lung_sliding_pre or proc.lung_sliding_post or proc.lung_consolidation or proc.pleura_description %}CHEST ULTRASOUND FINDINGS:
+Hemithorax: {{ proc.side|title }}
+{% if proc.effusion_volume %}Pleural Effusion Volume: {{ proc.effusion_volume }}{% endif %}
+{% if proc.effusion_echogenicity %}Echogenicity: {{ proc.effusion_echogenicity }}{% endif %}
+{% if proc.loculations %}Loculations: {{ proc.loculations }}{% endif %}
+{% if proc.diaphragm_motion %}Diaphragmatic Motion: {{ proc.diaphragm_motion }}{% endif %}
+{% if proc.lung_sliding_pre %}Lung sliding before procedure: {{ proc.lung_sliding_pre }}{% endif %}
+{% if proc.lung_sliding_post %}Lung sliding post procedure: {{ proc.lung_sliding_post }}{% endif %}
+{% if proc.lung_consolidation %}Lung consolidation/atelectasis: {{ proc.lung_consolidation }}{% endif %}
+{% if proc.pleura_description %}Pleura: {{ proc.pleura_description }}{% endif %}{% endif %}
+The patient tolerated the procedure well without immediate complications.

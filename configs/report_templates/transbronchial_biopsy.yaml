@@ -1,0 +1,18 @@
+id: transbronchial_biopsy
+label: Transbronchial Lung Biopsy
+category: bronch
+schema_id: transbronchial_biopsy_v1
+output_section: PROCEDURE_DETAILS
+template_path: transbronchial_biopsy.j2
+required_fields:
+  - lobe
+  - guidance
+  - tool
+  - number_of_biopsies
+optional_fields:
+  - segment
+  - specimen_tests
+  - complications
+  - notes
+proc_types:
+  - transbronchial_biopsy

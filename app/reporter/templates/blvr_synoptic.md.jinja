@@ -1,0 +1,9 @@
+# BLVR Synoptic Report
+
+- **Indication:** {{ report.indication }}
+- **Anesthesia:** {{ report.anesthesia }}
+- **Localization:** {{ report.localization }}
+- **Sampling:** {{ report.sampling | join('; ') if report.sampling else 'None' }}
+- **Therapeutics:** {{ report.therapeutics | join('; ') if report.therapeutics else 'None' }}
+- **Complications:** {{ report.complications | join('; ') if report.complications else 'None' }}
+- **Disposition:** {{ report.disposition }}

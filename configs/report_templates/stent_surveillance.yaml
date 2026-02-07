@@ -1,0 +1,16 @@
+id: stent_surveillance
+label: Airway Stent Surveillance Bronchoscopy
+category: airway_therapy
+cpt_hints: []
+schema_id: stent_surveillance_v1
+output_section: PROCEDURE_DETAILS
+template_path: stent_surveillance.j2
+required_fields:
+  - stent_type
+  - location
+optional_fields:
+  - findings
+  - interventions
+  - final_patency_pct
+proc_types:
+  - stent_surveillance

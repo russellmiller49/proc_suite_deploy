@@ -1,0 +1,345 @@
+{# ============================================================================
+   8. PLEURAL PROCEDURES
+   ============================================================================ #}
+
+{# --- Image-Guided Chest Tube - CPT 32551 --- #}
+{% macro chest_tube_placement(side, intercostal_space, line, fluid_type, us_findings=None, specimens=None, cxr_ordered=true) %}
+CHEST ULTRASOUND FINDINGS: Image saved and printed
+{% if us_findings %}
+{{ us_findings | safe }}
+{% endif %}
+
+After chest ultrasound documentation, the chest was prepped and draped in sterile fashion.
+
+The {{ side }} chest was prepped and draped in sterile fashion. A 1.5 cm skin incision was made in the {{ intercostal_space }} intercostal space along the {{ line }}. The soft tissues were gently spread using a Rienhoff clamp. The pleural space was entered bluntly using a Kelly clamp.
+
+A soft surgical tube was introduced into the pleural space, aimed posteriorly, without resistance. Placement was confirmed by the return of {{ fluid_type }}. The tube was secured to the skin using 0 nylon suture, and subsequently connected to a PleurEvac. Sterile dressings were applied.
+
+A thoracostomy tube was inserted into the intercostal space at the {{ line }} using Seldinger technique and connected to a drainage system. Tube position was confirmed and secured. No immediate complications.
+{% if specimens %}
+
+SPECIMEN(S): {% for spec in specimens %}{{ spec }}{% if not loop.last %}, {% endif %}{% endfor %}
+{% endif %}
+
+CXR ordered: {{ 'Yes' if cxr_ordered else 'No' }}
+{% endmacro %}
+
+
+{# --- Thoracentesis - CPT 32555 --- #}
+{% macro thoracentesis(side=None, intercostal_space=None, location=None, volume_removed=None, fluid_appearance=None, lidocaine_volume=None, us_findings=None, drainage_device='Pleurovac', suction=false, suction_pressure=None, specimens=None, cxr_ordered=true, sutured=false) %}
+CHEST ULTRASOUND FINDINGS: Image saved and printed
+{% if us_findings %}
+{{ us_findings | safe }}
+{% endif %}
+
+Based on Ultrasound Evaluation, thoracentesis is feasible.
+
+Ultrasound identified a pleural effusion. Following sterile prep and local anesthesia, thoracentesis was performed with {{ volume_removed or "[volume]" }} mL of fluid removed. Samples were sent for analysis.
+
+Insertion site prepped and draped in sterile fashion. Thoracentesis Kit was used.
+
+ANESTHESIA: Lidocaine 1%: {{ lidocaine_volume or "[volume]" }} ml
+
+Entry Site: {{ side or "[right/left]" }} {{ intercostal_space or "[intercostal space]" }} Intercostal Space
+Location: {{ location or "[location]" }}
+Sutured: {{ 'Yes' if sutured else 'No' }}
+
+PROCEDURE FINDINGS:
+Fluid Removed: {{ volume_removed or "[volume]" }} ml
+Appearance: {{ fluid_appearance or "[appearance]" }}
+Drainage device: {{ drainage_device }}
+Suction: {{ 'Yes, -' ~ suction_pressure ~ ' cmH2O' if suction else 'No' }}
+{% if specimens %}
+
+SPECIMEN(S): {% for spec in specimens %}{{ spec }}{% if not loop.last %}, {% endif %}{% endfor %}
+{% endif %}
+
+CXR ordered: {{ 'Yes' if cxr_ordered else 'No' }}
+{% endmacro %}
+
+
+{# --- Thoracentesis with Pleural Manometry --- #}
+{% macro thoracentesis_manometry(side, total_removed_ml, opening_pressure, pressure_readings=None, stopping_criteria=None, us_findings=None, cxr_ordered=false) %}
+CHEST ULTRASOUND FINDINGS:
+{% if us_findings %}
+Hemithorax: {{ us_findings.hemithorax }}
+Effusion: {{ us_findings.effusion_size }}
+Echogenicity: {{ us_findings.echogenicity }}
+Loculations: {{ us_findings.loculations }}
+Diaphragm: {{ us_findings.diaphragm_motion }}
+Lung sliding pre/post: {{ us_findings.lung_sliding }}
+Consolidation: {{ us_findings.consolidation }}
+Pleura: {{ us_findings.pleura }}
+{% endif %}
+
+Ultrasound confirmed a {{ side }} effusion. The thoracentesis was performed as per sterile protocol.
+
+Pleural pressure was measured with a digital/manometer system at baseline and after each 250-500 mL removed.
+
+Opening pressure: {{ opening_pressure }} cmH₂O
+{% if pressure_readings %}
+
+Pressures at volumes:
+{% for reading in pressure_readings %}
+- {{ reading.volume }} mL: {{ reading.pressure }} cmH₂O
+{% endfor %}
+{% endif %}
+{% if stopping_criteria %}
+
+Stopping criteria: {{ stopping_criteria }}
+{% endif %}
+
+Total removed: {{ total_removed_ml }} mL.
+
+The patient tolerated the procedure without cough, chest pain, or hypotension.
+
+Post-procedure ultrasound/CXR: {{ 'ordered' if cxr_ordered else 'not indicated' }}.
+{% endmacro %}
+
+
+{# --- Indwelling Tunneled Pleural Catheter Placement - CPT 32550 --- #}
+{% macro tpc_placement(side=None, intercostal_space=None, location=None, tunnel_length_cm=None, exit_site_location=None, volume_removed=None, fluid_appearance=None, lidocaine_volume=None, us_findings=None, pleural_pressures=None, drainage_device='Capped', suction=false, specimens=None, cxr_ordered=true, sutured=true) %}
+CHEST ULTRASOUND FINDINGS: Image saved and printed
+{% if us_findings %}
+{{ us_findings | safe }}
+{% endif %}
+
+Tunneled pleural catheter placed with cuff secured. Drainage achieved. Catheter secured.
+
+Insertion site prepped and draped in sterile fashion.
+
+ANESTHESIA: Lidocaine 1%: {{ lidocaine_volume or "[volume]" }} ml
+
+Entry Site: {{ side or "[right/left]" }} {{ intercostal_space or "[intercostal space]" }} Intercostal Space
+Location: {{ location or "[location]" }}
+Sutured: {{ 'Yes' if sutured else 'No' }}
+
+PROCEDURE FINDINGS:
+A finder needle was used to enter the pleural space in the {{ intercostal_space or "[intercostal space]" }} intercostal space along the {{ location or "[location]" }}; pleural fluid was aspirated. The needle was withdrawn and a guidewire was placed into the pleural space through the catheter.
+
+Two 5 mm skin incisions were made at the guidewire entry site, as well as 5-6 cm away. The tunneling device was used to tunnel the catheter in the subcutaneous tissue. Serial dilation over the guidewire was then achieved. The introducer sheath was placed and the guidewire removed. The catheter was then placed into the pleural space via the introducer sheath. The pleural entry site was closed with an absorbable suture. The catheter was secured to the skin using 2-0 nylon. Sterile dressings were applied.
+
+Tunnel Length: {{ tunnel_length_cm or "[length]" }} cm
+Exit site: {{ exit_site_location or "[exit site]" }}
+Fluid Removed: {{ volume_removed or "[volume]" }} ml - {{ fluid_appearance or "[appearance]" }}
+{% if pleural_pressures %}
+
+Pleural pressures (if measured):
+- Opening: {{ pleural_pressures.opening }} cmH₂O
+{% if pleural_pressures.at_500 %}- 500 ml: {{ pleural_pressures.at_500 }} cmH₂O{% endif %}
+{% if pleural_pressures.at_1000 %}- 1000 ml: {{ pleural_pressures.at_1000 }} cmH₂O{% endif %}
+{% if pleural_pressures.at_1500 %}- 1500 ml: {{ pleural_pressures.at_1500 }} cmH₂O{% endif %}
+{% if pleural_pressures.at_2000 %}- 2000 ml: {{ pleural_pressures.at_2000 }} cmH₂O{% endif %}
+{% endif %}
+
+Drainage device: {{ drainage_device }}
+Suction: {{ 'Yes, -' ~ suction_pressure ~ ' cmH2O' if suction else 'No' }}
+{% if specimens %}
+
+SPECIMEN(S): {% for spec in specimens %}{{ spec }}{% if not loop.last %}, {% endif %}{% endfor %}
+{% endif %}
+
+CXR ordered: {{ 'Yes' if cxr_ordered else 'No' }}
+{% endmacro %}
+
+
+{# --- Tunneled Pleural Catheter Removal - CPT 32552 --- #}
+{% macro tpc_removal(insertion_date, side, removal_reason, catheter_site_status='Clean/dry', anesthesia_used=true, lidocaine_volume=None, sutured=false, complications=false, complications_detail=None, antibiotics=false, antibiotics_reason=None, us_findings=None) %}
+Previous tunneled pleural catheter dissected free and removed. Site dressed.
+
+Date of TPC insertion: {{ insertion_date }}
+Side: {{ side }}
+{% if us_findings %}
+
+CHEST ULTRASOUND FINDINGS:
+{{ us_findings | safe }}
+{% endif %}
+
+Reason for TPC removal:
+- {{ removal_reason }}
+
+Catheter Site: {{ catheter_site_status }}
+Anesthesia: {{ 'Yes' if anesthesia_used else 'No' }}
+{% if anesthesia_used and lidocaine_volume %}Lidocaine 1%: {{ lidocaine_volume }} ml{% endif %}
+Sutured: {{ 'Yes' if sutured else 'No' }}
+
+Clean dry dressing applied and should remain in place for a minimum of 72 hours. OK to shower with occlusive dressing.
+
+Complications: {{ 'Yes - ' ~ complications_detail if complications else 'No' }}
+Antibiotics: {{ 'Yes - ' ~ antibiotics_reason if antibiotics else 'No' }}
+{% endmacro %}
+
+
+{# --- Intrapleural Fibrinolysis - CPT 32561/32562 --- #}
+{% macro intrapleural_fibrinolysis(tpa_dose=None, dnase_dose=None, dwell_time_hours=None, delivery_method='chest tube') %}
+{% if tpa_dose %}tPA {{ tpa_dose }}{% endif %}{% if tpa_dose and dnase_dose %}/{% endif %}{% if dnase_dose %}DNase {{ dnase_dose }}{% endif %} instilled through {{ delivery_method }}.
+{% if dwell_time_hours %}
+Dwell time: {{ dwell_time_hours }} hours.
+{% endif %}
+{% endmacro %}
+
+
+{# --- Medical Thoracoscopy - CPT 32650/32653 --- #}
+{% macro medical_thoracoscopy(findings, biopsy_performed=true, adhesiolysis=false, pleurodesis=false, chest_tube_left=true) %}
+Thoracoscopic survey performed.
+
+Initial thoracoscopic survey demonstrates: {{ findings }}.
+{% if adhesiolysis %}
+
+Lysis of adhesions was performed.
+{% endif %}
+{% if biopsy_performed %}
+
+Biopsies taken.
+{% endif %}
+{% if pleurodesis %}
+
+Pleurodesis performed as indicated.
+{% endif %}
+{% if chest_tube_left %}
+
+Chest tube left in situ.
+{% endif %}
+{% endmacro %}
+
+
+{# --- Pigtail Catheter Placement - CPT 32557 --- #}
+{% macro pigtail_catheter_placement(side, intercostal_space, location, catheter_size, volume_removed, fluid_appearance, lidocaine_volume, us_findings=None, specimens=None, cxr_ordered=true, sutured=false) %}
+CHEST ULTRASOUND FINDINGS: Image saved and printed
+{% if us_findings %}
+{{ us_findings | safe }}
+{% endif %}
+
+Insertion site prepped and draped in sterile fashion.
+
+ANESTHESIA: Lidocaine 1%: {{ lidocaine_volume }} ml
+
+Entry Site: {{ side }} {{ intercostal_space }} Intercostal Space
+Location: {{ location }}
+Size: {{ catheter_size }}
+Sutured: {{ 'Yes' if sutured else 'No' }}
+
+PROCEDURE FINDINGS:
+A pigtail catheter was inserted using the Seldinger technique. Entry into the pleural space was confirmed with the easy removal of minimal serous appearing pleural fluid and air bubbles. A guidewire was inserted using the introducer needle pointed in the apical posterior direction. The introducer needle was then removed.
+
+A dilator was then inserted over the wire with a twisting motion in order to form a tract for catheter insertion. The dilator was removed and the pigtail catheter (with trochar) was advanced over the guidewire. The catheter was inserted into the chest until all catheter holes were well within the chest. The guidewire and trochar were then removed. The tube was then attached to the collection drain apparatus and secured.
+
+Fluid Removed: {{ volume_removed }} ml
+Appearance: {{ fluid_appearance }}
+{% if specimens %}
+
+SPECIMEN(S): {% for spec in specimens %}{{ spec }}{% if not loop.last %}, {% endif %}{% endfor %}
+{% endif %}
+
+CXR ordered: {{ 'Yes' if cxr_ordered else 'No' }}
+{% endmacro %}
+
+
+{# --- Transthoracic Needle Biopsy - CPT 32408 --- #}
+{% macro transthoracic_needle_biopsy(needle_gauge=18, num_samples=3, cxr_ordered=true) %}
+Core needle biopsy was performed with {{ needle_gauge }}G core biopsy needle with {{ num_samples }} samples collected.
+
+Pre-biopsy ultrasound was done to select the site of the biopsy. Post-biopsy ultrasound was done to ensure no immediate pneumothorax or hemothorax.
+
+CXR ordered: {{ 'Yes' if cxr_ordered else 'No' }}
+{% endmacro %}
+
+
+{# --- Thoravent Placement --- #}
+{% macro thoravent_placement() %}
+Thoravent catheter placed by trocar into pleural space for pneumothorax evacuation.
+{% endmacro %}
+
+
+{# --- Chemical Pleurodesis via Chest Tube (Talc Slurry or Doxycycline) - CPT 32560 --- #}
+{% macro chemical_pleurodesis_chest_tube(indication, prerequisites, agent, agent_dose, volume_ml, clamp_duration_min, patient_positions, analgesia_details=None, post_suction_setting='-20 cmH₂O', tolerance='no') %}
+Indication: {{ indication }}.
+
+Prerequisites: {{ prerequisites }}.
+
+Agent: {{ agent }} {{ agent_dose }} in {{ volume_ml }} mL NS{% if analgesia_details %} with {{ analgesia_details }}{% endif %} instilled via chest tube.
+
+The tube was clamped for {{ clamp_duration_min }} minutes with patient rotated through {% for pos in patient_positions %}{{ pos }}{% if not loop.last %}, {% endif %}{% endfor %} positions.
+
+Clamp released and suction set to {{ post_suction_setting }}.
+
+The patient tolerated the instillation with {{ tolerance }} discomfort.
+
+Ongoing management: analgesia orders/drainage plan as indicated.
+{% endmacro %}
+
+
+{# --- Chemical Pleurodesis via Tunneled Pleural Catheter (IPC) --- #}
+{% macro chemical_pleurodesis_ipc(indication, agent, agent_dose, volume_ml, patient_positions, drainage_resumed_after_hours) %}
+Indication: {{ indication }}.
+
+After complete drainage, {{ agent }} was instilled via IPC: agent {{ agent_dose }}, volume {{ volume_ml }} mL.
+
+The catheter was capped and the patient was instructed to rotate through {% for pos in patient_positions %}{{ pos }}{% if not loop.last %}, {% endif %}{% endfor %} over the dwell period.
+
+Drainage was resumed after {{ drainage_resumed_after_hours }} hours.
+
+Tolerance was good. Follow-up: drainage schedule/clinic visit.
+{% endmacro %}
+
+
+{# --- Indwelling Pleural Catheter (IPC) Exchange --- #}
+{% macro ipc_exchange(indication, new_catheter_brand, new_catheter_size) %}
+Indication for exchange: {{ indication }}.
+
+The existing IPC was prepped; guidewire inserted through the catheter lumen into the pleural space under ultrasound guidance. The old catheter was removed and a new tunneled catheter {{ new_catheter_brand }}/{{ new_catheter_size }} was placed over the wire using the standard tunneling and peel-away sheath technique.
+
+Position confirmed by aspiration and ultrasound. The catheter was secured and dressed.
+
+The patient tolerated the procedure well.
+{% endmacro %}
+
+
+{# --- Chest Tube Exchange / Upsizing over Guidewire --- #}
+{% macro chest_tube_exchange(indication, new_size_fr, tube_type='pigtail', suction_setting='-20 cmH₂O') %}
+Indication: {{ indication }}.
+
+A guidewire was advanced through the existing tube into the pleural space. The old tube was removed. Serial dilation to {{ new_size_fr }} Fr was performed and a new {{ new_size_fr }} Fr {{ tube_type }} chest tube was inserted over the wire and connected to {% if 'water seal' in suction_setting %}water seal{% else %}suction at {{ suction_setting }}{% endif %}.
+
+Position confirmed by aspiration and ultrasound/CXR.
+
+The patient tolerated the procedure well.
+{% endmacro %}
+
+
+{# --- Chest Tube Removal --- #}
+{% macro chest_tube_removal(removal_criteria, closure_method) %}
+Criteria met for removal: {{ removal_criteria }}.
+
+After sterile prep, the tube was placed to water seal; a Valsalva/inspiratory hold was performed and the tube was removed.
+
+The site was closed with {{ closure_method }}.
+
+The patient tolerated the procedure well. Post-removal CXR ordered/not indicated as clinically appropriate.
+{% endmacro %}
+
+
+{# --- Ultrasound-Guided Pleural Biopsy (Closed Core) - CPT 32507 --- #}
+{% macro us_guided_pleural_biopsy(interspace, location, needle_gauge, device_brand, num_cores, specimen_medium='formalin', specimen_type='histology') %}
+Under ultrasound guidance, the pleural target at {{ interspace }}/{{ location }} was identified and skin marked.
+
+After local anesthesia, a {{ needle_gauge }}G core needle device {{ device_brand }} obtained {{ num_cores }} cores from the parietal pleura.
+
+Hemostasis achieved with manual pressure. Specimens placed in {{ specimen_medium }} for {{ specimen_type }}.
+
+No immediate complications. Dressing applied.
+{% endmacro %}
+
+
+{# --- Focused Thoracic Ultrasound (Pleura & Lung) - CPT 76604 --- #}
+{% macro focused_thoracic_ultrasound(right_findings, left_findings, impression) %}
+Focused thoracic ultrasound was performed and archived.
+
+FINDINGS:
+Right: {{ right_findings }}
+Left: {{ left_findings }}
+
+IMPRESSION: {{ impression }}
+
+Clinical correlation and procedural planning as documented.
+{% endmacro %}

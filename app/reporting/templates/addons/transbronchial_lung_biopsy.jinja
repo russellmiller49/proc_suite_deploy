@@ -1,0 +1,9 @@
+{#
+  file: templates/addons/transbronchial_lung_biopsy.jinja
+  Title: Transbronchial Lung Biopsy (CPT 31628)
+  Category: CORE DIAGNOSTIC / THERAPEUTIC BRONCHOSCOPY PROCEDURES
+  CPT: 31628
+#}
+{% macro render(ctx=None) -%}
+Transbronchial forceps biopsies were performed with a total of [number] samples collected. Specimens were submitted. Performed with [Forceps Tools] at [Lung Segment]. Samples sent for [Testing type].
+{%- endmacro %}

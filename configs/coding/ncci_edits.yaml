@@ -1,0 +1,10 @@
+pairs:
+  - codes: ["31652", "31624"]
+    allow_modifiers: ["59", "XS"]
+    rationale: "BAL bundled into primary bronchoscopy unless separate lobe"
+  - codes: ["31652", "31653"]
+    allow_modifiers: []
+    rationale: "Add-on inherently paired with primary"
+  - codes: ["99152", "99153"]
+    allow_modifiers: []
+    rationale: "Sequential sedation increments"

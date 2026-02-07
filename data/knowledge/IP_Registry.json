@@ -1,0 +1,6499 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "IP Registry Entry",
+  "description": "Comprehensive Interventional Pulmonology procedure registry schema",
+  "type": "object",
+  "required": [
+    "patient_mrn",
+    "procedure_date",
+    "providers",
+    "metadata"
+  ],
+  "properties": {
+    "patient_mrn": {
+      "type": "string",
+      "description": "Medical record number",
+      "pattern": "^[A-Za-z0-9\\-_]{2,30}$"
+    },
+    "patient_linkage_id": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Optional client-side pseudonymization linkage ID (non-PHI). UI/postprocessing may assign; extraction may omit."
+    },
+    "procedure_date": {
+      "type": "string",
+      "format": "date",
+      "description": "Date of procedure (YYYY-MM-DD)"
+    },
+    "procedure_start_datetime": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time",
+      "description": "Procedure start datetime (ISO 8601) when known"
+    },
+    "procedure_end_datetime": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "date-time",
+      "description": "Procedure end datetime (ISO 8601) when known"
+    },
+    "procedure_start_time": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "time",
+      "description": "Procedure start time (HH:MM)"
+    },
+    "procedure_end_time": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "format": "time",
+      "description": "Procedure end time (HH:MM)"
+    },
+    "procedure_duration_minutes": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 1,
+      "maximum": 720,
+      "description": "Total procedure duration in minutes"
+    },
+    "providers": {
+      "type": "object",
+      "description": "Provider information",
+      "required": [
+        "attending_name"
+      ],
+      "properties": {
+        "attending_name": {
+          "type": "string",
+          "description": "Name of the attending physician"
+        },
+        "attending_npi": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^[0-9]{10}$",
+          "description": "Attending physician NPI"
+        },
+        "fellow_name": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Name of the fellow if present"
+        },
+        "fellow_pgy_level": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 4,
+          "maximum": 8,
+          "description": "Fellow PGY level"
+        },
+        "assistant_name": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Name of assistant"
+        },
+        "assistant_role": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "RN",
+            "RT",
+            "Tech",
+            "Resident",
+            "PA",
+            "NP",
+            "Medical Student",
+            null
+          ],
+          "description": "Role of the assistant"
+        },
+        "trainee_present": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "Whether a trainee was present"
+        },
+        "rose_present": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "Rapid on-site evaluation cytopathologist present"
+        }
+      }
+    },
+    "providers_team": {
+      "type": [
+        "array",
+        "null"
+      ],
+      "description": "Normalized provider team array (backward compatible). When absent, servers/clients may derive from the legacy `providers` object.",
+      "items": {
+        "type": "object",
+        "properties": {
+          "role": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "attending",
+              "fellow",
+              "assistant",
+              "anesthesia",
+              "other",
+              null
+            ]
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "npi": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^[0-9]{10}$"
+          },
+          "fellow_pgy_level": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 4,
+            "maximum": 8
+          },
+          "assistant_role": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "RN",
+              "RT",
+              "Tech",
+              "Resident",
+              "PA",
+              "NP",
+              "Medical Student",
+              null
+            ]
+          }
+        }
+      }
+    },
+    "patient_demographics": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "description": "Patient demographic information",
+      "properties": {
+        "age_years": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 120,
+          "description": "Patient age in years"
+        },
+        "gender": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "Male",
+            "Female",
+            "Other",
+            "Unknown",
+            null
+          ]
+        },
+        "height_cm": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 50,
+          "maximum": 250,
+          "description": "Patient height in cm"
+        },
+        "weight_kg": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 20,
+          "maximum": 400,
+          "description": "Patient weight in kg"
+        },
+        "bmi": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 10,
+          "maximum": 80,
+          "description": "Body mass index"
+        },
+        "smoking_status": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "Never",
+            "Former",
+            "Current",
+            "Unknown",
+            null
+          ]
+        },
+        "pack_years": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0,
+          "description": "Pack-years of smoking history"
+        }
+      }
+    },
+    "clinical_context": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "description": "Clinical context and indications",
+      "properties": {
+        "asa_class": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1,
+          "maximum": 6,
+          "description": "ASA physical status classification (1-6)"
+        },
+        "primary_indication": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Primary indication for the procedure (free text)"
+        },
+        "indication_category": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "Lung Cancer Diagnosis",
+            "Lung Cancer Staging",
+            "Lung Nodule Evaluation",
+            "Mediastinal Lymphadenopathy",
+            "Infection Workup",
+            "ILD Evaluation",
+            "Hemoptysis",
+            "Airway Obstruction",
+            "Pleural Effusion - Diagnostic",
+            "Pleural Effusion - Therapeutic",
+            "Pneumothorax Management",
+            "Empyema/Parapneumonic",
+            "BLVR Evaluation",
+            "BLVR Treatment",
+            "Foreign Body",
+            "Tracheobronchomalacia",
+            "Stricture/Stenosis",
+            "Fistula",
+            "Stent Management",
+            "Ablation",
+            "Other",
+            null
+          ]
+        },
+        "radiographic_findings": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Relevant radiographic findings"
+        },
+        "lesion_size_mm": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0,
+          "description": "Target lesion size in mm"
+        },
+        "lesion_location": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Anatomic location of target lesion"
+        },
+        "pet_avidity": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "Whether lesion is PET avid"
+        },
+        "suv_max": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0,
+          "description": "Maximum SUV on PET if applicable"
+        },
+        "bronchus_sign": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "Positive",
+            "Negative",
+            "Not assessed",
+            null
+          ],
+          "description": "CT bronchus sign for peripheral lesions"
+        },
+        "target_lesion": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "description": "Detailed target lesion disease burden (axes, morphology, SUV, location).",
+          "properties": {
+            "long_axis_mm": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "minimum": 0,
+              "description": "Long-axis diameter in mm"
+            },
+            "short_axis_mm": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "minimum": 0,
+              "description": "Short-axis diameter in mm"
+            },
+            "craniocaudal_mm": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "minimum": 0,
+              "description": "Third-axis (craniocaudal) diameter in mm when documented"
+            },
+            "morphology": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "Lesion morphology/CT characteristics (e.g., solid, part-solid, ground-glass, spiculated, cavitary)"
+            },
+            "suv_max": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "minimum": 0,
+              "description": "Maximum SUV on PET if applicable"
+            },
+            "location": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "Anatomic location of the target lesion (lobe/segment) when documented"
+            },
+            "size_text": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "Verbatim lesion size string when useful (e.g., '2.5 x 1.7 cm')"
+            }
+          }
+        }
+      }
+    },
+    "procedure_setting": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "description": "Procedure setting and setup",
+      "properties": {
+        "location": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "OR",
+            "Bronchoscopy Suite",
+            "Pleural Suite",
+            "ICU",
+            "Bedside",
+            "IR Suite",
+            "Hybrid OR",
+            null
+          ]
+        },
+        "patient_position": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "Supine",
+            "Lateral Decubitus - Left",
+            "Lateral Decubitus - Right",
+            "Prone",
+            "Semi-Fowler",
+            null
+          ]
+        },
+        "airway_type": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "Native",
+            "ETT",
+            "Tracheostomy",
+            "LMA",
+            "iGel",
+            null
+          ]
+        },
+        "ett_size": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 5.0,
+          "maximum": 10.0,
+          "description": "ETT size if applicable"
+        },
+        "airway_device_type": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "ETT",
+            "DLT",
+            "Rigid",
+            "Tracheostomy",
+            "LMA",
+            "iGel",
+            "Native",
+            "Other",
+            null
+          ],
+          "description": "Airway device type (supports DLT/rigid sizing). Optional; do not infer if not documented."
+        },
+        "ett_size_mm": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 5.0,
+          "maximum": 10.0,
+          "description": "Endotracheal tube size in mm (ETT only)"
+        },
+        "dlt_size_fr": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 26,
+          "maximum": 45,
+          "description": "Double-lumen tube size in French (DLT only)"
+        },
+        "rigid_barrel_size_mm": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 5.0,
+          "maximum": 16.0,
+          "description": "Rigid bronchoscope barrel size in mm (Rigid only)"
+        }
+      }
+    },
+    "sedation": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "description": "Sedation and anesthesia details",
+      "properties": {
+        "type": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "Moderate",
+            "Deep",
+            "General",
+            "MAC",
+            "Local Only",
+            "Topical Only",
+            null
+          ],
+          "description": "Sedation type (internal canonical values)"
+        },
+        "anesthesia_provider": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "Anesthesiologist",
+            "CRNA",
+            "Proceduralist",
+            "None",
+            null
+          ]
+        },
+        "agents_used": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "string"
+          },
+          "description": "Sedation agents used"
+        },
+        "medications": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "description": "Structured sedation medications (optional). UI/postprocessing may normalize; extraction may omit.",
+          "items": {
+            "type": "object",
+            "properties": {
+              "agent": {
+                "type": "string",
+                "description": "Medication name (e.g., propofol, fentanyl, midazolam)"
+              },
+              "total_dose": {
+                "type": [
+                  "number",
+                  "null"
+                ],
+                "minimum": 0,
+                "description": "Total dose administered (if documented)"
+              },
+              "unit": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "enum": [
+                  "mg",
+                  "mcg",
+                  "g",
+                  "mL",
+                  "units",
+                  "other",
+                  null
+                ],
+                "description": "Dose unit for total_dose"
+              },
+              "infusion_rate": {
+                "type": [
+                  "number",
+                  "null"
+                ],
+                "minimum": 0,
+                "description": "Infusion rate (if applicable)"
+              },
+              "infusion_unit": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "Infusion unit (e.g., mg/hr, mcg/kg/min)"
+              },
+              "duration_minutes": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 0,
+                "description": "Medication/infusion duration in minutes (if documented)"
+              }
+            },
+            "required": [
+              "agent"
+            ]
+          }
+        },
+        "paralytic_used": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "reversal_given": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "Whether sedation reversal was given"
+        },
+        "reversal_agent": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "Flumazenil",
+            "Naloxone",
+            "Sugammadex",
+            "Neostigmine",
+            "Other",
+            null
+          ],
+          "description": "Reversal agent if given"
+        },
+        "reversal_agent_other": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Free text if reversal_agent is 'Other'"
+        },
+        "start_time": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "time",
+          "description": "Sedation start time (HH:MM) for moderate sedation billing"
+        },
+        "end_time": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "time",
+          "description": "Sedation end time (HH:MM) for moderate sedation billing"
+        },
+        "intraservice_minutes": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "description": "Total intraservice sedation minutes (for 99152/+99153 validation)"
+        }
+      }
+    },
+    "equipment": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "description": "Equipment used",
+      "properties": {
+        "bronchoscope_type": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "Diagnostic",
+            "Therapeutic",
+            "Ultrathin",
+            "EBUS",
+            "Single-use",
+            null
+          ]
+        },
+        "bronchoscope_model": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Specific bronchoscope model"
+        },
+        "bronchoscope_outer_diameter_mm": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 2.0,
+          "maximum": 15.0
+        },
+        "fluoroscopy_used": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "fluoroscopy_time_seconds": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0,
+          "description": "Total fluoroscopy time in seconds"
+        },
+        "fluoroscopy_dose_mgy": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0,
+          "description": "Radiation dose in mGy"
+        },
+        "navigation_platform": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "Ion",
+            "Monarch",
+            "Galaxy",
+            "superDimension",
+            "ILLUMISITE",
+            "SPiN",
+            "LungVision",
+            "ARCHIMEDES",
+            "None",
+            null
+          ],
+          "description": "Navigation platform (canonical internal values - map from synonyms in code)"
+        },
+        "cbct_used": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "Cone-beam CT used"
+        },
+        "augmented_fluoroscopy": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "Augmented fluoroscopy/tomosynthesis used"
+        }
+      }
+    },
+    "procedures_performed": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "description": "Specific procedures performed",
+      "properties": {
+        "diagnostic_bronchoscopy": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "properties": {
+            "performed": {
+              "type": "boolean"
+            },
+            "inspection_findings": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "airway_abnormalities": {
+              "type": [
+                "array",
+                "null"
+              ],
+              "items": {
+                "type": "string",
+                "enum": [
+                  "Normal",
+                  "Endobronchial lesion",
+                  "Extrinsic compression",
+                  "Mucosal abnormality",
+                  "Secretions",
+                  "Blood",
+                  "Tracheomalacia",
+                  "Bronchomalacia",
+                  "Stenosis",
+                  "Vocal cord abnormality",
+                  "Fistula",
+                  "Other"
+                ]
+              }
+            }
+          }
+        },
+        "intubation": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "description": "Endotracheal intubation performed as a distinct procedure (e.g., emergency/fiberoptic airway management).",
+          "properties": {
+            "performed": {
+              "type": "boolean"
+            },
+            "method": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "route": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "tube_size": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "notes": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        },
+        "bal": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "description": "Bronchoalveolar lavage",
+          "properties": {
+            "performed": {
+              "type": "boolean"
+            },
+            "location": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "Anatomic location (e.g., RML, Lingula)"
+            },
+            "volume_instilled_ml": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "minimum": 0,
+              "maximum": 500
+            },
+            "volume_recovered_ml": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "minimum": 0
+            },
+            "appearance": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "enum": [
+                "Clear",
+                "Bloody",
+                "Purulent",
+                "Milky",
+                "Other",
+                null
+              ]
+            }
+          }
+        },
+        "bronchial_wash": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "properties": {
+            "performed": {
+              "type": "boolean"
+            },
+            "location": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        },
+        "brushings": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "properties": {
+            "performed": {
+              "type": "boolean"
+            },
+            "locations": {
+              "type": [
+                "array",
+                "null"
+              ],
+              "items": {
+                "type": "string"
+              }
+            },
+            "brush_type": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "enum": [
+                "Standard",
+                "Protected",
+                null
+              ]
+            }
+          }
+        },
+        "endobronchial_biopsy": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "properties": {
+            "performed": {
+              "type": "boolean"
+            },
+            "locations": {
+              "type": [
+                "array",
+                "null"
+              ],
+              "items": {
+                "type": "string"
+              }
+            },
+            "number_of_samples": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 1
+            },
+            "forceps_type": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "enum": [
+                "Standard",
+                "Cryoprobe",
+                null
+              ]
+            }
+          }
+        },
+        "tbna_conventional": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "description": "Conventional TBNA (non-EBUS)",
+          "properties": {
+            "performed": {
+              "type": "boolean"
+            },
+            "stations_sampled": {
+              "type": [
+                "array",
+                "null"
+              ],
+              "items": {
+                "type": "string"
+              }
+            },
+            "needle_gauge": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "enum": [
+                19,
+                21,
+                22,
+                25,
+                null
+              ]
+            },
+            "passes_per_station": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 1
+            }
+          }
+        },
+        "peripheral_tbna": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "description": "Transbronchial needle aspiration of lung/peripheral lesions (non-nodal, distinct from EBUS-TBNA)",
+          "properties": {
+            "performed": {
+              "type": "boolean"
+            },
+            "targets_sampled": {
+              "type": [
+                "array",
+                "null"
+              ],
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "linear_ebus": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "description": "Linear EBUS-TBNA",
+          "properties": {
+            "performed": {
+              "type": "boolean"
+            },
+            "stations_sampled": {
+              "type": [
+                "array",
+                "null"
+              ],
+              "items": {
+                "type": "string",
+                "enum": [
+                  "2R",
+                  "2L",
+                  "3p",
+                  "4R",
+                  "4L",
+                  "7",
+                  "10R",
+                  "10L",
+                  "11R",
+                  "11L",
+                  "12R",
+                  "12L",
+                  "Lung Mass",
+                  "Other"
+                ]
+              },
+              "description": "Lymph node stations sampled"
+            },
+            "stations_planned": {
+              "type": [
+                "array",
+                "null"
+              ],
+              "items": {
+                "type": "string",
+                "enum": [
+                  "2R",
+                  "2L",
+                  "3p",
+                  "4R",
+                  "4L",
+                  "7",
+                  "10R",
+                  "10L",
+                  "11R",
+                  "11L",
+                  "12R",
+                  "12L",
+                  "Lung Mass",
+                  "Other"
+                ]
+              },
+              "description": "Lymph node stations inspected/planned"
+            },
+            "stations_detail": {
+              "type": [
+                "array",
+                "null"
+              ],
+              "description": "Per-station EBUS-TBNA details (passes, size, ROSE, etc.)",
+              "items": {
+                "type": "object",
+                "additionalProperties": true,
+                "properties": {
+	                  "station": {
+	                    "type": "string",
+	                    "enum": [
+	                      "2R",
+	                      "2L",
+	                      "3p",
+	                      "4R",
+	                      "4L",
+	                      "7",
+	                      "10R",
+	                      "10L",
+	                      "11R",
+	                      "11L",
+	                      "12R",
+	                      "12L"
+	                    ]
+	                  },
+	                  "target_id": {
+	                    "type": [
+	                      "string",
+	                      "null"
+	                    ],
+	                    "description": "Stable ID for linking this station detail to collected specimens/targets. UI/postprocessing may assign; extraction may omit."
+	                  },
+	                  "size_mm": {
+	                    "type": [
+	                      "number",
+	                      "null"
+	                    ],
+	                    "minimum": 0
+	                  },
+                  "passes": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ],
+                    "minimum": 1
+                  },
+                  "shape": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "margin": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "echogenicity": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "chs_present": {
+                    "type": [
+                      "boolean",
+                      "null"
+                    ]
+                  },
+                  "appearance_category": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "rose_result": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "required": [
+                  "station"
+                ]
+              }
+            },
+            "needle_gauge": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "enum": [
+                "19G",
+                "21G",
+                "22G",
+                "25G",
+                null
+              ]
+            },
+            "needle_type": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "enum": [
+                "Standard FNA",
+                "Core/ProCore",
+                "Acquire",
+                null
+              ]
+            },
+            "passes_per_station": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 1
+            },
+            "elastography_used": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "elastography_pattern": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "Elastography narrative/pattern if documented"
+            },
+            "doppler_used": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "photodocumentation_complete": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            }
+          }
+        },
+        "eus_b": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "description": "EUS-B (endoscopic ultrasound via EBUS bronchoscope)",
+          "properties": {
+            "performed": {
+              "type": "boolean"
+            },
+            "sites_sampled": {
+              "type": [
+                "array",
+                "null"
+              ],
+              "items": {
+                "type": "string"
+              },
+              "description": "Targets sampled (e.g., left adrenal, paraesophageal mass)"
+            },
+            "needle_gauge": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "enum": [
+                "19G",
+                "21G",
+                "22G",
+                "25G",
+                null
+              ]
+            },
+            "passes": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 1
+            },
+            "rose_result": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "complications": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        },
+        "radial_ebus": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "description": "Radial EBUS for peripheral lesions",
+          "properties": {
+            "performed": {
+              "type": "boolean"
+            },
+            "probe_position": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "enum": [
+                "Concentric",
+                "Eccentric",
+                "Adjacent",
+                "Not visualized",
+                null
+              ]
+            },
+            "guide_sheath_used": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "guide_sheath_size": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "enum": [
+                "Large (2.6mm)",
+                "Small (1.95mm)",
+                null
+              ]
+            }
+          }
+        },
+        "navigational_bronchoscopy": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "properties": {
+            "performed": {
+              "type": "boolean"
+            },
+            "target_reached": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "divergence_mm": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "minimum": 0,
+              "description": "Distance from target in mm"
+            },
+            "tool_in_lesion_confirmed": {
+              "type": [
+                "boolean",
+                "null"
+              ],
+              "description": "Confirmed tool-in-lesion by imaging"
+            },
+            "confirmation_method": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "enum": [
+                "Radial EBUS",
+                "CBCT",
+                "Fluoroscopy",
+                "Augmented Fluoroscopy",
+                "None",
+                null
+              ]
+            },
+            "sampling_tools_used": {
+              "type": [
+                "array",
+                "null"
+              ],
+              "items": {
+                "type": "string",
+                "enum": [
+                  "Needle",
+                  "Forceps",
+                  "Brush",
+                  "Cryoprobe",
+                  "NeedleInNeedle"
+                ]
+              }
+            },
+            "number_of_biopsies": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 1
+            }
+          }
+        },
+        "transbronchial_biopsy": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "description": "Transbronchial lung biopsy (non-navigated)",
+          "properties": {
+            "performed": {
+              "type": "boolean"
+            },
+            "locations": {
+              "type": [
+                "array",
+                "null"
+              ],
+              "items": {
+                "type": "string"
+              }
+            },
+            "number_of_samples": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 1
+            },
+            "forceps_type": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "enum": [
+                "Standard",
+                "Cryoprobe",
+                null
+              ]
+            },
+            "cryoprobe_size_mm": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "enum": [
+                1.1,
+                1.7,
+                1.9,
+                2.4,
+                null
+              ]
+            }
+          }
+        },
+        "transbronchial_cryobiopsy": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "description": "Transbronchial lung cryobiopsy (TBLC)",
+          "properties": {
+            "performed": {
+              "type": "boolean"
+            },
+            "indication": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "enum": [
+                "ILD",
+                "Lung transplant rejection",
+                "Peripheral nodule",
+                "Other",
+                null
+              ]
+            },
+            "probe_size_mm": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "enum": [
+                1.1,
+                1.7,
+                1.9,
+                2.4,
+                null
+              ]
+            },
+            "freeze_time_seconds": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "minimum": 1,
+              "maximum": 15
+            },
+            "locations_biopsied": {
+              "type": [
+                "array",
+                "null"
+              ],
+              "items": {
+                "type": "string"
+              }
+            },
+            "number_of_samples": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 1
+            },
+            "blocker_used": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "blocker_type": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "enum": [
+                "Fogarty",
+                "Arndt",
+                "Cohen",
+                "Cryoprobe sheath",
+                null
+              ]
+            }
+          }
+        },
+        "therapeutic_aspiration": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "description": "Therapeutic aspiration of secretions, blood, etc.",
+          "properties": {
+            "performed": {
+              "type": "boolean"
+            },
+            "material": {
+              "type": [
+                "string",
+                "null"
+              ],
+	              "enum": [
+	                "Mucus plug",
+	                "Mucus",
+	                "Blood/clot",
+	                "Purulent secretions",
+	                "Other",
+	                null
+	              ]
+            },
+            "location": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        },
+        "foreign_body_removal": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "properties": {
+            "performed": {
+              "type": "boolean"
+            },
+            "foreign_body_type": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "location": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "retrieval_tool": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "enum": [
+                "Forceps",
+                "Basket",
+                "Cryoprobe",
+                "Snare",
+                "Other",
+                null
+              ]
+            },
+            "successful": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "rigid_bronchoscopy_required": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            }
+          }
+        },
+        "airway_dilation": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "properties": {
+            "performed": {
+              "type": "boolean"
+            },
+            "location": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "target_anatomy": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "enum": [
+                "Stent expansion",
+                "Stenosis",
+                "Other",
+                null
+              ],
+              "description": "What was dilated (e.g., stenosis/stricture vs stent expansion)."
+            },
+            "etiology": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "enum": [
+                "Post-intubation",
+                "Post-tracheostomy",
+                "Malignant",
+                "Inflammatory",
+                "Anastomotic",
+                "Idiopathic",
+                "Other",
+                null
+              ]
+            },
+            "method": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "enum": [
+                "Balloon",
+                "Rigid bronchoscope",
+                "Bougie",
+                null
+              ]
+            },
+            "balloon_diameter_mm": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "minimum": 4,
+              "maximum": 25
+            },
+            "pre_dilation_diameter_mm": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "post_dilation_diameter_mm": {
+              "type": [
+                "number",
+                "null"
+              ]
+            }
+          }
+        },
+        "airway_stent": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "properties": {
+            "performed": {
+              "type": "boolean"
+            },
+            "action": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "enum": [
+                "Placement",
+                "Removal",
+                "Revision/Repositioning",
+                "Assessment only",
+                null
+              ]
+            },
+            "airway_stent_removal": {
+              "type": "boolean",
+              "default": false,
+              "description": "True if airway stent removal was performed."
+            },
+            "stent_type": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "enum": [
+                "Silicone - Dumon",
+                "Silicone - Hood",
+                "Silicone - Novatech",
+                "SEMS - Uncovered",
+                "SEMS - Covered",
+                "SEMS - Partially covered",
+                "Hybrid",
+                "Y-Stent",
+                "Other",
+                null
+              ]
+            },
+            "stent_brand": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "diameter_mm": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "minimum": 6,
+              "maximum": 25
+            },
+            "length_mm": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "minimum": 10,
+              "maximum": 100
+            },
+            "location": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "enum": [
+                "Trachea",
+                "Right mainstem",
+                "Left mainstem",
+                "Bronchus intermedius",
+                "Carina (Y)",
+                "Other",
+                null
+              ]
+            },
+            "indication": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "enum": [
+                "Malignant obstruction",
+                "Benign stenosis",
+                "Tracheomalacia",
+                "Fistula",
+                "Post-dilation",
+                "Other",
+                null
+              ]
+            },
+            "deployment_successful": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            }
+          }
+        },
+        "thermal_ablation": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "description": "Endobronchial thermal ablation (APC, electrocautery, laser)",
+          "properties": {
+            "performed": {
+              "type": "boolean"
+            },
+            "modality": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "enum": [
+                "APC",
+                "Electrocautery",
+                "Laser (Nd:YAG)",
+                "Laser (CO2)",
+                "Laser (Diode)",
+                null
+              ]
+            },
+            "location": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "indication": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "enum": [
+                "Tumor debulking",
+                "Hemostasis",
+                "Granulation tissue",
+                "Web/stenosis",
+                "Other",
+                null
+              ]
+            },
+            "power_setting_watts": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "minimum": 0
+            },
+            "apc_flow_rate": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "description": "APC argon flow rate L/min"
+            }
+          }
+        },
+        "mechanical_debulking": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "properties": {
+            "performed": {
+              "type": "boolean"
+            },
+            "method": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "enum": [
+                "Rigid coring",
+                "Microdebrider",
+                "Cryoextraction",
+                "Forceps debulking",
+                null
+              ]
+            },
+            "location": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        },
+        "therapeutic_outcomes": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "description": "Therapeutic outcomes / response metrics (e.g., pre/post obstruction, airway diameter).",
+          "properties": {
+            "pre_obstruction_pct": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0,
+              "maximum": 100,
+              "description": "Pre-intervention obstruction percent (0-100) when explicitly documented"
+            },
+            "post_obstruction_pct": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0,
+              "maximum": 100,
+              "description": "Post-intervention obstruction percent (0-100) when explicitly documented"
+            },
+            "pre_diameter_mm": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "minimum": 0,
+              "description": "Pre-intervention airway diameter in mm when explicitly documented"
+            },
+            "post_diameter_mm": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "minimum": 0,
+              "description": "Post-intervention airway diameter in mm when explicitly documented"
+            }
+          }
+        },
+        "cryotherapy": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "description": "Endobronchial cryotherapy/cryoextraction",
+          "properties": {
+            "performed": {
+              "type": "boolean"
+            },
+            "indication": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "enum": [
+                "Tumor debulking",
+                "Foreign body",
+                "Clot extraction",
+                "Granulation tissue",
+                "Other",
+                null
+              ]
+            },
+            "probe_size_mm": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "enum": [
+                1.1,
+                1.7,
+                1.9,
+                2.4,
+                null
+              ]
+            },
+            "location": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "freeze_cycles": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 1
+            }
+          }
+        },
+        "photodynamic_therapy": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "properties": {
+            "performed": {
+              "type": "boolean"
+            },
+            "photosensitizer": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "location": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "energy_delivered_joules": {
+              "type": [
+                "number",
+                "null"
+              ]
+            }
+          }
+        },
+        "brachytherapy_catheter": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "properties": {
+            "performed": {
+              "type": "boolean"
+            },
+            "location": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "catheter_placed": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            }
+          }
+        },
+        "blvr": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "description": "Bronchoscopic lung volume reduction",
+          "properties": {
+            "performed": {
+              "type": "boolean"
+            },
+            "procedure_type": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "enum": [
+                "Valve placement",
+                "Valve removal",
+                "Valve assessment",
+                "Coil placement",
+                null
+              ]
+            },
+            "target_lobe": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "enum": [
+                "RUL",
+                "RML",
+                "RLL",
+                "LUL",
+                "Lingula",
+                "LLL",
+                null
+              ]
+            },
+            "valve_type": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "enum": [
+                "Zephyr (Pulmonx)",
+                "Spiration (Olympus)",
+                null
+              ]
+            },
+            "valve_sizes": {
+              "type": [
+                "array",
+                "null"
+              ],
+              "items": {
+                "type": "string"
+              },
+              "description": "Sizes of valves placed"
+            },
+            "number_of_valves": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 1,
+              "maximum": 10
+            },
+            "segments_treated": {
+              "type": [
+                "array",
+                "null"
+              ],
+              "items": {
+                "type": "string"
+              }
+            },
+            "collateral_ventilation_assessment": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "enum": [
+                "Chartis negative",
+                "Chartis positive",
+                "Chartis indeterminate",
+                "Fissure integrity >90%",
+                "Not assessed",
+                null
+              ]
+            },
+            "target_lobe_volume_ml": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "description": "Pre-procedure target lobe volume"
+            },
+            "heterogeneity_index": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "description": "Emphysema heterogeneity index"
+            }
+          }
+        },
+        "balloon_occlusion": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "description": "Balloon occlusion / endobronchial blocker workflow (e.g., air leak localization, bleeding isolation).",
+          "properties": {
+            "performed": {
+              "type": "boolean"
+            },
+            "occlusion_location": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "Anatomic location/target of occlusion when documented (e.g., lobe/segment)."
+            },
+            "air_leak_result": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "Result of air-leak assessment during occlusion (e.g., 'resolved', 'partial', 'persistent')."
+            },
+            "device_size": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "Balloon/device size when documented."
+            }
+          }
+        },
+        "peripheral_ablation": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "description": "Bronchoscopic ablation of peripheral lung lesions",
+          "properties": {
+            "performed": {
+              "type": "boolean"
+            },
+            "modality": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "enum": [
+                "Microwave",
+                "Radiofrequency",
+                "Cryoablation",
+                "Photodynamic",
+                "Steam/Vapor",
+                null
+              ]
+            },
+            "device_name": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "device_manufacturer": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "target_location": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "lesion_size_mm": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "ablation_duration_seconds": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "minimum": 0
+            },
+            "power_setting": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "number_of_ablations": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 1
+            },
+            "margin_assessed": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "margin_assessment_method": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "enum": [
+                "CBCT",
+                "Biopsy",
+                "Fluoroscopy",
+                null
+              ]
+            },
+            "immediate_imaging_result": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        },
+        "bronchial_thermoplasty": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "properties": {
+            "performed": {
+              "type": "boolean"
+            },
+            "session_number": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "enum": [
+                1,
+                2,
+                3,
+                null
+              ]
+            },
+            "areas_treated": {
+              "type": [
+                "array",
+                "null"
+              ],
+              "items": {
+                "type": "string"
+              }
+            },
+            "number_of_activations": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          }
+        },
+        "whole_lung_lavage": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "properties": {
+            "performed": {
+              "type": "boolean"
+            },
+            "side": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "enum": [
+                "Right",
+                "Left",
+                null
+              ]
+            },
+            "total_volume_liters": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "cycles": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "indication": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "enum": [
+                "PAP",
+                "Silicosis",
+                "Other",
+                null
+              ]
+            }
+          }
+        },
+        "rigid_bronchoscopy": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "properties": {
+            "performed": {
+              "type": "boolean"
+            },
+            "rigid_scope_size": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "description": "Inner diameter in mm"
+            },
+            "indication": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "jet_ventilation_used": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            }
+          }
+        },
+        "percutaneous_tracheostomy": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "description": "Percutaneous tracheostomy",
+          "properties": {
+            "performed": {
+              "type": "boolean"
+            },
+            "method": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "enum": [
+                "percutaneous",
+                "open",
+                null
+              ]
+            },
+            "device_name": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "size": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        },
+        "neck_ultrasound": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "description": "Neck ultrasound (often pre-tracheostomy vascular mapping)",
+          "properties": {
+            "performed": {
+              "type": "boolean"
+            },
+            "vessels_visualized": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "findings": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        },
+        "chest_ultrasound": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "description": "Chest ultrasound (includes mediastinum), real time with image documentation",
+          "properties": {
+            "performed": {
+              "type": "boolean"
+            },
+            "image_documentation": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "hemithorax": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "enum": [
+                "Right",
+                "Left",
+                "Bilateral",
+                null
+              ]
+            },
+            "effusion_volume": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "enum": [
+                "None",
+                "Minimal",
+                "Small",
+                "Moderate",
+                "Large",
+                null
+              ]
+            },
+            "effusion_echogenicity": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "enum": [
+                "Anechoic",
+                "Hypoechoic",
+                "Isoechoic",
+                "Hyperechoic",
+                null
+              ]
+            },
+            "effusion_loculations": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "enum": [
+                "None",
+                "Thin",
+                "Thick",
+                null
+              ]
+            },
+            "diaphragmatic_motion": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "enum": [
+                "Normal",
+                "Diminished",
+                "Absent",
+                null
+              ]
+            },
+            "lung_sliding_pre": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "enum": [
+                "Present",
+                "Absent",
+                null
+              ]
+            },
+            "lung_sliding_post": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "enum": [
+                "Present",
+                "Absent",
+                null
+              ]
+            },
+            "lung_consolidation_present": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "pleura_characteristics": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "enum": [
+                "Normal",
+                "Thick",
+                "Nodular",
+                null
+              ]
+            },
+            "impression_text": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "plan_text": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        }
+      }
+    },
+    "pleural_procedures": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "description": "Pleural procedures",
+      "properties": {
+        "thoracentesis": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "properties": {
+            "performed": {
+              "type": "boolean"
+            },
+            "side": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "enum": [
+                "Right",
+                "Left",
+                "Bilateral",
+                null
+              ]
+            },
+            "guidance": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "enum": [
+                "Ultrasound",
+                "CT",
+                "None/Landmark",
+                null
+              ]
+            },
+            "indication": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "enum": [
+                "Diagnostic",
+                "Therapeutic",
+                "Both",
+                null
+              ]
+            },
+            "fluid_appearance": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "enum": [
+                "Serous/Clear",
+                "Serosanguinous",
+                "Bloody",
+                "Purulent",
+                "Milky/Chylous",
+                "Turbid",
+                null
+              ]
+            },
+            "volume_removed_ml": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "minimum": 0,
+              "maximum": 5000
+            },
+            "manometry_performed": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "opening_pressure_cmh2o": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "closing_pressure_cmh2o": {
+              "type": [
+                "number",
+                "null"
+              ]
+            }
+          }
+        },
+        "chest_tube": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "properties": {
+            "performed": {
+              "type": "boolean"
+            },
+            "action": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "enum": [
+                "Insertion",
+                "Removal",
+                "Repositioning",
+                "Exchange",
+                null
+              ]
+            },
+            "side": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "enum": [
+                "Right",
+                "Left",
+                null
+              ]
+            },
+            "indication": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "enum": [
+                "Pneumothorax",
+                "Effusion drainage",
+                "Empyema",
+                "Hemothorax",
+                "Post-procedural",
+                null
+              ]
+            },
+            "tube_type": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "enum": [
+                "Pigtail",
+                "Straight",
+                "Surgical/Large bore",
+                null
+              ]
+            },
+            "tube_size_fr": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 8,
+              "maximum": 40
+            },
+            "guidance": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "enum": [
+                "Ultrasound",
+                "CT",
+                "Fluoroscopy",
+                "None",
+                null
+              ]
+            }
+          }
+        },
+        "ipc": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "description": "Indwelling pleural catheter",
+          "properties": {
+            "performed": {
+              "type": "boolean"
+            },
+            "action": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "enum": [
+                "Insertion",
+                "Removal",
+                "Fibrinolytic instillation",
+                null
+              ]
+            },
+            "side": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "enum": [
+                "Right",
+                "Left",
+                null
+              ]
+            },
+            "catheter_brand": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "enum": [
+                "PleurX",
+                "Aspira",
+                "Rocket",
+                "Other",
+                null
+              ]
+            },
+            "indication": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "enum": [
+                "Malignant effusion",
+                "Recurrent benign effusion",
+                "Hepatic hydrothorax",
+                "Heart failure",
+                "Other",
+                null
+              ]
+            },
+            "tunneled": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            }
+          }
+        },
+        "medical_thoracoscopy": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "description": "Medical pleuroscopy",
+          "properties": {
+            "performed": {
+              "type": "boolean"
+            },
+            "side": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "enum": [
+                "Right",
+                "Left",
+                null
+              ]
+            },
+            "scope_type": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "enum": [
+                "Rigid",
+                "Semi-rigid",
+                "Flex-rigid",
+                null
+              ]
+            },
+            "anesthesia_type": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "enum": [
+                "Local with sedation",
+                "General",
+                null
+              ]
+            },
+            "findings": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "biopsies_taken": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "number_of_biopsies": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "adhesiolysis_performed": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            }
+          }
+        },
+        "pleurodesis": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "properties": {
+            "performed": {
+              "type": "boolean"
+            },
+            "method": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "enum": [
+                "Chemical - slurry",
+                "Chemical - poudrage",
+                "Mechanical",
+                "IPC-related autopleurodesis",
+                null
+              ]
+            },
+            "agent": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "enum": [
+                "Talc",
+                "Doxycycline",
+                "Bleomycin",
+                "Povidone-iodine",
+                "Silver nitrate",
+                "Other",
+                null
+              ]
+            },
+            "talc_dose_grams": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "minimum": 1,
+              "maximum": 10
+            },
+            "indication": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "enum": [
+                "Malignant effusion",
+                "Recurrent pneumothorax",
+                "Recurrent benign effusion",
+                null
+              ]
+            }
+          }
+        },
+        "pleural_biopsy": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "description": "Image-guided pleural biopsy (non-thoracoscopic)",
+          "properties": {
+            "performed": {
+              "type": "boolean"
+            },
+            "side": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "enum": [
+                "Right",
+                "Left",
+                null
+              ]
+            },
+            "guidance": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "enum": [
+                "Ultrasound",
+                "CT",
+                null
+              ]
+            },
+            "needle_type": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "enum": [
+                "Cutting needle",
+                "Abrams needle",
+                "Tru-cut",
+                null
+              ]
+            },
+            "number_of_samples": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          }
+        },
+        "fibrinolytic_therapy": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "properties": {
+            "performed": {
+              "type": "boolean"
+            },
+            "agents": {
+              "type": [
+                "array",
+                "null"
+              ],
+              "items": {
+                "type": "string",
+                "enum": [
+                  "tPA",
+                  "DNase",
+                  "Streptokinase",
+                  "Urokinase"
+                ]
+              }
+            },
+            "tpa_dose_mg": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "dnase_dose_mg": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "indication": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "enum": [
+                "Complex parapneumonic",
+                "Empyema",
+                "Hemothorax",
+                "Malignant effusion",
+                null
+              ]
+            },
+            "number_of_doses": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          }
+        }
+      }
+    },
+    "specimens": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "description": "Specimen and pathology information",
+      "properties": {
+        "specimens_collected": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "BAL",
+                  "Bronchial wash",
+                  "Brushing",
+                  "Endobronchial biopsy",
+                  "TBNA",
+                  "EBUS-TBNA",
+                  "Transbronchial biopsy",
+                  "Cryobiopsy",
+                  "Pleural fluid",
+                  "Pleural biopsy",
+                  "Other"
+                ]
+              },
+	              "location": {
+	                "type": [
+	                  "string",
+	                  "null"
+	                ]
+	              },
+	              "source_target_id": {
+	                "type": [
+	                  "string",
+	                  "null"
+	                ],
+	                "description": "Optional link to a granular target/station target_id when known. UI/postprocessing may assign; extraction may omit."
+	              },
+	              "container_count": {
+	                "type": [
+	                  "integer",
+	                  "null"
+	                ]
+	              },
+              "sent_for": {
+                "type": [
+                  "array",
+                  "null"
+                ],
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "Cytology",
+                    "Cell block",
+                    "Histology",
+                    "Flow cytometry",
+                    "Microbiology",
+                    "AFB",
+                    "Fungal",
+                    "Molecular/NGS",
+                    "PD-L1",
+                    "Other"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "rose_result": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "Adequate - malignant",
+            "Adequate - benign lymphocytes",
+            "Adequate - granulomas",
+            "Adequate - other",
+            "Inadequate",
+            "Not performed",
+            null
+          ],
+          "description": "ROSE preliminary result"
+        },
+        "specimen_adequacy": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "Adequate",
+            "Inadequate",
+            "Pending",
+            null
+          ]
+        }
+      }
+    },
+    "complications": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "description": "Procedure complications",
+      "properties": {
+        "any_complication": {
+          "type": "boolean",
+          "default": false,
+          "description": "Master flag - if false, complication_list should be empty or omitted"
+        },
+	        "complication_list": {
+	          "type": [
+	            "array",
+	            "null"
+	          ],
+	          "items": {
+	            "type": "string",
+            "enum": [
+              "Bleeding - Mild",
+              "Bleeding - Moderate",
+              "Bleeding - Severe",
+              "Pneumothorax",
+              "Hypoxia",
+              "Respiratory failure",
+              "Hypotension",
+              "Arrhythmia",
+              "Bronchospasm",
+              "Laryngospasm",
+              "Aspiration",
+              "Infection",
+              "Air embolism",
+              "Cardiac arrest",
+              "Death",
+              "Other"
+            ]
+	          },
+	          "description": "List of complications that occurred (omit 'None' - use any_complication: false instead)"
+	        },
+	        "events": {
+	          "type": [
+	            "array",
+	            "null"
+	          ],
+	          "description": "Structured complications (optional, parallel to complication_list). UI/postprocessing may normalize; extraction may omit.",
+	          "items": {
+	            "type": "object",
+	            "properties": {
+	              "type": {
+	                "type": "string",
+	                "description": "Complication type (e.g., Bleeding, Pneumothorax, Hypoxia, Arrhythmia)"
+	              },
+	              "ctcae_grade": {
+	                "type": [
+	                  "integer",
+	                  "null"
+	                ],
+	                "minimum": 1,
+	                "maximum": 5,
+	                "description": "CTCAE grade (1-5) when documented"
+	              },
+	              "interventions": {
+	                "type": [
+	                  "array",
+	                  "null"
+	                ],
+	                "items": {
+	                  "type": "string"
+	                },
+	                "description": "Interventions performed for this complication"
+	              },
+	              "notes": {
+	                "type": [
+	                  "string",
+	                  "null"
+	                ]
+	              }
+	            },
+	            "required": [
+	              "type"
+	            ]
+	          }
+	        },
+	        "bleeding": {
+	          "type": [
+	            "object",
+	            "null"
+	          ],
+	          "properties": {
+            "occurred": {
+              "type": "boolean"
+            },
+            "severity": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "enum": [
+                "Mild (<50mL)",
+                "Moderate (50-200mL)",
+                "Severe (>200mL)",
+                null
+              ]
+            },
+            "intervention_required": {
+              "type": [
+                "array",
+                "null"
+              ],
+              "items": {
+                "type": "string",
+                "enum": [
+                  "Cold saline",
+                  "Epinephrine",
+                  "Balloon tamponade",
+                  "Electrocautery",
+                  "APC",
+                  "Transfusion",
+                  "Embolization",
+                  "Surgery",
+                  "None"
+                ]
+              }
+            }
+          }
+        },
+        "pneumothorax": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "properties": {
+            "occurred": {
+              "type": "boolean"
+            },
+            "size": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "enum": [
+                "Small (<2cm)",
+                "Moderate (2-4cm)",
+                "Large (>4cm)",
+                "Tension",
+                null
+              ]
+            },
+            "intervention": {
+              "type": [
+                "array",
+                "null"
+              ],
+              "items": {
+                "type": "string",
+                "enum": [
+                  "Observation",
+                  "Aspiration",
+                  "Pigtail catheter",
+                  "Chest tube",
+                  "Heimlich valve",
+                  "Surgery"
+                ]
+              }
+            }
+          }
+        },
+        "respiratory": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "properties": {
+            "hypoxia_occurred": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "lowest_spo2": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0,
+              "maximum": 100
+            },
+            "supplemental_o2_increased": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "intubation_required": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "respiratory_failure": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            }
+          }
+        },
+        "other_complication_details": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Free text for other complications"
+        }
+      }
+    },
+    "outcomes": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "description": "Procedure outcomes and disposition",
+      "properties": {
+        "procedure_completed": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "Whether procedure was completed as planned"
+        },
+        "procedure_aborted_reason": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Reason if procedure was aborted"
+        },
+        "procedure_success_status": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "Success",
+            "Partial success",
+            "Failed",
+            "Aborted",
+            "Unknown",
+            null
+          ],
+          "description": "Overall procedure success status (captures suboptimal/failed/aborted workflows)."
+        },
+        "aborted_reason": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Free-text reason for aborted/failed/partial success status (when documented)."
+        },
+        "complication_intervention": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Intervention performed for a complication (free text) when documented."
+        },
+        "complication_duration": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Duration/timing of complication management (e.g., '15 minutes') when documented."
+        },
+        "preliminary_diagnosis": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Preliminary diagnosis based on procedure"
+        },
+        "preliminary_staging": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Preliminary staging if applicable"
+        },
+        "disposition": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "Outpatient discharge",
+            "Observation unit",
+            "Floor admission",
+            "ICU admission",
+            "Already inpatient - return to floor",
+            "Already inpatient - transfer to ICU",
+            "Transfer to another facility",
+            "OR",
+            "Death",
+            null
+          ]
+        },
+        "discharge_time": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "time"
+        },
+        "follow_up_imaging_ordered": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "follow_up_imaging_type": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "follow_up_plan_text": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Free-text follow-up plan details"
+        },
+        "follow_up_actions": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "object",
+            "properties": {
+              "action_type": {
+                "type": "string",
+                "enum": [
+                  "Clinic visit - IP",
+                  "Clinic visit - Pulmonology",
+                  "Clinic visit - Oncology",
+                  "Clinic visit - Thoracic surgery",
+                  "Clinic visit - Radiation oncology",
+                  "Clinic visit - Other",
+                  "CT chest",
+                  "CT chest with contrast",
+                  "PET-CT",
+                  "CXR",
+                  "Pulmonary function tests",
+                  "Pulmonary rehabilitation",
+                  "Repeat bronchoscopy",
+                  "Surgical consultation",
+                  "Tumor board",
+                  "ILD multidisciplinary conference",
+                  "Pathology follow-up",
+                  "Lab work",
+                  "Other"
+                ]
+              },
+              "timeframe": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "Expected timeframe (e.g., '2 weeks', '1 month', 'PRN')"
+              },
+              "notes": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "action_type"
+            ]
+          },
+          "description": "Structured follow-up actions for analytics"
+        }
+      }
+    },
+    "pathology_results": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "description": "Final pathology results (to be updated)",
+      "properties": {
+        "final_diagnosis": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "final_staging": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "histology": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "molecular_markers": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "additionalProperties": true,
+          "description": "Molecular testing results (EGFR, ALK, ROS1, etc.)"
+        },
+        "pdl1_tps_percent": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 100
+        },
+        "pdl1_tps_text": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "PD-L1 TPS as reported when expressed with operators/ranges (e.g., '<1%', '>50%')."
+        },
+        "microbiology_results": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "pathology_result_date": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date"
+        }
+      }
+    },
+    "billing": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "description": "Billing and coding information",
+      "properties": {
+        "cpt_codes": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "string",
+                "pattern": "^\\+?[0-9]{5}$",
+                "description": "CPT code (prefix with + for add-on codes)"
+              },
+              "description": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "modifier": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "Single modifier (e.g., '59', '26', 'LT')"
+              },
+              "modifiers": {
+                "type": [
+                  "array",
+                  "null"
+                ],
+                "items": {
+                  "type": "string"
+                },
+                "description": "Multiple modifiers if needed"
+              },
+              "units": {
+                "type": "integer",
+                "default": 1,
+                "minimum": 1,
+                "description": "Number of units (for RVU multiplication)"
+              },
+              "derived_from": {
+                "type": [
+                  "array",
+                  "null"
+                ],
+                "description": "Traceability pointers/IDs describing which structured registry fields drove this CPT line (e.g., 'procedures_performed.linear_ebus').",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "evidence": {
+                "type": [
+                  "array",
+                  "null"
+                ],
+                "description": "Evidence items supporting this CPT line (V3 evidence contract for UI highlighting).",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "source": {
+                      "type": "string"
+                    },
+                    "text": {
+                      "type": "string"
+                    },
+                    "span": {
+                      "type": "array",
+                      "items": {
+                        "type": "integer"
+                      },
+                      "minItems": 2,
+                      "maxItems": 2
+                    },
+                    "confidence": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1
+                    }
+                  }
+                }
+              }
+            },
+            "required": [
+              "code"
+            ]
+          }
+        },
+        "icd10_codes": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Z][0-9]{2}(\\.[0-9A-Z]{1,4})?$"
+          },
+          "description": "ICD-10 diagnosis codes"
+        },
+        "total_rvu": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "description": "Calculated total RVU"
+        },
+        "work_rvu": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "practice_expense_rvu": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "malpractice_rvu": {
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      }
+    },
+    "coding_support": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "description": "AI-assisted coding and financial support data for this registry entry. Contains Section 1\u20133 summaries (coding summary, financial analysis, coding rationale).",
+      "properties": {
+        "version": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Version tag for the coding_support schema/logic (e.g., 'coding_support.v1')."
+        },
+        "generated_at": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time",
+          "description": "Timestamp when this coding_support payload was generated (ISO 8601)."
+        },
+        "generator": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Identifier of the model or system that generated this payload."
+        },
+        "knowledge_base_version": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Version of the coding/RVU knowledge base used (e.g., 'ip_coding_billing.v2.7')."
+        },
+        "coding_summary": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "description": "Section 1 \u2013 Coding Summary: CPT lines and basic metadata.",
+          "properties": {
+            "primary_family": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "Optional canonical procedure family key (e.g., 'bronchoscopy_therapeutic_airway_tumor')."
+            },
+            "lines": {
+              "type": [
+                "array",
+                "null"
+              ],
+              "description": "Ordered list of CPT lines shown in the Section 1 table.",
+              "items": {
+                "type": "object",
+                "required": [
+                  "code"
+                ],
+                "properties": {
+                  "sequence": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ],
+                    "minimum": 1,
+                    "description": "1-based order of this line in the table."
+                  },
+                  "code": {
+                    "type": "string",
+                    "pattern": "^\\+?[0-9]{5}$",
+                    "description": "CPT code; '+' prefix indicates add-on codes (same regex as billing.cpt_codes)."
+                  },
+                  "modifier": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "description": "Single primary modifier applied to this line (e.g., '59', '26')."
+                  },
+                  "modifiers": {
+                    "type": [
+                      "array",
+                      "null"
+                    ],
+                    "items": {
+                      "type": "string"
+                    },
+                    "description": "All modifiers applied to this line, if multiple."
+                  },
+                  "description": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "description": "Human-readable CPT description (resolved from the coding/RVU knowledge base)."
+                  },
+                  "units": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ],
+                    "minimum": 1,
+                    "default": 1,
+                    "description": "Number of units reported for this code."
+                  },
+                  "role": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "enum": [
+                      "primary",
+                      "add_on",
+                      "secondary",
+                      "bundled_only"
+                    ],
+                    "description": "Role of this code within the endoscopy family and claim."
+                  },
+                  "selection_status": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "enum": [
+                      "candidate",
+                      "selected",
+                      "dropped"
+                    ],
+                    "description": "Whether the code is recommended to be billed after rules are applied."
+                  },
+                  "selection_reason": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "description": "Short explanation of why the code was selected, bundled, or dropped."
+                  },
+                  "family_key": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "description": "Optional key from ip_coding_billing.code_lists (e.g., 'bronchoscopy_navigation')."
+                  },
+                  "is_add_on": {
+                    "type": [
+                      "boolean",
+                      "null"
+                    ],
+                    "description": "True if this code is an add-on (in add_on_codes or CMS status ZZZ)."
+                  },
+                  "source": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "enum": [
+                      "model",
+                      "human",
+                      "merged"
+                    ],
+                    "description": "Origin of this line (model suggestion vs human edit)."
+                  },
+                  "note_spans": {
+                    "type": [
+                      "array",
+                      "null"
+                    ],
+                    "description": "Optional linkage back to spans in the source note.",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "start": {
+                          "type": [
+                            "integer",
+                            "null"
+                          ],
+                          "minimum": 0,
+                          "description": "Byte or character index where supporting text starts."
+                        },
+                        "end": {
+                          "type": [
+                            "integer",
+                            "null"
+                          ],
+                          "minimum": 0,
+                          "description": "Byte or character index where supporting text ends."
+                        },
+                        "snippet": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "description": "Short excerpt of the supporting documentation."
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "financial_analysis": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "description": "Section 2 \u2013 Financial Analysis using fee schedule/RVU tables.",
+          "properties": {
+            "calendar_year": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "description": "Calendar year of the fee schedule (e.g., 2025)."
+            },
+            "fee_schedule_name": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "Internal fee schedule key (e.g., 'physician_2025_airway')."
+            },
+            "rvu_source": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "Reference to the RVU source used (e.g., 'cms_rvus.bronchoscopy')."
+            },
+            "conversion_factor": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "description": "Medicare PFS conversion factor used for payment estimates."
+            },
+            "setting": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "enum": [
+                "facility",
+                "nonfacility",
+                "unknown"
+              ],
+              "description": "Professional billing setting."
+            },
+            "per_code": {
+              "type": [
+                "array",
+                "null"
+              ],
+              "description": "Per-code RVU and payment details populated from the coding/RVU knowledge base.",
+              "items": {
+                "type": "object",
+                "required": [
+                  "code"
+                ],
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "pattern": "^\\+?[0-9]{5}$"
+                  },
+                  "units": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ],
+                    "minimum": 1,
+                    "default": 1
+                  },
+                  "work_rvu": {
+                    "type": [
+                      "number",
+                      "null"
+                    ],
+                    "description": "Work RVU (per unit) for this code."
+                  },
+                  "total_facility_rvu": {
+                    "type": [
+                      "number",
+                      "null"
+                    ],
+                    "description": "Total facility RVU (per unit) for this code."
+                  },
+                  "total_nonfacility_rvu": {
+                    "type": [
+                      "number",
+                      "null"
+                    ],
+                    "description": "Total nonfacility RVU (per unit) for this code."
+                  },
+                  "mpfs_facility_payment": {
+                    "type": [
+                      "number",
+                      "null"
+                    ],
+                    "description": "Estimated national MPFS payment for facility setting (per unit)."
+                  },
+                  "mpfs_nonfacility_payment": {
+                    "type": [
+                      "number",
+                      "null"
+                    ],
+                    "description": "Estimated national MPFS payment for nonfacility setting (per unit)."
+                  },
+                  "apc": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "description": "Optional APC code used for hospital OPPS reference."
+                  },
+                  "opps_payment": {
+                    "type": [
+                      "number",
+                      "null"
+                    ],
+                    "description": "OPPS payment amount (hospital outpatient), when available."
+                  },
+                  "asc_payment": {
+                    "type": [
+                      "number",
+                      "null"
+                    ],
+                    "description": "ASC payment amount, when available."
+                  },
+                  "mppi": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ],
+                    "description": "Multiple Procedure Payment Indicator, when present in the knowledge base."
+                  },
+                  "is_add_on": {
+                    "type": [
+                      "boolean",
+                      "null"
+                    ]
+                  },
+                  "is_primary": {
+                    "type": [
+                      "boolean",
+                      "null"
+                    ],
+                    "description": "True if this is the highest-valued endoscopy used as the primary for MPPR."
+                  },
+                  "rvu_source_path": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "description": "Path into the knowledge base used to populate this row (e.g., 'fee_schedules.physician_2025_airway.codes.31641')."
+                  }
+                }
+              }
+            },
+            "totals": {
+              "type": [
+                "object",
+                "null"
+              ],
+              "description": "Aggregate RVU and payment totals for the encounter.",
+              "properties": {
+                "total_work_rvu": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "total_facility_rvu": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "total_nonfacility_rvu": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "estimated_facility_payment_unadjusted": {
+                  "type": [
+                    "number",
+                    "null"
+                  ],
+                  "description": "Sum of per-code facility payments before multiple-procedure reductions."
+                },
+                "estimated_nonfacility_payment_unadjusted": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "estimated_facility_payment_after_mppr": {
+                  "type": [
+                    "number",
+                    "null"
+                  ],
+                  "description": "Optional estimate after applying multiple endoscopy / MPPR logic."
+                },
+                "estimated_nonfacility_payment_after_mppr": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                }
+              }
+            },
+            "mppr_assumptions": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "Narrative description of multiple endoscopy / MPPR assumptions."
+            },
+            "notes": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "Free-text comments about interpretation of these financial values (e.g., 'values unadjusted for local geographic factor')."
+            }
+          }
+        },
+        "coding_rationale": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "description": "Section 3 \u2013 Coding rationale, bundling logic, and QA flags.",
+          "properties": {
+            "per_code": {
+              "type": [
+                "array",
+                "null"
+              ],
+              "description": "Narrative rationale per CPT code.",
+              "items": {
+                "type": "object",
+                "required": [
+                  "code"
+                ],
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "pattern": "^\\+?[0-9]{5}$"
+                  },
+                  "summary": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "description": "Plain-language explanation of why this code was suggested, kept, bundled, or dropped."
+                  },
+                  "documentation_evidence": {
+                    "type": [
+                      "array",
+                      "null"
+                    ],
+                    "description": "Optional list of supporting documentation snippets.",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "snippet": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "span": {
+                          "type": [
+                            "object",
+                            "null"
+                          ],
+                          "properties": {
+                            "start": {
+                              "type": [
+                                "integer",
+                                "null"
+                              ],
+                              "minimum": 0
+                            },
+                            "end": {
+                              "type": [
+                                "integer",
+                                "null"
+                              ],
+                              "minimum": 0
+                            }
+                          }
+                        }
+                      }
+                    }
+                  },
+                  "rule_refs": {
+                    "type": [
+                      "array",
+                      "null"
+                    ],
+                    "description": "IDs of coding rules from the knowledge base that influenced this code (e.g., 'diagnostic_with_surgical', 'radial_requires_peripheral_sampling').",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "qa_flags": {
+                    "type": [
+                      "array",
+                      "null"
+                    ],
+                    "description": "Documentation QA flags specific to this code.",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "severity": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "enum": [
+                            "info",
+                            "warning",
+                            "error"
+                          ]
+                        },
+                        "rule_id": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "description": "Optional QA rule ID from the knowledge base (e.g., 'radial_requires_peripheral_sampling')."
+                        },
+                        "message": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "description": "Human-readable QA message."
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "rules_applied": {
+              "type": [
+                "array",
+                "null"
+              ],
+              "description": "Global list of bundling/QA rules applied when generating the coding summary.",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "rule_id": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "description": "Key from ip_coding_billing.bundling_rules, qa_rules, or policies (e.g., 'diagnostic_with_surgical')."
+                  },
+                  "rule_type": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "enum": [
+                      "bundling",
+                      "qa",
+                      "documentation",
+                      "local"
+                    ]
+                  },
+                  "description": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "codes_affected": {
+                    "type": [
+                      "array",
+                      "null"
+                    ],
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "outcome": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "enum": [
+                      "kept",
+                      "dropped",
+                      "flagged",
+                      "informational"
+                    ],
+                    "description": "High-level effect this rule had on the code set."
+                  },
+                  "details": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "description": "Optional free-text explanation of how the rule was applied."
+                  }
+                }
+              }
+            },
+            "global_comments": {
+              "type": [
+                "array",
+                "null"
+              ],
+              "description": "High-level narrative bullets describing coding strategy, bundling, and key caveats (mirrors the prose in Section 3).",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    "metadata": {
+      "type": "object",
+      "description": "Record metadata",
+      "required": [
+        "data_entry_status"
+      ],
+      "properties": {
+        "schema_version": {
+          "type": "string",
+          "description": "Version of the IP Registry schema (e.g., '2.0.0')",
+          "default": "2.0.0"
+        },
+        "data_entry_status": {
+          "type": "string",
+          "enum": [
+            "Complete",
+            "Incomplete",
+            "Pending Review",
+            "Pending Pathology"
+          ],
+          "default": "Incomplete"
+        },
+        "created_at": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "created_by": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "updated_at": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time"
+        },
+        "updated_by": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "verified_by": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "verification_date": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date"
+        },
+        "notes": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Additional notes"
+        },
+        "evidence": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "additionalProperties": true,
+          "description": "Supporting evidence and source metadata"
+        }
+      }
+    },
+    "granular_data": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "description": "Optional granular per-site registry data for research/QI. These detailed arrays complement existing aggregate fields for backward compatibility.",
+      "properties": {
+        "linear_ebus_stations_detail": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "description": "Per-station EBUS-TBNA data for mediastinal staging",
+          "items": {
+            "type": "object",
+            "properties": {
+	              "station": {
+	                "type": "string",
+	                "enum": [
+	                  "2R",
+	                  "2L",
+	                  "3p",
+	                  "4R",
+	                  "4L",
+	                  "7",
+	                  "10R",
+	                  "10L",
+	                  "11R",
+	                  "11L",
+	                  "12R",
+	                  "12L"
+	                ],
+	                "description": "IASLC lymph node station"
+	              },
+	              "target_id": {
+	                "type": [
+	                  "string",
+	                  "null"
+	                ],
+	                "description": "Stable ID for linking this station detail to collected specimens/targets. UI/postprocessing may assign; extraction may omit."
+	              },
+	              "short_axis_mm": {
+	                "type": [
+	                  "number",
+	                  "null"
+	                ],
+	                "minimum": 0,
+	                "description": "Short-axis diameter in mm"
+	              },
+              "long_axis_mm": {
+                "type": [
+                  "number",
+                  "null"
+                ],
+                "minimum": 0
+              },
+              "shape": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "enum": [
+                  "oval",
+                  "round",
+                  "irregular",
+                  null
+                ]
+              },
+              "margin": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "enum": [
+                  "distinct",
+                  "indistinct",
+                  "irregular",
+                  null
+                ]
+              },
+              "echogenicity": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "enum": [
+                  "homogeneous",
+                  "heterogeneous",
+                  null
+                ]
+              },
+              "chs_present": {
+                "type": [
+                  "boolean",
+                  "null"
+                ],
+                "description": "Central hilar structure present"
+              },
+              "necrosis_present": {
+                "type": [
+                  "boolean",
+                  "null"
+                ],
+                "description": "Central necrosis or coagulation necrosis sign"
+              },
+              "calcification_present": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "elastography_performed": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "elastography_score": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 1,
+                "maximum": 5
+              },
+              "elastography_strain_ratio": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "elastography_pattern": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "enum": [
+                  "predominantly_blue",
+                  "blue_green",
+                  "green",
+                  "predominantly_green",
+                  null
+                ]
+              },
+              "doppler_performed": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "doppler_pattern": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "enum": [
+                  "avascular",
+                  "hilar_vessel",
+                  "peripheral",
+                  "mixed",
+                  null
+                ]
+              },
+              "morphologic_impression": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "enum": [
+                  "benign",
+                  "suspicious",
+                  "malignant",
+                  "indeterminate",
+                  null
+                ],
+                "description": "Overall EBUS morphologic impression based on features (NOT pathology)"
+              },
+              "sampled": {
+                "type": "boolean",
+                "default": true,
+                "description": "Whether this station was actually sampled"
+              },
+              "needle_gauge": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "enum": [
+                  19,
+                  21,
+                  22,
+                  25,
+                  null
+                ]
+              },
+              "needle_type": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "enum": [
+                  "Standard FNA",
+                  "FNB/ProCore",
+                  "Acquire",
+                  "ViziShot Flex",
+                  null
+                ]
+              },
+              "number_of_passes": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 1,
+                "maximum": 10
+              },
+              "intranodal_forceps_used": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "rose_performed": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "rose_result": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "enum": [
+                  "Adequate lymphocytes",
+                  "Malignant",
+                  "Suspicious for malignancy",
+                  "Atypical cells",
+                  "Granuloma",
+                  "Necrosis only",
+                  "Nondiagnostic",
+                  "Deferred",
+                  null
+                ]
+              },
+              "rose_adequacy": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "specimen_sent_for": {
+                "type": [
+                  "array",
+                  "null"
+                ],
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "Cytology",
+                    "Cell block",
+                    "Flow cytometry",
+                    "Molecular/NGS",
+                    "Culture",
+                    "AFB",
+                    "Fungal",
+                    "Research"
+                  ]
+                }
+              },
+              "final_pathology": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "n_stage_contribution": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "enum": [
+                  "N0",
+                  "N1",
+                  "N2",
+                  "N3",
+                  null
+                ]
+              },
+              "notes": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "station"
+            ]
+          }
+        },
+        "navigation_targets": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "description": "Per-target data for navigation/robotic bronchoscopy",
+          "items": {
+            "type": "object",
+            "properties": {
+	              "target_number": {
+	                "type": "integer",
+	                "minimum": 1,
+	                "description": "Sequential target number"
+	              },
+	              "target_id": {
+	                "type": [
+	                  "string",
+	                  "null"
+	                ],
+	                "description": "Stable ID for linking this target to collected specimens. UI/postprocessing may assign; extraction may omit."
+	              },
+	              "target_location_text": {
+	                "type": "string",
+	                "description": "Full anatomic description"
+	              },
+              "target_lobe": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "enum": [
+                  "RUL",
+                  "RML",
+                  "RLL",
+                  "LUL",
+                  "LLL",
+                  "Lingula",
+                  null
+                ]
+              },
+              "target_segment": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "lesion_size_mm": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "distance_from_pleura_mm": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "bronchus_sign": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "enum": [
+                  "Positive",
+                  "Negative",
+                  "Not assessed",
+                  null
+                ]
+              },
+              "ct_characteristics": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "enum": [
+                  "Solid",
+                  "Part-solid",
+                  "Ground-glass",
+                  "Cavitary",
+                  "Calcified",
+                  null
+                ]
+              },
+              "pet_suv_max": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "registration_error_mm": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "navigation_successful": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "rebus_used": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "rebus_view": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "enum": [
+                  "Concentric",
+                  "Eccentric",
+                  "Adjacent",
+                  "Not visualized",
+                  null
+                ]
+              },
+              "rebus_lesion_appearance": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "tool_in_lesion_confirmed": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "confirmation_method": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "enum": [
+                  "CBCT",
+                  "Augmented fluoroscopy",
+                  "Fluoroscopy",
+                  "Radial EBUS",
+                  "None",
+                  null
+                ]
+              },
+              "cbct_til_confirmed": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "sampling_tools_used": {
+                "type": [
+                  "array",
+                  "null"
+                ],
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "Forceps",
+                    "Needle (21G)",
+                    "Needle (19G)",
+                    "Brush",
+                    "Cryoprobe (1.1mm)",
+                    "Cryoprobe (1.7mm)",
+                    "Cryoprobe (1.9mm)",
+                    "NeedleInNeedle"
+                  ]
+                }
+              },
+              "number_of_forceps_biopsies": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "number_of_needle_passes": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "number_of_cryo_biopsies": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "rose_performed": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "rose_result": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "immediate_complication": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "enum": [
+                  "None",
+                  "Bleeding - mild",
+                  "Bleeding - moderate",
+                  "Bleeding - severe",
+                  "Pneumothorax",
+                  null
+                ]
+              },
+              "bleeding_management": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "specimen_sent_for": {
+                "type": [
+                  "array",
+                  "null"
+                ],
+                "items": {
+                  "type": "string"
+                }
+              },
+              "final_pathology": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "notes": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "target_number",
+              "target_location_text"
+            ]
+          }
+        },
+        "cao_interventions_detail": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "description": "Per-site CAO intervention data with modality details",
+          "items": {
+            "type": "object",
+            "properties": {
+              "location": {
+                "type": "string",
+                "enum": [
+                  "Trachea - proximal",
+                  "Trachea - mid",
+                  "Trachea - distal",
+                  "Carina",
+                  "RMS",
+                  "LMS",
+                  "BI",
+                  "RUL",
+                  "RML",
+                  "RLL",
+                  "LUL",
+                  "LLL",
+                  "Other"
+                ]
+              },
+              "obstruction_type": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "enum": [
+                  "Intraluminal",
+                  "Extrinsic",
+                  "Mixed",
+                  null
+                ]
+              },
+              "etiology": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "enum": [
+                  "Malignant - primary lung",
+                  "Malignant - metastatic",
+                  "Malignant - other",
+                  "Benign - post-intubation",
+                  "Benign - post-tracheostomy",
+                  "Benign - anastomotic",
+                  "Benign - inflammatory",
+                  "Benign - granulation",
+                  "Benign - web/stenosis",
+                  "Other",
+                  null
+                ]
+              },
+              "length_mm": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "lesion_morphology": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "Lesion morphology (e.g., polypoid, fungating) when documented"
+              },
+              "lesion_count_text": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "Lesion count when approximate (e.g., '>50')"
+              },
+              "pre_obstruction_pct": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 0,
+                "maximum": 100
+              },
+              "post_obstruction_pct": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 0,
+                "maximum": 100
+              },
+              "pre_diameter_mm": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "post_diameter_mm": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "modalities_applied": {
+                "type": [
+                  "array",
+                  "null"
+                ],
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "modality": {
+                      "type": "string",
+                      "enum": [
+                        "APC",
+                        "Electrocautery - snare",
+                        "Electrocautery - knife",
+                        "Electrocautery - probe",
+                        "Cryotherapy - spray",
+                        "Cryotherapy - contact",
+                        "Cryoextraction",
+                        "Laser - Nd:YAG",
+                        "Laser - CO2",
+                        "Laser - diode",
+                        "Mechanical debulking",
+                        "Rigid coring",
+                        "Microdebrider",
+                        "Balloon dilation",
+                        "PDT"
+                      ]
+                    },
+                    "power_setting_watts": {
+                      "type": [
+                        "number",
+                        "null"
+                      ]
+                    },
+                    "apc_flow_rate_lpm": {
+                      "type": [
+                        "number",
+                        "null"
+                      ]
+                    },
+                    "balloon_diameter_mm": {
+                      "type": [
+                        "number",
+                        "null"
+                      ]
+                    },
+                    "balloon_pressure_atm": {
+                      "type": [
+                        "number",
+                        "null"
+                      ]
+                    },
+                    "freeze_time_seconds": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ]
+                    },
+                    "number_of_applications": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ]
+                    },
+                    "duration_seconds": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "modality"
+                  ]
+                }
+              },
+              "hemostasis_required": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "hemostasis_methods": {
+                "type": [
+                  "array",
+                  "null"
+                ],
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "Cold saline",
+                    "Epinephrine",
+                    "APC",
+                    "Electrocautery",
+                    "Balloon tamponade",
+                    "Bronchial blocker",
+                    "Tranexamic acid"
+                  ]
+                }
+              },
+              "secretions_present": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "secretions_drained": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "stent_placed_at_site": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "notes": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "location"
+            ]
+          }
+        },
+        "blvr_valve_placements": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "description": "Individual valve placement data",
+          "items": {
+            "type": "object",
+            "properties": {
+              "valve_number": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "target_lobe": {
+                "type": "string",
+                "enum": [
+                  "RUL",
+                  "RML",
+                  "RLL",
+                  "LUL",
+                  "LLL",
+                  "Lingula"
+                ]
+              },
+              "segment": {
+                "type": "string",
+                "description": "Specific segment (e.g., 'LB1+2', 'LB6', 'apical')"
+              },
+              "airway_diameter_mm": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "valve_size": {
+                "type": "string",
+                "description": "Valve size (e.g., '4.0', '4.0-LP', '5.5', '6.0', '7.0')"
+              },
+              "valve_type": {
+                "type": "string",
+                "enum": [
+                  "Zephyr (Pulmonx)",
+                  "Spiration (Olympus)"
+                ]
+              },
+              "deployment_method": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "enum": [
+                  "Standard",
+                  "Retroflexed",
+                  null
+                ]
+              },
+              "deployment_successful": {
+                "type": "boolean"
+              },
+              "seal_confirmed": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "repositioned": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "notes": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "valve_number",
+              "target_lobe",
+              "segment",
+              "valve_size",
+              "valve_type",
+              "deployment_successful"
+            ]
+          }
+        },
+        "blvr_chartis_measurements": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "object",
+            "properties": {
+              "lobe_assessed": {
+                "type": "string",
+                "enum": [
+                  "RUL",
+                  "RML",
+                  "RLL",
+                  "LUL",
+                  "LLL",
+                  "Lingula"
+                ]
+              },
+              "segment_assessed": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "measurement_duration_seconds": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "adequate_seal": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "cv_result": {
+                "type": "string",
+                "enum": [
+                  "CV Negative",
+                  "CV Positive",
+                  "Indeterminate",
+                  "Low flow",
+                  "No seal",
+                  "Aborted"
+                ]
+              },
+              "flow_pattern_description": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "notes": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "lobe_assessed",
+              "cv_result"
+            ]
+          }
+        },
+        "cryobiopsy_sites": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "description": "Per-site transbronchial cryobiopsy data",
+          "items": {
+            "type": "object",
+            "properties": {
+              "site_number": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "lobe": {
+                "type": "string",
+                "enum": [
+                  "RUL",
+                  "RML",
+                  "RLL",
+                  "LUL",
+                  "LLL",
+                  "Lingula"
+                ]
+              },
+              "segment": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "distance_from_pleura": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "enum": [
+                  ">2cm",
+                  "1-2cm",
+                  "<1cm",
+                  "Not documented",
+                  null
+                ]
+              },
+              "fluoroscopy_position": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "radial_ebus_used": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "rebus_view": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "probe_size_mm": {
+                "type": [
+                  "number",
+                  "null"
+                ],
+                "enum": [
+                  1.1,
+                  1.7,
+                  1.9,
+                  2.4,
+                  null
+                ]
+              },
+              "freeze_time_seconds": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 1,
+                "maximum": 10
+              },
+              "number_of_biopsies": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 1
+              },
+              "specimen_size_mm": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "blocker_used": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "blocker_type": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "enum": [
+                  "Fogarty",
+                  "Arndt",
+                  "Cohen",
+                  "Cryoprobe sheath",
+                  null
+                ]
+              },
+              "bleeding_severity": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "enum": [
+                  "None/Scant",
+                  "Mild",
+                  "Moderate",
+                  "Severe",
+                  null
+                ]
+              },
+              "bleeding_controlled_with": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "pneumothorax_after_site": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "notes": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "site_number",
+              "lobe"
+            ]
+          }
+        },
+        "thoracoscopy_findings_detail": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "object",
+            "properties": {
+              "location": {
+                "type": "string",
+                "enum": [
+                  "Parietal pleura - chest wall",
+                  "Parietal pleura - diaphragm",
+                  "Parietal pleura - mediastinum",
+                  "Visceral pleura",
+                  "Lung parenchyma",
+                  "Costophrenic angle",
+                  "Apex"
+                ]
+              },
+              "finding_type": {
+                "type": "string",
+                "enum": [
+                  "Normal",
+                  "Nodules",
+                  "Plaques",
+                  "Studding",
+                  "Mass",
+                  "Adhesions - filmy",
+                  "Adhesions - dense",
+                  "Inflammation",
+                  "Thickening",
+                  "Trapped lung",
+                  "Loculations",
+                  "Empyema",
+                  "Other"
+                ]
+              },
+              "extent": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "enum": [
+                  "Focal",
+                  "Multifocal",
+                  "Diffuse",
+                  null
+                ]
+              },
+              "size_description": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "biopsied": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "number_of_biopsies": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "biopsy_tool": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "enum": [
+                  "Rigid forceps",
+                  "Flexible forceps",
+                  "Cryoprobe",
+                  null
+                ]
+              },
+              "impression": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "enum": [
+                  "Benign appearing",
+                  "Malignant appearing",
+                  "Infectious appearing",
+                  "Indeterminate",
+                  null
+                ]
+              },
+              "notes": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "location",
+              "finding_type"
+            ]
+          }
+        },
+        "specimens_collected": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "description": "All specimens collected with source linkage",
+          "items": {
+            "type": "object",
+            "properties": {
+              "specimen_number": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "source_procedure": {
+                "type": "string",
+                "enum": [
+                  "EBUS-TBNA",
+                  "Navigation biopsy",
+                  "Endobronchial biopsy",
+                  "Transbronchial biopsy",
+                  "Transbronchial cryobiopsy",
+                  "BAL",
+                  "Bronchial wash",
+                  "Brushing",
+                  "Pleural biopsy",
+                  "Pleural fluid",
+                  "Other"
+                ]
+              },
+	              "source_location": {
+	                "type": "string",
+	                "description": "Anatomic location (e.g., '4R', 'RUL apical', 'Left pleura')"
+	              },
+	              "source_target_id": {
+	                "type": [
+	                  "string",
+	                  "null"
+	                ],
+	                "description": "Optional link to a granular target/station target_id when known. UI/postprocessing may assign; extraction may omit."
+	              },
+	              "collection_tool": {
+	                "type": [
+	                  "string",
+	                  "null"
+	                ]
+	              },
+              "specimen_count": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 1
+              },
+              "specimen_adequacy": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "enum": [
+                  "Adequate",
+                  "Limited",
+                  "Inadequate",
+                  "Pending",
+                  null
+                ]
+              },
+              "destinations": {
+                "type": [
+                  "array",
+                  "null"
+                ],
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "Histology/Surgical pathology",
+                    "Cytology",
+                    "Cell block",
+                    "Flow cytometry",
+                    "Molecular/NGS",
+                    "PD-L1",
+                    "Bacterial culture",
+                    "AFB culture",
+                    "Fungal culture",
+                    "Viral studies",
+                    "Research protocol",
+                    "Biobank"
+                  ]
+                }
+              },
+              "rose_performed": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "rose_result": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "final_pathology_diagnosis": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "molecular_markers": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "additionalProperties": true,
+                "description": "Key:value pairs for molecular results"
+              },
+              "notes": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "specimen_number",
+              "source_procedure",
+              "source_location"
+            ]
+          }
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "required": [
+          "granular_data"
+        ],
+        "properties": {
+          "granular_data": {
+            "type": "object",
+            "required": [
+              "linear_ebus_stations_detail"
+            ],
+            "properties": {
+              "linear_ebus_stations_detail": {
+                "type": "array",
+                "minItems": 1
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "procedures_performed"
+        ],
+        "properties": {
+          "procedures_performed": {
+            "type": "object",
+            "required": [
+              "linear_ebus"
+            ],
+            "properties": {
+              "linear_ebus": {
+                "type": "object",
+                "required": [
+                  "performed"
+                ],
+                "properties": {
+                  "performed": {
+                    "const": true
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "granular_data"
+        ],
+        "properties": {
+          "granular_data": {
+            "type": "object",
+            "required": [
+              "navigation_targets"
+            ],
+            "properties": {
+              "navigation_targets": {
+                "type": "array",
+                "minItems": 1
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "procedures_performed"
+        ],
+        "properties": {
+          "procedures_performed": {
+            "type": "object",
+            "required": [
+              "navigational_bronchoscopy"
+            ],
+            "properties": {
+              "navigational_bronchoscopy": {
+                "type": "object",
+                "required": [
+                  "performed"
+                ],
+                "properties": {
+                  "performed": {
+                    "const": true
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "granular_data"
+        ],
+        "properties": {
+          "granular_data": {
+            "type": "object",
+            "anyOf": [
+              {
+                "required": [
+                  "blvr_valve_placements"
+                ],
+                "properties": {
+                  "blvr_valve_placements": {
+                    "type": "array",
+                    "minItems": 1
+                  }
+                }
+              },
+              {
+                "required": [
+                  "blvr_chartis_measurements"
+                ],
+                "properties": {
+                  "blvr_chartis_measurements": {
+                    "type": "array",
+                    "minItems": 1
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "procedures_performed"
+        ],
+        "properties": {
+          "procedures_performed": {
+            "type": "object",
+            "required": [
+              "blvr"
+            ],
+            "properties": {
+              "blvr": {
+                "type": "object",
+                "required": [
+                  "performed"
+                ],
+                "properties": {
+                  "performed": {
+                    "const": true
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "granular_data"
+        ],
+        "properties": {
+          "granular_data": {
+            "type": "object",
+            "required": [
+              "cryobiopsy_sites"
+            ],
+            "properties": {
+              "cryobiopsy_sites": {
+                "type": "array",
+                "minItems": 1
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "procedures_performed"
+        ],
+        "properties": {
+          "procedures_performed": {
+            "type": "object",
+            "required": [
+              "transbronchial_cryobiopsy"
+            ],
+            "properties": {
+              "transbronchial_cryobiopsy": {
+                "type": "object",
+                "required": [
+                  "performed"
+                ],
+                "properties": {
+                  "performed": {
+                    "const": true
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "granular_data"
+        ],
+        "properties": {
+          "granular_data": {
+            "type": "object",
+            "required": [
+              "thoracoscopy_findings_detail"
+            ],
+            "properties": {
+              "thoracoscopy_findings_detail": {
+                "type": "array",
+                "minItems": 1
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "pleural_procedures"
+        ],
+        "properties": {
+          "pleural_procedures": {
+            "type": "object",
+            "required": [
+              "medical_thoracoscopy"
+            ],
+            "properties": {
+              "medical_thoracoscopy": {
+                "type": "object",
+                "required": [
+                  "performed"
+                ],
+                "properties": {
+                  "performed": {
+                    "const": true
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "procedures_performed"
+        ],
+        "properties": {
+          "procedures_performed": {
+            "type": "object",
+            "required": [
+              "linear_ebus"
+            ],
+            "properties": {
+              "linear_ebus": {
+                "type": "object",
+                "required": [
+                  "performed"
+                ],
+                "properties": {
+                  "performed": {
+                    "const": false
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "procedures_performed": {
+            "properties": {
+              "linear_ebus": {
+                "properties": {
+                  "stations_sampled": {
+                    "maxItems": 0
+                  },
+                  "stations_planned": {
+                    "maxItems": 0
+                  },
+                  "stations_detail": {
+                    "maxItems": 0
+                  }
+                }
+              }
+            }
+          },
+          "granular_data": {
+            "properties": {
+              "linear_ebus_stations_detail": {
+                "maxItems": 0
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "procedures_performed"
+        ],
+        "properties": {
+          "procedures_performed": {
+            "type": "object",
+            "required": [
+              "navigational_bronchoscopy"
+            ],
+            "properties": {
+              "navigational_bronchoscopy": {
+                "type": "object",
+                "required": [
+                  "performed"
+                ],
+                "properties": {
+                  "performed": {
+                    "const": false
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "procedures_performed": {
+            "properties": {
+              "navigational_bronchoscopy": {
+                "properties": {
+                  "sampling_tools_used": {
+                    "maxItems": 0
+                  },
+                  "number_of_biopsies": {
+                    "const": null
+                  }
+                }
+              }
+            }
+          },
+          "granular_data": {
+            "properties": {
+              "navigation_targets": {
+                "maxItems": 0
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "procedures_performed"
+        ],
+        "properties": {
+          "procedures_performed": {
+            "type": "object",
+            "required": [
+              "blvr"
+            ],
+            "properties": {
+              "blvr": {
+                "type": "object",
+                "required": [
+                  "performed"
+                ],
+                "properties": {
+                  "performed": {
+                    "const": false
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "procedures_performed": {
+            "properties": {
+              "blvr": {
+                "properties": {
+                  "valve_sizes": {
+                    "maxItems": 0
+                  },
+                  "segments_treated": {
+                    "maxItems": 0
+                  },
+                  "number_of_valves": {
+                    "const": null
+                  }
+                }
+              }
+            }
+          },
+          "granular_data": {
+            "properties": {
+              "blvr_valve_placements": {
+                "maxItems": 0
+              },
+              "blvr_chartis_measurements": {
+                "maxItems": 0
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "procedures_performed"
+        ],
+        "properties": {
+          "procedures_performed": {
+            "type": "object",
+            "required": [
+              "transbronchial_cryobiopsy"
+            ],
+            "properties": {
+              "transbronchial_cryobiopsy": {
+                "type": "object",
+                "required": [
+                  "performed"
+                ],
+                "properties": {
+                  "performed": {
+                    "const": false
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "procedures_performed": {
+            "properties": {
+              "transbronchial_cryobiopsy": {
+                "properties": {
+                  "locations_biopsied": {
+                    "maxItems": 0
+                  },
+                  "number_of_samples": {
+                    "const": null
+                  }
+                }
+              }
+            }
+          },
+          "granular_data": {
+            "properties": {
+              "cryobiopsy_sites": {
+                "maxItems": 0
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "pleural_procedures"
+        ],
+        "properties": {
+          "pleural_procedures": {
+            "type": "object",
+            "required": [
+              "medical_thoracoscopy"
+            ],
+            "properties": {
+              "medical_thoracoscopy": {
+                "type": "object",
+                "required": [
+                  "performed"
+                ],
+                "properties": {
+                  "performed": {
+                    "const": false
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "granular_data": {
+            "properties": {
+              "thoracoscopy_findings_detail": {
+                "maxItems": 0
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "patient_demographics"
+        ],
+        "properties": {
+          "patient_demographics": {
+            "type": "object",
+            "required": [
+              "smoking_status"
+            ],
+            "properties": {
+              "smoking_status": {
+                "const": "Never"
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "patient_demographics": {
+            "properties": {
+              "pack_years": {
+                "maximum": 0
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "complications"
+        ],
+        "properties": {
+          "complications": {
+            "type": "object",
+            "required": [
+              "any_complication"
+            ],
+            "properties": {
+              "any_complication": {
+                "const": false
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "complications": {
+            "properties": {
+              "complication_list": {
+                "maxItems": 0
+              },
+              "events": {
+                "maxItems": 0
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "providers"
+        ],
+        "properties": {
+          "providers": {
+            "type": "object",
+            "required": [
+              "trainee_present"
+            ],
+            "properties": {
+              "trainee_present": {
+                "const": true
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "providers": {
+            "anyOf": [
+              {
+                "required": [
+                  "fellow_name"
+                ],
+                "properties": {
+                  "fellow_name": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                }
+              },
+              {
+                "required": [
+                  "assistant_name"
+                ],
+                "properties": {
+                  "assistant_name": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    }
+  ]
+}

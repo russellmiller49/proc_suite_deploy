@@ -1,0 +1,14 @@
+id: fiducial_marker_placement
+label: Fiducial Marker Placement
+category: navigation
+cpt_hints: ["31626"]
+schema_id: fiducial_marker_placement_v1
+output_section: PROCEDURE_DETAILS
+template_path: fiducial_marker_placement.j2
+required_fields:
+  - airway_location
+optional_fields:
+  - marker_details
+  - confirmation_method
+proc_types:
+  - fiducial_marker_placement

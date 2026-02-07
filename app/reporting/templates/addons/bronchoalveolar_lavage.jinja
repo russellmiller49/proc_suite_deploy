@@ -1,0 +1,9 @@
+{#
+  file: templates/addons/bronchoalveolar_lavage.jinja
+  Title: Bronchoalveolar Lavage (CPT 31624)
+  Category: CORE DIAGNOSTIC / THERAPEUTIC BRONCHOSCOPY PROCEDURES
+  CPT: 31624
+#}
+{% macro render(ctx=None) -%}
+BAL was performed in the [Lung Segment] with saline instilled and returned. Specimens were submitted. Instilled [Volume] cc of NS, suction returned with [Volume] cc of NS. Samples sent for [Testing type].
+{%- endmacro %}

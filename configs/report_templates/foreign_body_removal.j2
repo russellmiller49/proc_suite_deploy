@@ -1,0 +1,4 @@
+A suspected foreign body was visualized at the {{ proc.airway_segment }}. Retrieval was performed using {{ proc.tools_used | join(', ') }}{% if proc.passes is not none %} with {{ proc.passes }} passes{% endif %}.
+The object was removed{% if proc.removed_intact is not none %} {% if proc.removed_intact %}intact{% else %}fragmented{% endif %}{% endif %}. Post-removal inspection showed{% if proc.mucosal_trauma %} {{ proc.mucosal_trauma }} mucosal trauma{% else %} no significant mucosal trauma{% endif %}{% if proc.bleeding %} with {{ proc.bleeding }} bleeding{% endif %}{% if proc.hemostasis_method %}; hemostasis achieved with {{ proc.hemostasis_method }}{% endif %}.
+Ventilation and airway patency were confirmed. The patient tolerated the procedure well.
+{% if proc.cxr_ordered %}A post-procedure chest x-ray was ordered.{% endif %}

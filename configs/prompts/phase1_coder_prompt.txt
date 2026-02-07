@@ -1,0 +1,3 @@
+# Phase-1 coder prompt template
+# Accepts segmentized notes and allowed code lists; require evidence references.
+# Use JSON output with CodeSuggestion schema.

@@ -1,0 +1,8 @@
+{% set _site = proc.site or "target airway" %}
+{% set _tools = (proc.debridement_tool or "") | lower %}
+
+Airway Inspection and Debridement A rigid bronchoscope was introduced under direct visualization. A complete airway survey was performed. Attention was directed to the {{ _site }}, which showed significant necrosis consistent with the recent Photodynamic Therapy.
+
+Debridement A follow-up bronchoscopy was performed to address the {{ _site }} necrosis. The necrotic tissue at the {{ _site }} was debrided{% if _tools %} using{% if "forceps" in _tools %} mechanical forceps{% endif %}{% if "rigid" in _tools and "cor" in _tools %}{% if "forceps" in _tools %},{% endif %} rigid coring{% endif %}{% if "cryo" in _tools %}{% if "forceps" in _tools or ("rigid" in _tools and "cor" in _tools) %},{% endif %} and a cryoprobe{% endif %}{% endif %}.{% if "cryo" in _tools %} The cryoprobe was applied to adherent secretions and necrotic tissue until adherence was achieved, and the probe was withdrawn.{% endif %}
+
+Results{% if proc.pre_patency_pct is not none and proc.post_patency_pct is not none %} Prior to debridement, the affected airway was noted to be {{ 100 - proc.pre_patency_pct }}% obstructed. After treatment, the airway was {{ 100 - proc.post_patency_pct }}% obstructed ({{ proc.post_patency_pct }}% patent).{% endif %}{% if proc.bleeding is not none %} {% if proc.bleeding %}Active bleeding was seen after debridement.{% else %}No active bleeding was seen after debridement.{% endif %}{% else %} No active bleeding was seen after debridement.{% endif %}{% if proc.notes %} Notes: {{ proc.notes }}.{% endif %} The patient tolerated the procedure well.

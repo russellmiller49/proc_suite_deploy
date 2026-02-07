@@ -1,0 +1,3 @@
+A {{ proc.side }} double-lumen tube {{ proc.size_fr }} Fr was placed by anesthesia. Position was confirmed bronchoscopically{% if proc.alignment %} with alignment {{ proc.alignment }}{% endif %}.
+{% if proc.adjustments %}Adjustments: {{ proc.adjustments }}.{% endif %}
+The patient tolerated the procedure{% if proc.tolerated is not none %} {% if proc.tolerated %}well{% else %}with difficulty{% endif %}{% endif %}. Final position re-verified after patient positioning.

@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Procedure Suite Workbench</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css">
+    <link rel="stylesheet" href="styles.css">
+    <style>
+        body {
+            background-color: #f8f9fa;
+            padding-top: 20px;
+        }
+        .hidden {
+            display: none !important;
+        }
+        .container-fluid {
+            max-width: 1600px;
+        }
+        #result-area {
+            background-color: #fff;
+            border: 1px solid #dee2e6;
+            border-radius: 0.375rem;
+            min-height: 500px;
+            padding: 15px;
+            overflow: auto;
+        }
+        pre {
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+        .nav-pills .nav-link {
+            cursor: pointer;
+        }
+        /* Spinner overlay */
+        #loading-overlay {
+            display: none;
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(255,255,255,0.7);
+            z-index: 10;
+            justify-content: center;
+            align-items: center;
+        }
+        .card {
+            position: relative;
+        }
+        /* PHI preview styles */
+        .scrubbed-preview {
+            white-space: pre-wrap;
+            word-break: break-word;
+            background: #fff;
+            border: 1px solid #dee2e6;
+            border-radius: .375rem;
+            padding: 1rem;
+            min-height: 120px;
+            max-height: 250px;
+            overflow-y: auto;
+            font-family: monospace;
+            font-size: 0.9em;
+        }
+        .entity-badge {
+            margin: 0 4px 4px 0;
+        }
+        .phi-step-indicator {
+            display: flex;
+            align-items: center;
+            margin-bottom: 1rem;
+        }
+        .phi-step {
+            display: flex;
+            align-items: center;
+            padding: 0.5rem 1rem;
+            border-radius: 0.375rem;
+            margin-right: 0.5rem;
+        }
+        .phi-step.active {
+            background: #0d6efd;
+            color: white;
+        }
+        .phi-step.completed {
+            background: #198754;
+            color: white;
+        }
+        .phi-step.pending {
+            background: #e9ecef;
+            color: #6c757d;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container-fluid">
+    <header class="d-flex flex-wrap justify-content-between align-items-center pb-3 mb-4 border-bottom">
+        <a href="/" class="d-flex align-items-center text-dark text-decoration-none">
+            <span class="fs-4">Procedure Suite Workbench</span>
+        </a>
+        <div>
+            <a href="/ui/phi_demo.html" class="btn btn-sm btn-outline-primary me-2">PHI Demo</a>
+            <span class="badge bg-secondary" id="api-status">Checking API...</span>
+        </div>
+    </header>
+
+    <div class="row">
+        <!-- Left Column: Input -->
+        <div class="col-md-5">
+            <div class="card shadow-sm mb-4">
+                <div class="card-header bg-white">
+                    <ul class="nav nav-pills card-header-pills" id="mode-tabs">
+                        <li class="nav-item">
+                            <a class="nav-link active" data-mode="unified" onclick="setMode('unified')">Unified</a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" data-mode="coder" onclick="setMode('coder')">Coder</a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" data-mode="registry" onclick="setMode('registry')">Registry</a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" data-mode="reporter" onclick="setMode('reporter')">Reporter</a>
+                        </li>
+                    </ul>
+                </div>
+                <div class="card-body">
+                    <div class="mb-3">
+                        <label for="input-text" class="form-label fw-bold">Procedure Note</label>
+                        <textarea class="form-control" id="input-text" rows="15" placeholder="Paste procedure note here..."></textarea>
+                    </div>
+
+                    <!-- Dynamic Options Area -->
+                    <div id="options-area" class="mb-3 p-3 bg-light rounded border">
+                        <h6 class="border-bottom pb-2 mb-3">Options</h6>
+                        
+                        <!-- Unified Options (Registry + Coder combined) -->
+                        <div id="opt-unified" class="mode-opt">
+                            <div class="alert alert-success small mb-2">
+                                <strong>PHI-Safe Pipeline:</strong> Text is scrubbed before extraction. No raw PHI sent to ML/LLM.
+                            </div>
+                            <div class="row mb-2">
+                                <div class="col-md-6">
+                                    <label for="unified-locality" class="form-label small">Locality</label>
+                                    <input type="text" class="form-control form-control-sm" id="unified-locality" value="00" placeholder="00 (National)">
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="form-check form-switch mt-4">
+                                        <input class="form-check-input" type="checkbox" id="unified-financials" checked>
+                                        <label class="form-check-label" for="unified-financials">Include RVU/Payment</label>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" id="unified-explain">
+                                <label class="form-check-label" for="unified-explain">Explain Extraction</label>
+                            </div>
+                            <div class="form-check form-switch mt-2">
+                                <input class="form-check-input" type="checkbox" id="unified-disable-llm">
+                                <label class="form-check-label" for="unified-disable-llm">Disable LLM (deterministic registry only)</label>
+                            </div>
+                        </div>
+
+                        <!-- Coder Options -->
+                        <div id="opt-coder" class="mode-opt" style="display:none;">
+                            <div class="form-check form-switch mb-2">
+                                <input class="form-check-input" type="checkbox" id="coder-ml-first" checked>
+                                <label class="form-check-label" for="coder-ml-first">
+                                    Use ML-First Pipeline
+                                    <span class="badge bg-info ms-1" title="Uses SmartHybridOrchestrator with ternary classification (HIGH_CONF/GRAY_ZONE/LOW_CONF)">NEW</span>
+                                </label>
+                            </div>
+                            <div class="form-check form-switch mb-2">
+                                <input class="form-check-input" type="checkbox" id="coder-disable-llm">
+                                <label class="form-check-label" for="coder-disable-llm">Disable LLM fallback (ML + rules only)</label>
+                            </div>
+                            <div class="form-check form-switch mb-2">
+                                <input class="form-check-input" type="checkbox" id="coder-explain">
+                                <label class="form-check-label" for="coder-explain">Explain Reasoning</label>
+                            </div>
+                            <div class="form-check form-switch mb-3">
+                                <input class="form-check-input" type="checkbox" id="coder-weak-sedation">
+                                <label class="form-check-label" for="coder-weak-sedation">Allow Weak Sedation Docs</label>
+                            </div>
+                            <div class="row mb-2">
+                                <div class="col-md-6">
+                                    <label for="coder-locality" class="form-label small">Locality</label>
+                                    <input type="text" class="form-control form-control-sm" id="coder-locality" value="00" placeholder="00 (National)">
+                                    <small class="text-muted">e.g., 00 for National</small>
+                                </div>
+                                <div class="col-md-6">
+                                    <label for="coder-setting" class="form-label small">Setting</label>
+                                    <select class="form-select form-select-sm" id="coder-setting">
+                                        <option value="facility" selected>Facility</option>
+                                        <option value="non-facility">Non-Facility</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Registry Options -->
+                        <div id="opt-registry" class="mode-opt" style="display:none;">
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" id="registry-explain">
+                                <label class="form-check-label" for="registry-explain">Explain Extraction</label>
+                            </div>
+                            <div class="form-check form-switch mt-2">
+                                <input class="form-check-input" type="checkbox" id="registry-disable-llm">
+                                <label class="form-check-label" for="registry-disable-llm">Disable LLM (deterministic only)</label>
+                            </div>
+                        </div>
+
+                        <!-- Reporter Options -->
+                        <div id="opt-reporter" class="mode-opt" style="display:none;">
+                            <label for="reporter-template" class="form-label">Template</label>
+                            <select class="form-select" id="reporter-template">
+                                <option value="bronchoscopy">Bronchoscopy</option>
+                                <option value="pleural">Pleural</option>
+                                <option value="blvr">BLVR</option>
+                                <option value="knowledge">Comprehensive (knowledge)</option>
+                                <option value="comprehensive">Comprehensive (alias)</option>
+                                <option value="comprehensive_ip">Comprehensive IP (alias)</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <!-- PHI Redaction Preview (Unified mode only) -->
+                    <div id="phi-preview-area" class="mb-3 p-3 bg-light rounded border" style="display:none;">
+                        <h6 class="border-bottom pb-2 mb-3">
+                            <i class="bi bi-shield-check"></i> PHI Redaction Preview
+                            <span class="badge bg-warning text-dark" id="phi-entity-count">0 entities</span>
+                        </h6>
+                        <div class="small text-muted mb-2">Review detected PHI entities below. Click <i class="bi bi-pencil-square"></i> to edit or <i class="bi bi-x"></i> to remove false positives.</div>
+                        <div id="scrubbed-preview" class="scrubbed-preview mb-3 text-muted">Scrubbed text will appear here...</div>
+                        <div id="entity-list" class="d-flex flex-wrap"></div>
+                    </div>
+
+                    <!-- Unified Mode: Two-step buttons -->
+                    <div class="d-grid gap-2" id="unified-buttons">
+                        <button class="btn btn-warning btn-lg" id="btn-phi-preview" onclick="handlePHIPreview()">
+                            <i class="bi bi-shield-check"></i> 1. Redact PHI
+                        </button>
+                        <button class="btn btn-primary btn-lg" id="btn-extract" onclick="run()" disabled>
+                            <i class="bi bi-play-circle"></i> 2. Confirm & Extract
+                        </button>
+                    </div>
+                    <!-- Other Modes: Single button -->
+                    <div class="d-grid gap-2" id="other-buttons" style="display:none;">
+                        <button class="btn btn-primary btn-lg" onclick="run()">Run Processing</button>
+                    </div>
+                </div>
+                
+                <!-- Loading Overlay -->
+                <div id="loading-overlay">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Right Column: Output -->
+        <div class="col-md-7">
+            <div class="card shadow-sm">
+                <div class="card-header bg-white d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">Results</h5>
+                    <ul class="nav nav-tabs card-header-tabs" id="result-tabs" style="visibility: hidden;">
+                        <li class="nav-item">
+                            <a class="nav-link active" id="tab-formatted" href="#" onclick="showResultTab('formatted')">Formatted</a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" id="tab-json" href="#" onclick="showResultTab('json')">Raw JSON</a>
+                        </li>
+                    </ul>
+                </div>
+                <div class="card-body p-0">
+                    <div id="result-area">
+                        <div id="resultsContainer" class="hidden">
+                            <div id="statCards" class="stat-card-container">
+                                </div>
+
+    <div class="result-section">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+            <h3>Billing Reconciliation</h3>
+            <div style="font-size:11px; color:#64748b;">
+                <span style="margin-right:10px;">🔵 <strong>Header:</strong> Explicit in text</span>
+                <span style="margin-right:10px;">🟢 <strong>Derived:</strong> Inferred from action</span>
+                <span>🟣 <strong>Match:</strong> Validated source</span>
+            </div>
+        </div>
+        
+        <table class="reconciliation-table">
+            <thead>
+                <tr>
+                    <th width="10%">Code</th>
+                    <th width="35%">Description & Source</th>
+                    <th width="10%">Status</th>
+                    <th width="30%">Evidence / Rationale</th>
+                    <th width="8%">wRVU</th>
+                    <th width="7%">Est. $</th>
+                </tr>
+            </thead>
+            <tbody id="unifiedTableBody">
+                </tbody>
+        </table>
+    </div>
+
+    <div id="registrySummary" class="result-section">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+            <h3>Clinical Context & Procedure Details</h3>
+        </div>
+        <table class="reconciliation-table">
+            <thead>
+                <tr>
+                    <th width="30%">Category / Procedure</th>
+                    <th width="70%">Key Findings & Details</th>
+                </tr>
+            </thead>
+            <tbody id="registryTableBody">
+                </tbody>
+        </table>
+    </div>
+
+    <div class="debug-section no-print">
+        <details class="debug-details">
+            <summary>System Logic & Debugging Logs</summary>
+            <div id="systemLogs" class="log-box">
+                </div>
+                                </details>
+                            </div>
+                        </div>
+                        <div id="legacyResults">
+                            <div class="text-muted text-center mt-5">
+                                <p>Results will appear here.</p>
+                            </div>
+                        </div>
+                        <pre id="rawJson" class="hidden"></pre>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Entity Edit Modal -->
+<div class="modal fade" id="entityEditModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Edit Entity</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="edit-entity-index">
+                <div class="mb-3">
+                    <label for="edit-entity-type" class="form-label">Entity Type</label>
+                    <input type="text" class="form-control" id="edit-entity-type">
+                </div>
+                <div class="mb-3">
+                    <label for="edit-entity-placeholder" class="form-label">Placeholder</label>
+                    <input type="text" class="form-control" id="edit-entity-placeholder">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" onclick="saveEntity()">Save changes</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,44 @@
+# Requirements for Railway deployment
+# Generated from pyproject.toml
+
+# Core dependencies
+pydantic>=2.6,<3
+jinja2>=3.1,<4
+spacy>=3.7,<4
+scispacy==0.5.4
+# spaCy language model required for umls_linker
+en-core-sci-sm @ https://s3-us-west-2.amazonaws.com/ai2-s2-scispacy/releases/v0.5.4/en_core_sci_sm-0.5.4.tar.gz
+medspacy>=1.0,<2
+sqlalchemy>=2.0,<3
+alembic>=1.13,<2
+scikit-learn>=1.5.2,<2.0
+scikit-multilearn>=0.2.0,<1
+pandas>=2.0,<3
+psycopg[binary,pool]>=3.2,<4
+python-dotenv>=1.0,<2
+cryptography>=46.0,<47
+rapidfuzz>=3.9,<4
+regex>=2024.4.28
+jsonschema>=4.23,<5
+typer>=0.12,<0.17
+rich>=13,<14
+httpx>=0.27,<1
+boto3>=1.34,<2
+google-auth>=2.23,<3
+google-generativeai>=0.8,<1
+presidio-analyzer>=2.2,<3
+pyyaml>=6.0,<7
+
+# ONNX inference (for BiomedBERT registry predictor)
+onnx>=1.16,<2
+onnxruntime>=1.16,<2
+transformers>=4.35,<5
+optimum[onnxruntime]>=1.20,<2
+
+# API dependencies (required for FastAPI server)
+fastapi>=0.115
+uvicorn>=0.30
+
+pydantic-settings>=2.0.0
+gunicorn==21.2.0
+

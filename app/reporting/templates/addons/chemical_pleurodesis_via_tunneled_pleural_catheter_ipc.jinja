@@ -1,0 +1,9 @@
+{#
+  file: templates/addons/chemical_pleurodesis_via_tunneled_pleural_catheter_ipc.jinja
+  Title: Chemical Pleurodesis via Tunneled Pleural Catheter (IPC)  [CPT: verify]
+  Category: PLEURAL PROCEDURES
+  CPT: None
+#}
+{% macro render(ctx=None) -%}
+Indication: [autopleurodesis not achieved/recurrent symptomatic effusion]. After complete drainage, [talc slurry/doxycycline] was instilled via IPC: agent [dose], volume [mL]. The catheter was capped and the patient was instructed to rotate through [positions] over [duration]. Drainage was resumed after [hours]. Tolerance was [good/fair/poor]. Follow‑up: [drainage schedule/clinic visit].
+{%- endmacro %}

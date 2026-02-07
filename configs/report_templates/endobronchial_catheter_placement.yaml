@@ -1,0 +1,17 @@
+id: endobronchial_catheter_placement
+label: Endobronchial catheter placement
+category: bronchoscopy
+cpt_hints: []
+schema_id: endobronchial_catheter_placement_v1
+output_section: PROCEDURE_DETAILS
+template_path: endobronchial_catheter_placement.j2
+required_fields: []
+optional_fields:
+  - catheter_size_fr
+  - target_airway
+  - obstruction_pct
+  - fluoro_used
+  - dummy_check
+  - notes
+proc_types:
+  - endobronchial_catheter_placement

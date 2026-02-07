@@ -1,0 +1,9 @@
+{#
+  file: templates/addons/ion_registration_partial_efficiency_strategy_ssrab.jinja
+  Title: Ion Registration — Partial (Efficiency Strategy, ssRAB)
+  Category: NAVIGATION / ROBOTIC / EBUS PROCEDURES
+  CPT: None
+#}
+{% macro render(ctx=None) -%}
+Indication: single primary nodule on the [right/left] [lobe/segment] or multiple ipsilateral nodules where partial strategy is selected to optimize efficiency. Scope of registration: [ipsilateral tracheobronchial tree only to lobar/segmental landmarks]/[custom]. Registered landmarks: [carina], [ipsilateral lobar carinas], [key tertiary bifurcations near target]. Contralateral tree: [not registered/registered later if needed]. Rationale: partial registration to reduce presampling time while maintaining localization performance. Time metrics: Registration start [time], complete [time]; Navigation start [time]; Tool-at-target [time]. Calculated: combined registration + navigation time to primary nodule [min], navigation time to primary nodule [min]. Performance checks: virtual-to-live divergence at primary nodule [%]; rEBUS pattern [concentric/eccentric/adjacent]; tool-in-lesion confirmation [CBCT/CACT overlay/augmented fluoro/rEBUS]; ROSE adequacy [adequate/inadequate]; (if available) diagnostic yield [pending/known %]. Note: For bilateral targets or secondary nodules, document whether full registration was later performed and update plan accordingly.
+{%- endmacro %}

@@ -1,0 +1,9 @@
+{#
+  file: templates/addons/ebus_guided_19_gauge_core_fine_needle_biopsy_fnb.jinja
+  Title: EBUS‑Guided 19‑Gauge Core Fine‑Needle Biopsy (FNB)  [CPT: 31652/31653 — verify]
+  Category: NAVIGATION / ROBOTIC / EBUS PROCEDURES
+  CPT: 31652, 31653
+#}
+{% macro render(ctx=None) -%}
+Using a 19G EBUS needle, the [station #] node was sampled for [number] passes with visible core tissue obtained each pass. Elastography: [pattern if used]. ROSE (if available): [adequate/inadequate; favor benign/malignant]. No immediate complications. Specimens sent for [histology/flow/microbiology/molecular].
+{%- endmacro %}

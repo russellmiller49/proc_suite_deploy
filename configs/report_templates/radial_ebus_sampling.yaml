@@ -1,0 +1,21 @@
+id: radial_ebus_sampling
+label: Radial EBUS–Guided Sampling with Guide Sheath
+category: navigation
+cpt_hints: ["31654"]
+schema_id: radial_ebus_sampling_v1
+output_section: PROCEDURE_DETAILS
+template_path: radial_ebus_sampling.j2
+required_fields:
+  - sampling_tools
+optional_fields:
+  - ultrasound_pattern
+  - guide_sheath_diameter
+  - lesion_size_mm
+  - passes_per_tool
+  - fluoro_used
+  - rose_result
+  - specimens
+  - cxr_ordered
+  - notes
+proc_types:
+  - radial_ebus_sampling

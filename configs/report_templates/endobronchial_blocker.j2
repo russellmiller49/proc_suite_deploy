@@ -1,0 +1,2 @@
+Balloon Block: A {{ proc.blocker_type }} balloon was positioned prophylactically at the lobar/segmental orifice to provide immediate tamponade if necessary.{% if proc.inflation_volume_ml is not none %} The balloon was inflated with {{ proc.inflation_volume_ml }} mL.{% endif %}
+{% if proc.location %}Location: {{ proc.location }}.{% endif %}{% if proc.indication %} Indication: {{ proc.indication }}.{% endif %}

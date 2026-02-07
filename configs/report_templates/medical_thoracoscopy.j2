@@ -1,0 +1,16 @@
+{% set _side = (proc.side or "") | lower %}
+{% if _side %}{{ _side | title }} {% endif %}Diagnostic Thoracoscopy The chest was prepped and draped in the usual sterile fashion.
+
+Survey: Thoracoscopic survey performed.
+
+{% if proc.findings %}Findings: Initial thoracoscopic survey demonstrates {{ proc.findings }}.{% endif %}
+
+{% for item in proc.interventions or [] -%}
+{% if item %}Intervention: {{ item }}.{% endif %}
+{% endfor %}
+
+{% if proc.interventions and ('Chest tube placement' in proc.interventions) -%}
+Closure: Chest tube left in situ.
+{% endif %}
+
+The patient tolerated the procedure well. There were no immediate complications.

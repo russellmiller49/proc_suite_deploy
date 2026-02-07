@@ -1,0 +1,18 @@
+id: peg_placement
+label: PEG Placement
+category: other_intervention
+cpt_hints: []
+schema_id: peg_placement_v1
+output_section: PROCEDURE_DETAILS
+template_path: peg_placement.j2
+required_fields: []
+optional_fields:
+  - incision_location
+  - endoscope_time_seconds
+  - wire_route
+  - bumper_depth_cm
+  - tube_size_fr
+  - procedural_time_min
+  - complications
+proc_types:
+  - peg_placement

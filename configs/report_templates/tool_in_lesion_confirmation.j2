@@ -1,0 +1,9 @@
+{% set _render_style = (render_style | default("", true)) | lower %}
+
+{% if _render_style == "builder" %}
+Tool-in-lesion was confirmed with {{ proc.confirmation_method }}{% if proc.rebus_pattern %} after radial EBUS demonstrated an {{ proc.rebus_pattern | lower }} pattern{% endif %}.{% if proc.margin_mm is not none %} Margin: {{ proc.margin_mm }} mm.{% endif %}{% if proc.lesion_size_mm is not none %} Lesion size: {{ proc.lesion_size_mm | fmt_unit("mm") }}.{% endif %}
+{% else %}
+Tool-in-lesion (TIL) was confirmed via {{ proc.confirmation_method }}{% if proc.rebus_pattern %} after radial EBUS demonstrated an {{ proc.rebus_pattern | lower }} pattern{% endif %}.{% if proc.margin_mm is not none %} Margin: {{ proc.margin_mm }} mm.{% endif %}{% if proc.lesion_size_mm is not none %} Lesion size: {{ proc.lesion_size_mm | fmt_unit("mm") }}.{% endif %}
+{% endif %}
+{% if proc.screenshots_saved %}Screenshots were saved to the record.{% endif %}
+{% if proc.notes %}Notes: {{ proc.notes }}.{% endif %}

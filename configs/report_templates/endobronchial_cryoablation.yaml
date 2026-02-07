@@ -1,0 +1,19 @@
+id: endobronchial_cryoablation
+label: Endobronchial Cryoablation
+category: cryo
+cpt_hints: ["31641"]
+schema_id: endobronchial_cryoablation_v1
+output_section: PROCEDURE_DETAILS
+template_path: endobronchial_cryoablation.j2
+required_fields:
+  - site
+optional_fields:
+  - cryoprobe_size_mm
+  - freeze_seconds
+  - thaw_seconds
+  - cycles
+  - pattern
+  - post_patency
+  - notes
+proc_types:
+  - endobronchial_cryoablation

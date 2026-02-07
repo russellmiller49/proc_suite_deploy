@@ -1,0 +1,4 @@
+Under {{ proc.guidance_method }} guidance, a {{ proc.needle_gauge }} needle catheter was advanced{% if proc.distance_from_pleura_cm is not none %} to {{ proc.distance_from_pleura_cm }} cm from the pleural surface{% endif %} at the target.
+{{ proc.dye_type }}{% if proc.dye_concentration %} ({{ proc.dye_concentration }}){% endif %} was injected in {{ proc.volume_ml }} mL to mark the lesion for surgical wedge resection.
+{% if proc.diffusion_observed %}Marker diffusion was observed: {{ proc.diffusion_observed }}.{% endif %}{% if proc.notes %} Notes: {{ proc.notes }}.{% endif %}
+No immediate bleeding or air leak was seen. The patient tolerated the procedure well.

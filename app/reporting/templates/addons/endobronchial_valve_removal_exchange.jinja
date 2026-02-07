@@ -1,0 +1,9 @@
+{#
+  file: templates/addons/endobronchial_valve_removal_exchange.jinja
+  Title: Endobronchial Valve Removal / Exchange  [CPT: verify]
+  Category: BLVR (BRONCHOSCOPIC LUNG VOLUME REDUCTION) PROCEDURES
+  CPT: None
+#}
+{% macro render(ctx=None) -%}
+Indication: [infection/atelectasis/excessive cough/migration/therapy complete/air leak resolved/insufficient clinical response]. Device(s): [Zephyr/Spiration], location(s): [lobe/segment]. Removal performed using [forceps/retrieval tool] with [number] valves removed. Exchange performed for [number] valves sized [sizes]. Mucosa post‑removal: [normal/edematous/granulation]. Final airway patency and ventilation verified. The patient tolerated the procedure well.
+{%- endmacro %}

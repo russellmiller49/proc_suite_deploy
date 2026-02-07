@@ -1,0 +1,2 @@
+Existing PEG tube was removed or exchanged. A new tube{% if proc.new_tube_size_fr %} {{ proc.new_tube_size_fr }} Fr{% endif %} was placed and secured{% if proc.bumper_depth_cm is not none %} with bumper depth {{ proc.bumper_depth_cm }} cm{% endif %}.
+{% if proc.complications %}Complications: {{ proc.complications }}.{% else %}No complications observed.{% endif %}

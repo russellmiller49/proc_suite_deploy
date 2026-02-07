@@ -1,0 +1,1721 @@
+Input: Indication: RUL posterior nodule (2.3cm). High risk surgical candidate.\nProcedure: EMN Bronchoscopy + Microwave Ablation.\nEquipment: SuperDimension, Emprint 2.0 probe.\nAction: Navigated to RB1. Confirmed w/ R-EBUS & Cone Beam. Ablated 65W x 5 min (Max temp 85C).\nResult: Hyperechoic zone on R-EBUS (necrosis).
+
+
+Output: INTERVENTIONAL PULMONOLOGY OPERATIVE REPORT
+
+DATE OF PROCEDURE: [Date]
+
+
+CC Referred Physician: [Name / Self, Referred] 
+
+INDICATION FOR OPERATION [Patient Name] is a [Age]-year-old [Sex] who presents with a 2.3 cm RUL posterior nodule.  The patient is a high-risk surgical candidate requiring bronchoscopic treatment. The nature, purpose, risks, benefits, and alternatives to bronchoscopy and ablation were discussed with the patient in detail. The patient wished to proceed and informed consent was obtained. 
+
+CONSENT Obtained before the procedure. Indications, potential complications, and alternatives were discussed with the patient or surrogate. Consent was signed and witnessed by an assisting medical professional. 
+
+PREOPERATIVE DIAGNOSIS • RUL posterior pulmonary nodule, 2.3 cm 
+
+POSTOPERATIVE DIAGNOSIS • RUL posterior pulmonary nodule, 2.3 cm  • Status post Microwave Ablation (MWA)
+
+PROCEDURE • Electromagnetic Navigation Bronchoscopy (SuperDimension) to RUL target • Radial EBUS (rEBUS) localization • Cone-beam CT imaging with trajectory adjustment and confirmation  • Microwave Ablation of RUL target
+
+ATTENDING [Name] ASSISTANT [Fellow name] SUPPORT STAFF RN: [Name] RT: [Name]
+
+ANESTHESIA [General anesthesia / airway type] 
+
+MONITORING Pulse oximetry, heart rate, telemetry, and blood pressure were continuously monitored by an independent trained observer throughout the procedure. 
+
+INSTRUMENTATION SuperDimension navigation system; Emprint 2.0 probe; rEBUS probe; cone-beam CT system. 
+
+ESTIMATED BLOOD LOSS Minimal 
+
+COMPLICATIONS None 
+
+PROCEDURE IN DETAIL After induction of anesthesia, a timeout was performed confirming patient identity, planned procedures, and laterality. Relevant procedural images were saved to the medical record. 
+
+Electromagnetic Navigation Bronchoscopy — RUL Nodule A CT-based navigation plan was loaded and registration was completed using the SuperDimension system.  The navigation catheter was advanced to the planned RUL target in the RB1 segment.
+
+• Initial rEBUS assessment: The radial EBUS probe was advanced. • Cone-beam CT imaging: A 3D spin was obtained to evaluate catheter-to-target alignment. • Confirmation: Cone-beam CT and radial EBUS confirmed the tool position within the lesion. 
+
+Microwave Ablation The Emprint 2.0 probe was advanced to the target. • Settings: Ablation was performed at 65 Watts for 5 minutes. • Parameters: Maximum temperature recorded was 85°C. • Post-Ablation Assessment: Repeat radial EBUS demonstrated a hyperechoic zone consistent with necrosis.
+
+Hemostasis was confirmed. Final airway inspection demonstrated no clinically significant bleeding. No immediate complications occurred. 
+
+IMPRESSION / PLAN • RUL posterior nodule (2.3 cm) successfully navigated to RB1. • Confirmed tool-in-lesion with radial EBUS and Cone-beam CT.  • Successful Microwave Ablation performed (65W x 5 min) with rEBUS confirmation of tissue necrosis. • Post-procedure monitoring per protocol; obtain post-procedure chest imaging to assess for PTX per local workflow.
+
+
+Input: "Indication: ILD (UIP/NSIP).\nTechnique: LMA, Flex Bronch, Radial EBUS.\n- RLL Basilar segments cleared via REBUS.\n- 1.9mm Cryoprobe.\n- Site 1: RLL Posterior Basal (5s freeze).\n- Site 2: RLL Lateral Basal (5s freeze).\n- Fogarty balloon used prophylactically.\n- 2 samples (10mm each).\n- No pneumothorax."
+
+
+Output: INTERVENTIONAL PULMONOLOGY OPERATIVE REPORT
+
+DATE OF PROCEDURE: [Date] CC Referred Physician: [Name]
+
+INDICATION FOR OPERATION [Patient Name] presents with Interstitial Lung Disease (suspected UIP/NSIP) requiring histopathologic diagnosis. 
+
+CONSENT The nature, purpose, risks, benefits, and alternatives to bronchoscopy and cryobiopsy were discussed with the patient in detail. The patient wished to proceed and informed consent was obtained. 
+
+PREOPERATIVE DIAGNOSIS
+
+Interstitial Lung Disease (UIP/NSIP) 
+
+POSTOPERATIVE DIAGNOSIS
+
+Interstitial Lung Disease
+
+Successful Transbronchial Cryobiopsy (RLL) 
+
+PROCEDURE
+
+Flexible Bronchoscopy
+
+Radial EBUS (rEBUS) survey
+
+Transbronchial Cryobiopsy (RLL)
+
+Prophylactic Fogarty Balloon placement 
+
+ATTENDING [Name]
+
+ASSISTANT [Name]
+
+ANESTHESIA General Anesthesia via Laryngeal Mask Airway (LMA) 
+
+MONITORING Pulse oximetry, heart rate, telemetry, and blood pressure were continuously monitored throughout the procedure. 
+
+ESTIMATED BLOOD LOSS Minimal 
+
+COMPLICATIONS None; No pneumothorax noted. 
+
+PROCEDURE IN DETAIL After induction of anesthesia and placement of the LMA, a timeout was performed confirming patient identity and planned procedure. 
+
+Airway Inspection The bronchoscope was introduced through the LMA. A systematic airway inspection was performed, noting normal anatomy without endobronchial lesions.
+
+Radial EBUS & Preparation Attention was turned to the Right Lower Lobe (RLL).
+
+rEBUS Survey: A radial EBUS probe was advanced to the basilar segments. The survey confirmed the absence of significant vessels at the selected biopsy sites and allowed for navigation to the periphery. 
+
+
+Balloon Block: A Fogarty balloon was positioned prophylactically at the lobar/segmental orifice to provide immediate tamponade if necessary. 
+
+Transbronchial Cryobiopsy A 1.9mm cryoprobe was utilized for sampling. 
+
+Site 1 (RLL Posterior Basal): The probe was advanced to the target. A 5-second freeze cycle was applied. The probe and scope were withdrawn en bloc.
+
+Site 2 (RLL Lateral Basal): The probe was advanced to the target. A 5-second freeze cycle was applied. The probe and scope were withdrawn en bloc.
+
+Findings & Hemostasis
+
+
+Yield: A total of 2 samples were collected, measuring approximately 10mm each. 
+
+Hemostasis: The prophylactic Fogarty balloon was utilized/monitored. Final airway inspection demonstrated no clinically significant bleeding. 
+
+
+Pneumothorax Check: Post-procedure assessment demonstrated no pneumothorax. 
+
+SPECIMENS
+
+RLL Transbronchial Cryobiopsy (2 samples) — Histology 
+
+IMPRESSION / PLAN
+
+Successful transbronchial cryobiopsy of RLL basilar segments (Posterior and Lateral) for ILD evaluation. 
+
+No pneumothorax or significant bleeding complications. 
+
+Recover per protocol; obtain post-procedure chest imaging to assess for late pneumothorax per local workflow.
+
+Input: "Procedure: Thoracoscopic exploration with pleurodesis.\nAction: The pleural space was accessed. Hemorrhagic fluid was evacuated. Nodular pathology on the parietal surface was sampled. A sclerosing agent (talc) was insufflated. A drainage catheter was sited.\nResult: Tissue obtained; symphysis attempted."
+
+Output: INTERVENTIONAL PULMONOLOGY OPERATIVE REPORT
+
+
+DATE OF PROCEDURE: [Date] CC Referred Physician: [Name] 
+
+INDICATION FOR OPERATION [Patient Name] is a [Age]-year-old [Sex] who presents with [pleural effusion/nodules] requiring thoracoscopic diagnosis and management. 
+
+CONSENT Obtained before the procedure. Indications, potential complications, and alternatives were discussed with the patient or surrogate. Consent was signed and witnessed by an assisting medical professional. 
+
+PREOPERATIVE DIAGNOSIS • Pleural effusion • Suspected pleural malignancy/nodules 
+
+POSTOPERATIVE DIAGNOSIS • Pleural effusion (hemorrhagic) • Parietal pleural nodules (biopsied) • Pleurodesis performed 
+
+PROCEDURE • Medical Thoracoscopy (Pleuroscopy) • Thoracoscopic pleural biopsy • Talc pleurodesis (insufflation) • Indwelling drainage catheter/Chest tube placement 
+
+ATTENDING [Name] 
+
+ASSISTANT [Fellow name] 
+
+SUPPORT STAFF RN: [Name] RT: [Name] 
+
+ANESTHESIA [General anesthesia / Deep sedation] 
+
+MONITORING Pulse oximetry, heart rate, telemetry, and blood pressure were continuously monitored by an independent trained observer throughout the procedure. 
+
+ESTIMATED BLOOD LOSS Minimal 
+
+COMPLICATIONS None 
+
+PROCEDURE IN DETAIL
+
+After induction of anesthesia, a timeout was performed confirming patient identity, planned procedures, and laterality. Relevant procedural images were saved to the medical record. 
+
+Medical Thoracoscopy with Pleurodesis The pleural space was accessed. Thoracoscopic survey performed. Initial thoracoscopic survey demonstrates hemorrhagic fluid, which was evacuated. 
+
+Biopsy: Nodular pathology on the parietal surface was identified. Biopsies taken. 
+
+Pleurodesis: A sclerosing agent (talc) was insufflated. Pleurodesis performed as indicated. 
+
+Drainage: A drainage catheter was sited. Chest tube left in situ. 
+
+The patient tolerated the procedure well without immediate complications. 
+
+SPECIMENS • Pleural fluid – cytology/culture • Parietal pleural biopsies – histology 
+
+IMPRESSION / PLAN • Thoracoscopic exploration completed; hemorrhagic fluid evacuated. • Tissue obtained from parietal nodules. • Symphysis attempted via talc insufflation. • Drainage catheter sited. • Await final pathology and cytology. • Post-procedure monitoring per protocol; obtain post-procedure chest imaging.
+
+Input: "Thyroid cancer with tracheal compression. Pre-procedure obstruction approximately 83% Bronchus intermedius. Under general anesthesia with jet ventilation, rigid bronchoscopy performed. APC used for tumor ablation prior to stent placement. Airway measured and Ultraflex SEMS - Covered stent (20x40mm) deployed in Bronchus intermedius. Stent position confirmed with good expansion and patency. Post-procedure obstruction approximately 24%. No complications."
+
+Output: INTERVENTIONAL PULMONOLOGY OPERATIVE REPORT
+
+DATE OF PROCEDURE: [Date] CC Referred Physician: [Name]
+
+INDICATION FOR OPERATION [Patient Name] is a [Age]-year-old [Sex] with a history of thyroid cancer who presents with airway obstruction requiring intervention. The specific indication is an obstruction of the Bronchus intermedius estimated at 83%.
+
+CONSENT Obtained before the procedure. Indications, potential complications, and alternatives were discussed with the patient or surrogate. The patient wished to proceed and informed consent was obtained.
+
+PREOPERATIVE DIAGNOSIS
+
+Thyroid cancer with airway compression
+
+Bronchus intermedius obstruction (approx. 83%)
+
+POSTOPERATIVE DIAGNOSIS
+
+Thyroid cancer with airway compression
+
+Bronchus intermedius obstruction reduced to approx. 24% following intervention
+
+PROCEDURE
+
+Rigid Bronchoscopy (Therapeutic)
+
+Endobronchial Tumor Destruction (APC)
+
+Airway Stent Placement (Ultraflex SEMS)
+
+ATTENDING [Name]
+
+ASSISTANT [Fellow name]
+
+SUPPORT STAFF RN: [Name] RT: [Name]
+
+ANESTHESIA General anesthesia with High-frequency jet ventilation.
+
+MONITORING Pulse oximetry, heart rate, telemetry, and blood pressure were continuously monitored by an independent trained observer throughout the procedure.
+
+ESTIMATED BLOOD LOSS Minimal 
+
+COMPLICATIONS None
+
+PROCEDURE IN DETAIL After induction of general anesthesia, a timeout was performed confirming patient identity, planned procedures, and laterality.
+
+Rigid Bronchoscopy A rigid bronchoscope was introduced via the mouth under direct visualization. High-frequency jet ventilation (HFJV) was utilized. A complete airway survey was performed. The Bronchus intermedius was identified as the target area, with a pre-procedure obstruction noted at approximately 83%.
+
+Endobronchial Tumor Destruction Endobronchial obstruction was treated with Argon Plasma Coagulation (APC) for tumor ablation prior to stent placement. Performed at the Bronchus intermedius.
+
+Airway Stent Placement The airway was measured to determine appropriate stent sizing. A stent was deployed across the target stenosis under bronchoscopic guidance.
+
+Stent Type: Ultraflex SEMS - Covered
+
+Dimensions: 20mm x 40mm
+
+Location: Bronchus intermedius
+
+Findings and Outcome Stent position was confirmed with good expansion and patency. Post-procedure obstruction was estimated at approximately 24%. Hemostasis was confirmed. The bronchoscope and adjunct instruments were withdrawn. The patient tolerated the procedure well without immediate complications.
+
+IMPRESSION / PLAN
+
+Successful rigid bronchoscopy with APC ablation and placement of a 20x40mm Covered Ultraflex SEMS in the Bronchus intermedius.
+
+Airway patency improved; obstruction reduced from 83% to 24%.
+
+Post-procedure monitoring per protocol.
+
+Input: "Indication: BI malignancy, pneumonia.\nAnesthesia: GA, ETT.\nFindings: BI 80% obstructed.\nProcedure: 6F catheter placed past tumor. Fluoro confirm. Dummy check.\nPlan: 6Gy x 4 weekly. Admit/Obs."
+
+Output: INTERVENTIONAL PULMONOLOGY OPERATIVE REPORT
+
+DATE OF PROCEDURE: [Date] CC Referred Physician: [Referred Physician Name]
+
+INDICATION FOR OPERATION The patient presents with a Bronchus Intermedius (BI) malignancy and pneumonia requiring therapeutic intervention.
+
+CONSENT Obtained before the procedure. Indications, potential complications, and alternatives were discussed with the patient or surrogate. The patient wished to proceed and informed consent was obtained. Consent was signed and witnessed by an assisting medical professional.
+
+PREOPERATIVE DIAGNOSIS
+
+Bronchus Intermedius malignancy 
+
+Pneumonia 
+
+POSTOPERATIVE DIAGNOSIS
+
+Bronchus Intermedius malignancy (80% obstruction) 
+
+Catheter placement for Brachytherapy 
+
+PROCEDURE
+
+Flexible Bronchoscopy
+
+Endobronchial catheter placement (6 French)
+
+Fluoroscopic guidance and confirmation 
+
+Dummy wire check
+
+ATTENDING [Name] 
+
+ASSISTANT [Name] 
+
+SUPPORT STAFF RN: [Name] RT: [Name] 
+
+ANESTHESIA General anesthesia / Endotracheal intubation (ETT).
+
+MONITORING Pulse oximetry, heart rate, telemetry, and blood pressure were continuously monitored by an independent trained observer throughout the procedure.
+
+INSTRUMENTATION Flexible bronchoscope; 6 French catheter; Fluoroscopy C-arm.
+
+ESTIMATED BLOOD LOSS Minimal 
+
+COMPLICATIONS None 
+
+PROCEDURE IN DETAIL After induction of anesthesia, a timeout was performed confirming patient identity, planned procedures, and laterality. Relevant procedural images were saved to the medical record.
+
+Airway Inspection The bronchoscope was passed via the ETT into the trachea. A systematic inspection was performed.
+
+Findings: The Bronchus Intermedius (BI) was identified and noted to be 80% obstructed by malignant tumor burden.
+
+Catheter Placement Under bronchoscopic and fluoroscopic guidance, a 6 French catheter was introduced.
+
+The catheter was successfully navigated and placed past the tumor obstruction in the Bronchus Intermedius.
+
+
+Confirmation: Fluoroscopy was utilized to confirm the final position of the catheter.
+
+Dummy Check: A dummy check wire was inserted into the catheter to ensure patency and lack of kinking. The wire passed without difficulty.
+
+Final Assessment The bronchoscope was withdrawn. The patient tolerated the procedure well without immediate complications.
+
+IMPRESSION / PLAN
+
+Bronchus Intermedius malignancy with 80% obstruction.
+
+Successful placement of 6F catheter past the tumor with fluoroscopic confirmation and successful dummy check.
+
+Plan: Proceed with High-Dose Rate (HDR) Brachytherapy: 6Gy x 4 weekly fractions.
+
+Admit to hospital for observation.
+
+Input: "Indication: 9mm RLL nodule.\nSystem: Galaxy.\nVerif: Fluoro + rEBUS (Concentric).\nAction: TBNA x4, Bx x6, Brush, BAL (RB10).\nROSE: Negative."
+Output: INTERVENTIONAL PULMONOLOGY OPERATIVE REPORT
+
+DATE OF PROCEDURE: [Date] CC Referred Physician: [Name] INDICATION FOR OPERATION [Patient Name] is a [Age]-year-old [Sex] who presents with a 9 mm RLL pulmonary nodule requiring bronchoscopic diagnosis. 
+
+CONSENT Obtained before the procedure. Risks, benefits, and alternatives were discussed. 
+
+PREOPERATIVE DIAGNOSIS
+
+RLL pulmonary nodule, 9 mm 
+
+POSTOPERATIVE DIAGNOSIS
+
+RLL pulmonary nodule, 9 mm 
+
+ROSE negative (final pathology pending) 
+
+PROCEDURE
+
+Robotic navigational bronchoscopy (Galaxy) to RLL target 
+
+rEBUS localization (Concentric) 
+
+Fluoroscopy with trajectory adjustment and confirmation 
+
+TBNA of RLL target (4 passes) 
+
+Transbronchial biopsy of RLL target (6 samples) 
+
+Bronchial Brush 
+
+Bronchoalveolar Lavage (RB10) 
+
+PROCEDURE IN DETAIL After induction of anesthesia, a timeout was performed confirming patient identity, planned procedures, and laterality. 
+
+Robotic Navigational Bronchoscopy (Galaxy) — RLL Nodule Robotic navigation bronchoscopy was performed using the Galaxy system. A navigation plan from the pre-procedure CT was loaded and registration completed. The robotic catheter was advanced to the planned RLL target (9 mm) under navigational guidance. 
+
+Verification and Target Confirmation
+
+
+Radial EBUS: A concentric ultrasound pattern was obtained to confirm lesion location. 
+
+
+Fluoroscopy: Fluoroscopic imaging was used to confirm catheter-to-target alignment. 
+
+RLL Target Sampling
+
+
+TBNA: Transbronchial needle aspiration was performed. A total of 4 passes were obtained from the RLL target. 
+
+
+Biopsy: Transbronchial forceps biopsies were performed with a total of 6 samples collected. 
+
+
+Brush: Endobronchial/transbronchial brushings were obtained and submitted. 
+
+BAL: Bronchoalveolar lavage was performed in the RB10 with saline instilled and returned. Specimens were submitted. 
+
+
+ROSE: Preliminary ROSE cytology was reported as negative (final results are pending). 
+
+Hemostasis was confirmed after sampling. The patient tolerated the procedure well without immediate complications. 
+
+SPECIMENS
+
+RLL nodule TBNA (4 passes) — cytology 
+
+RLL transbronchial biopsy (6 samples) — histology 
+
+RLL Bronchial Brush — cytology 
+
+RB10 BAL — microbiology/cytology 
+
+IMPRESSION / PLAN
+
+RLL nodule successfully sampled with fluoroscopic confirmation and concentric rEBUS pattern. 
+
+ROSE negative for malignancy. 
+
+Await final pathology and cytology. 
+
+Post-procedure monitoring per protocol; obtain post-procedure chest imaging to assess for PTX per local workflow.
+
+Input: "Procedure: Robotic Bronchoscopy LLL.\nTarget: 20mm nodule.\nActions: Navigated to LB7+8. Locked sheath. rEBUS adjacent.\nSampling: 19G TBNA x7. Forceps biopsy x6. BAL performed.\nROSE: Negative for malignancy.\nIssues: None."
+
+Output: INTERVENTIONAL PULMONOLOGY OPERATIVE REPORT
+
+DATE OF PROCEDURE: [Date]
+
+
+CC Referred Physician: [Name / Self, Referred] 
+
+INDICATION FOR OPERATION [Patient Name] is a [Age]-year-old [Sex] who presents with a 20mm LLL pulmonary nodule requiring bronchoscopic diagnosis. The nature, purpose, risks, benefits, and alternatives to bronchoscopy were discussed with the patient in detail. The patient wished to proceed and informed consent was obtained. 
+
+CONSENT Obtained before the procedure. Indications, potential complications, and alternatives were discussed with the patient or surrogate. Consent was signed and witnessed by an assisting medical professional. 
+
+PREOPERATIVE DIAGNOSIS
+
+LLL pulmonary nodule, 20mm 
+
+[Additional ICD-10 if applicable]
+
+POSTOPERATIVE DIAGNOSIS
+
+LLL pulmonary nodule, 20mm 
+
+ROSE negative for malignancy (final pathology pending) 
+
+PROCEDURE
+
+Robotic navigational bronchoscopy (Ion) to LLL target 
+
+rEBUS localization 
+
+TBNA of LLL target with 19-gauge needle (7 passes) 
+
+Transbronchial forceps biopsy of LLL target (6 samples) 
+
+Bronchoalveolar Lavage (BAL) 
+
+Rapid On-Site Evaluation (ROSE) 
+
+ATTENDING [Name] 
+
+ASSISTANT [Fellow name] 
+
+SUPPORT STAFF RN: [Name] RT: [Name] 
+
+ANESTHESIA [General anesthesia / airway type] 
+
+MONITORING Pulse oximetry, heart rate, telemetry, and blood pressure were continuously monitored by an independent trained observer throughout the procedure. 
+
+INSTRUMENTATION Ion robotic bronchoscopy platform; rEBUS probe; 19G TBNA needle; biopsy forceps; bronchoscope. 
+
+ESTIMATED BLOOD LOSS Minimal 
+
+COMPLICATIONS None 
+
+PROCEDURE IN DETAIL After induction of anesthesia, a timeout was performed confirming patient identity, planned procedures, and laterality. Relevant procedural images were saved to the medical record. Patient position: [Supine] 
+
+Robotic Navigational Bronchoscopy (Ion) — LLL Nodule A CT-based navigation plan was loaded and robotic registration was completed. The robotic catheter was advanced to the planned LLL target (20mm) in the LB7+8 segment. 
+
+Initial rEBUS assessment: The sheath was locked. Radial EBUS confirmed an adjacent ultrasound pattern regarding the lesion. 
+
+LLL Target Sampling
+
+TBNA: 19-gauge needle used; 7 passes obtained from the LLL target. 
+
+
+Forceps Biopsy: 6 transbronchial forceps biopsy samples obtained from the LLL target. 
+
+BAL: Bronchoalveolar lavage was performed in the LLL with saline instilled and returned. Specimens were submitted. 
+
+
+ROSE (LLL target): No malignant cells identified on ROSE (final cytology/histology pending). 
+
+Hemostasis was confirmed after sampling. Final airway inspection demonstrated no clinically significant bleeding. No immediate complications occurred. 
+
+SPECIMENS
+
+LLL nodule TBNA (7 passes) — cytology 
+
+LLL transbronchial biopsy (6 samples) — histology 
+
+LLL BAL — microbiology/cytology 
+
+IMPRESSION / PLAN
+
+LLL nodule (20mm) successfully sampled via robotic bronchoscopy. 
+
+Navigated to LB7+8 with adjacent rEBUS signal. 
+
+ROSE negative for malignancy. 
+
+Await final pathology and cytology. 
+
+Post-procedure monitoring per protocol; obtain post-procedure chest imaging to assess for PTX per local workflow.
+
+Input: "Indication: Recurrent L effusion (Hepatic hydrothorax).\nProc: Thoracentesis w/ catheter.\n- 12Fr pigtail.\n- No imaging.\n- Drained 2100mL clear yellow.\n- Catheter removed."
+
+Output: INTERVENTIONAL PULMONOLOGY OPERATIVE REPORT
+
+DATE OF PROCEDURE: [Date]
+
+
+CC Referred Physician: [Name] 
+
+INDICATION FOR OPERATION The patient presents with a recurrent left pleural effusion (hepatic hydrothorax). 
+
+CONSENT Obtained before the procedure. The nature, purpose, risks, benefits, and alternatives to the procedure were discussed with the patient in detail. The patient wished to proceed and informed consent was obtained. 
+
+PREOPERATIVE DIAGNOSIS
+
+Recurrent left pleural effusion (hepatic hydrothorax) 
+
+POSTOPERATIVE DIAGNOSIS
+
+Recurrent left pleural effusion (hepatic hydrothorax) 
+
+Successful drainage of 2100 mL clear yellow fluid 
+
+PROCEDURE
+
+Left-sided Thoracentesis via 12Fr Pigtail Catheter 
+
+ATTENDING [Name] 
+
+SUPPORT STAFF RN: [Name] RT: [Name] 
+
+MONITORING Pulse oximetry, heart rate, telemetry, and blood pressure were continuously monitored by an independent trained observer throughout the procedure. 
+
+COMPLICATIONS None 
+
+PROCEDURE IN DETAIL
+
+After the successful induction of anesthesia, a timeout was performed confirming the patient's name, procedure type, and laterality. 
+
+Pigtail Catheter Placement (Modified for Drainage) The insertion site was prepped and draped in sterile fashion. Anesthesia: Lidocaine 1% was used for local anesthesia. Entry Site: Left hemithorax. 
+
+Findings and Technique: A 12Fr pigtail catheter was utilized. A pigtail catheter was inserted using the Seldinger technique. Entry into the pleural space was confirmed with the easy removal of pleural fluid. A guidewire was inserted using the introducer needle. The introducer needle was then removed. A dilator was then inserted over the wire with a twisting motion in order to form a tract for catheter insertion. The dilator was removed and the pigtail catheter (with trocar) was advanced over the guidewire. 
+
+
+Imaging: No imaging was utilized for this procedure (anatomic landmarks only). 
+
+Drainage:
+
+
+Fluid Removed: 2100 mL 
+
+
+Appearance: Clear yellow 
+
+Following adequate drainage, the pigtail catheter was removed. The site was dressed with occlusive gauze. 
+
+IMPRESSION / PLAN
+
+Recurrent left pleural effusion successfully drained via pigtail catheter. 
+
+Total of 2100 mL clear yellow fluid removed. 
+
+Catheter removed at the end of the procedure. 
+
+Post-procedure monitoring per protocol.
+
+Input: "INTERVENTIONAL PULMONOLOGY OPERATIVE REPORT\n\nPatient: [REDACTED]\nMedical Record: [REDACTED]\nService Date: [REDACTED]\nOperator: Steven Park, MD\n\nCLINICAL RATIONALE\nCombined staging and peripheral nodule diagnosis. Target lesion: 27.5mm ground-glass nodule localized to RLL superior (B6).\n\nSEDATION DETAILS\nGeneral endotracheal sedation administered. 8.0mm airway device deployed orally.\n\nOPERATIVE NARRATIVE\n\nSEGMENT 1: LINEAR EBUS MEDIASTINAL ASSESSMENT\n\nThe convex-probe ultrasound bronchoscope (Fujifilm EB-580S) was advanced through the endotracheal conduit. Systematic mediastinal survey was executed. Lymph nodes were visualized at multiple stations and sampled utilizing 22-gauge aspiration needle (Acquire).\n\nStation 11R: Visualized homogeneous node (22.0x13.6mm). Executed 2 aspiration passes. ROSE yielded: Malignant - small cell carcinoma.\nStation 4R: Visualized heterogeneous node (13.7x29.3mm). Executed 4 aspiration passes. ROSE yielded: Atypical cells.\nStation 11L: Visualized homogeneous node (18.9x31.0mm). Executed 3 aspiration passes. ROSE yielded: Malignant - small cell carcinoma.\n\nSEGMENT 2: ROBOTIC-ASSISTED PERIPHERAL NAVIGATION\n\nThe Galaxy robotic navigation platform (Noah Medical) was initialized and calibrated. Registration accuracy measured 2.8mm. The articulating catheter was maneuvered to the RLL superior (B6) target zone.\n\nRadial ultrasound miniprobe was deployed, yielding eccentric visualization of the lesion. Instrument-within-target was verified via cbct.\n\nTISSUE ACQUISITION:\n- Grasping forceps specimens acquired: 4\n- Aspiration needle passes executed: 3  \n- Cytology brushings harvested: 2\n- Lavage fluid extracted from RLL\n\nROSE assessment yielded: Adequate lymphocytes, no malignancy\n\nSPECIMEN DISPOSITION\n- EBUS aspirates dispatched to: Cytology, cell block, flow cytometry\n- Parenchymal samples dispatched to: Surgical pathology, molecular analysis\n- Brushings dispatched to: Cytology\n- Lavage dispatched to: Microbiology (bacterial, mycobacterial, fungal)\n\nOUTCOME ASSESSMENT\nProcedure concluded without adverse events. Hemorrhage: negligible (<10mL). Post-procedure radiograph: unremarkable, pneumothorax excluded.\n\nDISPOSITION\nPatient [REDACTED] recovery suite. Discharged to residence following observation period. Outpatient follow-up scheduled for pathology review.\n\nSUMMARY\n1. EBUS-guided mediastinal staging successfully executed (3 stations sampled)\n2. Robotic navigation to peripheral target successfully accomplished\n3. Tissue acquisition achieved via multiple modalities\n4. Zero procedural complications documented\n\nElectronically attested,\n[REDACTED], MD\nDivision of Interventional Pulmonology\nBaptist Medical Center"
+
+Output: INTERVENTIONAL PULMONOLOGY OPERATIVE REPORT
+
+
+DATE OF PROCEDURE: [Date]  OPERATOR: Steven Park, MD CC Referred Physician: [Name] 
+
+INDICATION FOR OPERATION The patient presents with a 27.5mm ground-glass nodule localized to RLL superior (B6). The nature, purpose, risks, benefits and alternatives to Bronchoscopy were discussed with the patient in detail. The patient wished to proceed and informed consent was obtained. 
+
+CONSENT Obtained before the procedure. Indications, potential complications, and alternatives were discussed with the patient or surrogate. Consent was signed and witnessed by an assisting medical professional. 
+
+PREOPERATIVE DIAGNOSIS
+
+RLL pulmonary nodule, 27.5 mm (Ground-glass) 
+
+Mediastinal lymphadenopathy 
+
+POSTOPERATIVE DIAGNOSIS
+
+RLL pulmonary nodule, 27.5 mm 
+
+EBUS staging performed; Malignant (Small Cell) at stations 11R and 11L 
+
+PROCEDURE
+
+EBUS-TBNA staging (Stations 11R, 4R, 11L) with ROSE 
+
+Robotic navigational bronchoscopy (Galaxy) to RLL target 
+
+Cone-beam CT imaging with trajectory adjustment and confirmation 
+
+Radial EBUS localization 
+
+Transbronchial biopsy/Forceps of RLL target (4 samples) 
+
+TBNA of RLL target (3 passes) 
+
+Bronchial Brushings (2 samples) 
+
+Bronchial Washing 
+
+ANESTHESIA General endotracheal sedation administered. 
+
+MONITORING Pulse oximetry, heart rate, telemetry, and BP were continuously monitored by an independent trained observer that was present throughout the entire procedure. 
+
+ESTIMATED BLOOD LOSS Minimal (<10mL) 
+
+COMPLICATIONS None 
+
+PROCEDURE IN DETAIL After the successful induction of anesthesia, a timeout was performed (confirming the patient's name, procedure type, and procedure location).  An 8.0mm airway device was deployed orally.
+
+EBUS STAGING The endobronchial ultrasound-capable bronchoscope (Fujifilm EB-580S) was introduced and the following lymph node station(s) were identified: 
+
+Station 11R:
+
+Size: 22.0 x 13.6 mm (Homogeneous) 
+
+Biopsy Tools: 22-gauge aspiration needle (Acquire) 
+
+Passes: 2 
+
+ROSE Results: Malignant - small cell carcinoma 
+
+Station 4R:
+
+Size: 13.7 x 29.3 mm (Heterogeneous) 
+
+Biopsy Tools: 22-gauge aspiration needle (Acquire) 
+
+Passes: 4 
+
+ROSE Results: Atypical cells 
+
+Station 11L:
+
+Size: 18.9 x 31.0 mm (Homogeneous) 
+
+Biopsy Tools: 22-gauge aspiration needle (Acquire) 
+
+Passes: 3 
+
+ROSE Results: Malignant - small cell carcinoma 
+
+Robotic Navigational Bronchoscopy (Galaxy) — RLL Nodule Robotic navigation bronchoscopy was performed using the Galaxy robotic navigation platform (Noah Medical). Registration was completed; the navigation catheter was advanced.  Registration accuracy measured 2.8mm. The articulating catheter was maneuvered to the RLL superior (B6) target zone.
+
+
+Radial EBUS: Radial ultrasound miniprobe was deployed, yielding eccentric visualization of the lesion. 
+
+
+Cone-beam CT imaging: Tool-in-lesion was confirmed by CBCT. 
+
+RLL Target Sampling Sampling was obtained through the extended working channel as detailed: 
+
+
+Forceps: 4 specimens acquired. 
+
+
+TBNA: 3 passes executed. 
+
+
+Brush: 2 cytology brushings harvested. 
+
+
+Washing: Lavage fluid extracted from RLL. 
+
+
+ROSE (RLL target): Adequate lymphocytes, no malignancy. 
+
+Hemostasis was confirmed. The patient tolerated the procedure well without immediate complications. Post-procedure radiograph: unremarkable, pneumothorax excluded. 
+
+SPECIMENS
+
+Station 11R, 4R, 11L EBUS aspirates — Cytology, cell block, flow cytometry 
+
+RLL Parenchymal samples — Surgical pathology, molecular analysis 
+
+RLL Brushings — Cytology 
+
+RLL Lavage — Microbiology (bacterial, mycobacterial, fungal) 
+
+IMPRESSION / PLAN
+
+EBUS-guided mediastinal staging successfully executed (3 stations sampled) with ROSE malignant (small cell) at stations 11R and 11L. 
+
+Robotic navigation to peripheral target successfully accomplished with tissue acquisition achieved via multiple modalities. 
+
+No immediate complications occurred. 
+
+Discharged to residence following observation period.
+
+Input: "Procedure: EBUS-TBNA.\nIndication: Mediastinal staging.\nNodes Sampled:\n- 4R (18mm): Positive for Adeno.\n- 7 (22mm): Positive for Adeno.\n- 10R (14mm): Positive for Adeno.\nTechnique: 22G needle, 3-4 passes per station.\nResult: N3 disease (Contralateral/Supraclavicular not sampled, but extensive N2 involved)."
+
+Output: INTERVENTIONAL PULMONOLOGY OPERATIVE REPORT 
+
+DATE OF PROCEDURE: [Date] INDICATION FOR OPERATION Mediastinal staging.
+
+PREOPERATIVE DIAGNOSIS Mediastinal Adenopathy POSTOPERATIVE DIAGNOSIS N3 disease (Adenocarcinoma)
+
+PROCEDURE
+
+Endobronchial Ultrasound-Guided Transbronchial Needle Aspiration (EBUS-TBNA) (Stations 4R, 7, 10R) 
+
+PROCEDURE IN DETAIL After the successful induction of anesthesia, a timeout was performed confirming the patient's identity and planned procedure.  The patient was monitored continuously throughout the procedure.
+
+EBUS-TBNA Staging The endobronchial ultrasound-capable bronchoscope was introduced and a systematic mediastinal and hilar survey was performed. The following lymph node stations were identified and sampled based on ultrasound criteria using a 22-gauge needle: 
+
+Station 4R (Right Lower Paratracheal): The node measured 18 mm by EBUS. 3-4 passes were performed. 
+
+Result: Positive for Adenocarcinoma.
+
+Station 7 (Subcarinal): The node measured 22 mm by EBUS. 3-4 passes were performed. 
+
+Result: Positive for Adenocarcinoma.
+
+Station 10R (Right Hilar): The node measured 14 mm by EBUS. 3-4 passes were performed. 
+
+Result: Positive for Adenocarcinoma.
+
+Prior to withdrawal of the bronchoscope, inspection demonstrated no evidence of bleeding.  The patient tolerated the procedure well. There were no immediate complications. 
+
+IMPRESSION / PLAN
+
+EBUS-TBNA performed for mediastinal staging. 
+
+Samples obtained from stations 4R, 7, and 10R were positive for Adenocarcinoma.
+
+Findings consistent with N3 disease.
+
+input: "Dx: Lung-RADS 4X, 22mm LUL.\nMethod: Galaxy Robot + TiLT+.\nFindings: 1.5cm divergence on TiLT. Corrected.\nrEBUS: Eccentric.\n intervention: TBNA x5, Forceps x7, Brush, Fiducial.\nROSE: Lymphocytes/benign.",
+
+Output: 
+INTERVENTIONAL PULMONOLOGY OPERATIVE REPORT
+
+DATE OF PROCEDURE: [Date] CC Referred Physician: [Name]
+
+INDICATION FOR OPERATION [Patient Name] is a patient who presents with a 22 mm LUL (Lung-RADS 4X) pulmonary nodule requiring bronchoscopic diagnosis and staging. The nature, purpose, risks, benefits, and alternatives to bronchoscopy were discussed with the patient in detail. The patient wished to proceed and informed consent was obtained.
+
+CONSENT Obtained before the procedure. Indications, potential complications, and alternatives were discussed with the patient or surrogate. Consent was signed and witnessed by an assisting medical professional.
+
+PREOPERATIVE DIAGNOSIS
+
+LUL pulmonary nodule, 22 mm (Lung-RADS 4X) 
+
+POSTOPERATIVE DIAGNOSIS
+
+LUL pulmonary nodule, 22 mm
+
+ROSE: Lymphocytes/benign (final pathology pending) 
+
+PROCEDURE
+
+Robotic navigational bronchoscopy (Galaxy) to LUL target
+
+TiLT+ (Tomosynthesis-based Tool-in-Lesion Tomography) with trajectory adjustment
+
+Radial EBUS (rEBUS) localization
+
+Transbronchial needle aspiration (TBNA) of LUL target (5 passes)
+
+Transbronchial forceps biopsy of LUL target (7 samples)
+
+Bronchial brushings
+
+Fiducial marker placement
+
+ATTENDING [Name]
+
+ASSISTANT [Name]
+
+SUPPORT STAFF RN: [Name] RT: [Name]
+
+ANESTHESIA General anesthesia
+
+MONITORING Pulse oximetry, heart rate, telemetry, and blood pressure were continuously monitored by an independent trained observer throughout the procedure.
+
+INSTRUMENTATION Galaxy robotic bronchoscopy platform; TiLT+ imaging; rEBUS probe; TBNA needles; biopsy forceps; bronchial brush; fiducial markers.
+
+ESTIMATED BLOOD LOSS Minimal 
+
+COMPLICATIONS None 
+
+PROCEDURE IN DETAIL After induction of anesthesia, a timeout was performed confirming patient identity, planned procedures, and laterality. Relevant procedural images were saved to the medical record.
+
+Robotic Navigational Bronchoscopy (Galaxy) — LUL Nodule A CT-based navigation plan was loaded and robotic registration was completed. The Galaxy robotic catheter was advanced to the planned LUL target (22 mm).
+
+Imaging & Divergence Correction (TiLT+): A TiLT+ spin was obtained intra-procedurally to evaluate catheter-to-target alignment.
+
+Findings: A 1.5 cm divergence was identified between the virtual target and the actual lesion location.
+
+Correction: Registration correction was applied to the catheter path. The trajectory was adjusted based on the reconstruction/overlay, and a confirmatory spin verified corrected alignment.
+
+rEBUS Assessment: A radial EBUS probe was advanced. An eccentric ultrasound pattern was obtained, confirming the lesion location relative to the airway.
+
+LUL Target Sampling
+
+TBNA: Transbronchial needle aspiration was performed; 5 passes were obtained from the LUL target.
+
+Forceps Biopsy: Transbronchial forceps biopsies were performed with a total of 7 samples collected.
+
+Brush: Endobronchial/transbronchial brushings were obtained and submitted.
+
+Fiducial Placement: A fiducial marker was placed at the targeted airway location under guidance.
+
+
+ROSE (LUL target): Preliminary evaluation showed lymphocytes/benign cells (final cytology/histology pending).
+
+Hemostasis was confirmed after sampling. The bronchoscope was withdrawn. The patient tolerated the procedure well without immediate complications.
+
+SPECIMENS
+
+LUL nodule TBNA (5 passes) — cytology
+
+LUL forceps biopsy (7 samples) — histology
+
+LUL brush — cytology
+
+IMPRESSION / PLAN
+
+LUL nodule (22 mm) successfully sampled using Galaxy robotic bronchoscopy.
+
+Divergence of 1.5 cm identified and corrected using TiLT+ imaging.
+
+Lesion confirmed with eccentric rEBUS pattern.
+
+Fiducial marker placed.
+
+ROSE favored benign process (lymphocytes); await final pathology and cytology.
+
+Post-procedure monitoring per protocol.
+
+Input:   "77yo F Dx: Lung Cancer Staging, Proc: EBUS-TBNA + Robotic Bronch (Galaxy), GA/ETT, Linear EBUS: Olympus BF-UC180F, Stations: 11R (4x), 2L (2x), 4L (4x), Nav to LLL lateral basal (B9), rEBUS: Eccentric view, TIL confirmed: Radial EBUS, Bx x7, TBNA x2, ROSE+: Suspicious for malignancy, Complications: None, EBL: <10mL Dispo: Home"
+INTERVENTIONAL PULMONOLOGY OPERATIVE REPORT
+
+DATE OF PROCEDURE: [Date] CC Referred Physician: [Name / Self, Referred]
+
+INDICATION FOR OPERATION The patient is a 77-year-old female who presents with a lung nodule requiring bronchoscopic diagnosis and lung cancer staging. The nature, purpose, risks, benefits, and alternatives to bronchoscopy were discussed with the patient in detail. The patient wished to proceed and informed consent was obtained. 
+
+CONSENT Obtained before the procedure. Indications, potential complications, and alternatives were discussed with the patient or surrogate. Consent was signed and witnessed by an assisting medical professional. 
+
+PREOPERATIVE DIAGNOSIS
+
+Lung Nodule (LLL lateral basal)
+
+Lung Cancer Staging
+
+POSTOPERATIVE DIAGNOSIS
+
+LLL lateral basal (B9) pulmonary nodule
+
+EBUS staging performed;
+
+ROSE suspicious for malignancy 
+
+PROCEDURE
+
+Robotic navigational bronchoscopy (Galaxy) to LLL target 
+
+Radial EBUS (rEBUS) localization and confirmation
+
+Transbronchial biopsy of LLL target (7 samples) 
+
+TBNA of LLL target (2 passes)
+
+EBUS-TBNA staging (Stations 11R, 2L, 4L)
+
+ATTENDING [Name]
+
+ASSISTANT [Name]
+
+ANESTHESIA General anesthesia / Endotracheal tube (ETT) 
+
+MONITORING Pulse oximetry, heart rate, telemetry, and blood pressure were continuously monitored by an independent trained observer throughout the procedure. 
+
+INSTRUMENTATION Galaxy robotic bronchoscopy platform; Olympus BF-UC180F Linear EBUS scope; rEBUS probe; TBNA needles; biopsy forceps. 
+
+ESTIMATED BLOOD LOSS < 10 mL 
+
+COMPLICATIONS None 
+
+PROCEDURE IN DETAIL After induction of anesthesia, a timeout was performed confirming patient identity, planned procedures, and laterality. Relevant procedural images were saved to the medical record. 
+
+Robotic Navigational Bronchoscopy (Galaxy) — LLL Nodule A CT-based navigation plan was loaded and registration was completed. The robotic catheter was advanced to the planned LLL lateral basal (B9) target. 
+
+Localization: Radial EBUS was performed.
+
+Target Confirmation: rEBUS demonstrated an eccentric view of the lesion. Tool-in-lesion (TIL) was confirmed via Radial EBUS. 
+
+LLL Target Sampling Sampling was performed with the following acquisition:
+
+Biopsy: 7 forceps biopsies were obtained from the target.
+
+
+TBNA: 2 needle passes were obtained from the target. 
+
+
+ROSE: Preliminary on-site evaluation was positive (suspicious for malignancy). 
+
+Hemostasis was confirmed after sampling. 
+
+EBUS STAGING The Galaxy catheter was removed. The Olympus BF-UC180F EBUS bronchoscope was introduced and a systematic mediastinal/hilar survey was performed. 
+
+The following lymph node stations were sampled:
+
+Station 11R: 4 passes
+
+Station 2L: 2 passes
+
+Station 4L: 4 passes
+
+Final airway inspection demonstrated no clinically significant bleeding. No immediate complications occurred. 
+
+SPECIMENS
+
+LLL lateral basal (B9) TBNA (2 passes) — cytology
+
+LLL lateral basal (B9) biopsy (7 samples) — histology
+
+Station 11R EBUS-TBNA (4 passes) — cytology
+
+Station 2L EBUS-TBNA (2 passes) — cytology
+
+Station 4L EBUS-TBNA (4 passes) — cytology
+
+IMPRESSION / PLAN
+
+LLL lateral basal (B9) nodule successfully sampled using Galaxy robotic navigation; rEBUS confirmed eccentric view and tool-in-lesion.
+
+ROSE of the LLL target was suspicious for malignancy.
+
+EBUS staging performed at stations 11R, 2L, and 4L. 
+
+Await final pathology and cytology. 
+
+Patient discharged home.
+
+input: "Ind: Met lung CA, 62% LMS. Proc: Rigid bronch, Microdebrider, APC. Action: Excision + Ablation. Result: obstruction 62% -> 39%.EBL: 50mL. Plan: ICU."
+
+output: INTERVENTIONAL PULMONOLOGY OPERATIVE REPORT
+
+DATE OF PROCEDURE: [Date] CC Referred Physician: [Name / Self, Referred]
+
+INDICATION FOR OPERATION [Patient Name] is a patient with metastatic lung cancer who presents with a 62% obstruction of the Left Main Stem (LMS) bronchus requiring bronchoscopic intervention.
+
+CONSENT Obtained before the procedure. Indications (airway obstruction), potential complications, and alternatives were discussed with the patient or surrogate. The patient wished to proceed and informed consent was obtained.
+
+PREOPERATIVE DIAGNOSIS
+
+Metastatic lung cancer
+
+Left Main Stem (LMS) bronchial obstruction (62%) 
+
+POSTOPERATIVE DIAGNOSIS
+
+Metastatic lung cancer
+
+Left Main Stem (LMS) bronchial obstruction reduced to 39% 
+
+PROCEDURE
+
+Rigid Bronchoscopy (Therapeutic)
+
+Microdebrider Debridement (Tumor Excision)
+
+Argon Plasma Coagulation (APC) Ablation
+
+Complex Airway Management 
+
+ATTENDING [Name]
+
+ASSISTANT [Fellow name]
+
+SUPPORT STAFF RN: [Name] RT: [Name]
+
+ANESTHESIA General anesthesia 
+
+MONITORING Pulse oximetry, heart rate, telemetry, and blood pressure were continuously monitored by an independent trained observer throughout the procedure.
+
+ESTIMATED BLOOD LOSS 50 mL 
+
+COMPLICATIONS None 
+
+PROCEDURE IN DETAIL After induction of general anesthesia, a timeout was performed confirming patient identity, planned procedures, and laterality.
+
+Rigid Bronchoscopy — Left Main Stem Recanalization A rigid bronchoscope was introduced via the mouth under direct visualization. A complete airway survey was performed.
+
+Findings: The Left Main Stem (LMS) bronchus was identified with a 62% obstruction caused by tumor ingrowth.
+
+Therapeutic Intervention The following therapeutic interventions were performed to address the obstruction:
+
+Microdebrider Debridement: The endobronchial tumor was excised with mechanical debridement using a microdebrider to debulk the lesion.
+
+Argon Plasma Coagulation (APC): Endobronchial obstruction was treated with APC for tumor destruction and hemostasis.
+
+Results
+
+Modality: Microdebrider and APC.
+
+Patency: Prior to treatment, the affected airway (LMS) was noted to be 62% obstructed. After treatment, the obstruction was reduced to 39%.
+
+Hemostasis was confirmed. The bronchoscope and adjunct instruments were withdrawn. The patient tolerated the procedure well without immediate complications.
+
+IMPRESSION / PLAN
+
+Successful rigid bronchoscopy with microdebrider excision and APC ablation of LMS tumor.
+
+LMS obstruction reduced from 62% to 39%.
+
+Hemostasis achieved with EBL of 50 mL.
+
+
+Plan: Admit to ICU for post-procedure monitoring.
+
+input: "Indication: Post-PDT Debridement (48h). Procedure: Bronchoscopy, Debridement. Findings: LUL necrosis. 74% obstructed -> 5% post-debridement. Tools: Forceps, Rigid Coring, Cryoprobe. Specimen: None. Plan: Surveillance 6 wks."
+
+Output: INTERVENTIONAL PULMONOLOGY OPERATIVE REPORT
+
+DATE OF PROCEDURE: [Date] CC Referred Physician: [Name]
+
+INDICATION FOR OPERATION [Patient Name] is a [Age]-year-old [Sex] who presents for scheduled debridement 48 hours following Photodynamic Therapy (PDT). The nature, purpose, risks, benefits, and alternatives to bronchoscopy were discussed with the patient in detail. The patient wished to proceed and informed consent was obtained. 
+
+CONSENT Obtained before the procedure. Indications, potential complications, and alternatives were discussed with the patient or surrogate. Consent was signed and witnessed by an assisting medical professional. 
+
+PREOPERATIVE DIAGNOSIS
+
+LUL airway obstruction (Necrosis)
+
+Status post-Photodynamic Therapy (PDT)
+
+POSTOPERATIVE DIAGNOSIS
+
+LUL airway obstruction (Necrosis), successfully debrided
+
+Status post-Photodynamic Therapy (PDT)
+
+PROCEDURE
+
+Rigid Bronchoscopy
+
+Mechanical Debridement (Forceps, Rigid Coring)
+
+Endobronchial Cryodebridement
+
+Final airway inspection
+
+ATTENDING [Name]
+
+ASSISTANT [Fellow name]
+
+SUPPORT STAFF RN: [Name] RT: [Name]
+
+ANESTHESIA General Anesthesia
+
+MONITORING Pulse oximetry, heart rate, telemetry, and blood pressure were continuously monitored by an independent trained observer throughout the procedure. 
+
+INSTRUMENTATION Rigid bronchoscope; forceps; cryobiopsy probe; suction. 
+
+ESTIMATED BLOOD LOSS Minimal 
+
+COMPLICATIONS None 
+
+PROCEDURE IN DETAIL After induction of anesthesia, a timeout was performed confirming patient identity, planned procedures, and laterality. Relevant procedural images were saved to the medical record. 
+
+Airway Inspection and Debridement A rigid bronchoscope was introduced under direct visualization. A complete airway survey was performed. Attention was directed to the Left Upper Lobe (LUL), which showed significant necrosis consistent with the recent Photodynamic Therapy.
+
+Debridement A follow‑up bronchoscopy was performed to address the LUL necrosis. The necrotic tissue at the LUL was debrided using mechanical forceps, rigid coring, and a cryoprobe. The cryoprobe was applied to adherent secretions and necrotic tissue until adherence was achieved, and the probe was withdrawn.
+
+Results Prior to debridement, the affected airway was noted to be 74% obstructed. After treatment, the airway was 5% obstructed (95% patent). No active bleeding was seen after debridement. The patient tolerated the procedure well.
+
+SPECIMENS
+
+None.
+
+IMPRESSION / PLAN
+
+Successful debridement of LUL necrosis post-PDT; airway patency improved from 74% obstruction to 5% residual obstruction.
+
+Surveillance bronchoscopy planned in 6 weeks.
+
+Post-procedure monitoring per protocol.
+
+input: " 60yo female here for bronch w EBUS staging and robotic biopsy of a 23.3mm RLL nodule that was solid on CT, bronchus sign was negative, no PET done..under general we did linear EBUS first using the Fujifilm EB-580S scope with 22g needle and sampled stations 2R x4, 10R x3, 2L x2, ROSE was there and showed Malignant - NSCLC NOS at multiple stations..then switched to Galaxy robot and navigated to the RLL medial basal (B7) lesion, registration was 1.9mm which is fine, got radial EBUS showing adjacent view and did tool in lesion confirmation with radial ebus. took 5 forceps bx, 4 needle passes, brushings x2, BAL sent for cultures..ROSE from the nodule was Adequate lymphocytes, no malignancy..no bleeding no ptx   patient did well.specimens to path for cyto, surgical path, cell block, flow, molecular if needed.d/c home after recovery with standard precautions, f/u 1-2wks for path"
+
+output: INTERVENTIONAL PULMONOLOGY OPERATIVE REPORT
+
+DATE OF PROCEDURE: [Date] CC Referred Physician: [Referred Physician Name]
+
+INDICATION FOR OPERATION The patient is a 60-year-old female who presents with a 23.3 mm RLL nodule found to be solid on CT with a negative bronchus sign.  No PET scan was performed. The nature, purpose, risks, benefits, and alternatives to bronchoscopy were discussed with the patient in detail. The patient wished to proceed and informed consent was obtained. 
+
+PREOPERATIVE DIAGNOSIS
+
+RLL pulmonary nodule, 23.3 mm
+
+Mediastinal/Hilar lymphadenopathy (suspected) 
+
+POSTOPERATIVE DIAGNOSIS
+
+RLL pulmonary nodule, 23.3 mm (ROSE benign/nondiagnostic)
+
+Mediastinal/Hilar lymphadenopathy; ROSE Malignant - NSCLC NOS (final pathology pending) 
+
+PROCEDURE
+
+Linear Endobronchial Ultrasound (EBUS) with Transbronchial Needle Aspiration (TBNA)
+
+Robotic navigational bronchoscopy (Galaxy) to RLL target 
+
+Radial EBUS localization (adjacent view)
+
+Transbronchial biopsy of RLL target (5 forceps biopsies)
+
+Transbronchial needle aspiration of RLL target (4 passes)
+
+Bronchial brushings (2 samples)
+
+Bronchoalveolar lavage (BAL)
+
+ANESTHESIA General anesthesia 
+
+ESTIMATED BLOOD LOSS Minimal 
+
+COMPLICATIONS None 
+
+PROCEDURE IN DETAIL After induction of anesthesia, a timeout was performed confirming patient identity, planned procedures, and laterality. 
+
+EBUS Staging The linear EBUS scope (Fujifilm EB-580S) was introduced and a systematic mediastinal/hilar survey was performed. Lymph node stations were sampled using a 22-gauge needle.
+
+Station 2R: Sampled 4 times.
+
+Station 10R: Sampled 3 times.
+
+Station 2L: Sampled 2 times. ROSE Results: On-site evaluation demonstrated Malignancy - NSCLC NOS at multiple stations.
+
+Robotic Navigational Bronchoscopy (Galaxy) — RLL Nodule Robotic navigation bronchoscopy was performed using the Galaxy system. A navigation plan was loaded and registration was completed with a registration error of 1.9 mm. The robotic catheter was advanced to the planned RLL medial basal (B7) target.
+
+Radial EBUS: Confirmed tool-in-lesion with an adjacent view.
+
+RLL Target Sampling
+
+Forceps Biopsy: 5 biopsies were obtained.
+
+TBNA: 4 passes were obtained with a needle.
+
+Brushings: 2 samples collected.
+
+BAL: Lavage performed and sent for cultures.
+
+
+ROSE (RLL target): Adequate lymphocytes, no malignancy identified on ROSE. 
+
+Final Assessment Hemostasis was confirmed after sampling.  Final airway inspection demonstrated no clinically significant bleeding. No immediate complications, including pneumothorax, occurred. 
+
+SPECIMENS
+
+EBUS-TBNA (Stations 2R, 10R, 2L): Cytology, cell block, surgical pathology, flow cytometry, molecular.
+
+RLL Nodule: Cytology, surgical pathology, cell block, flow cytometry, molecular.
+
+RLL BAL: Cultures.
+
+IMPRESSION / PLAN
+
+EBUS staging performed with ROSE confirming Malignant NSCLC NOS at multiple stations. 
+
+RLL nodule sampled via Galaxy robotic bronchoscopy; ROSE benign (lymphocytes) but final pathology pending. 
+
+Patient discharged home after recovery with standard precautions.
+
+Follow-up in 1-2 weeks to review pathology results.
+
+
+input: "Dx: Transplant stenosis RMS Procedure: Rigid dilation Steps: GA, ETT placed. Looked with flex scope, saw tight RMS stenosis.. Put in rigid scope. Used rigid dilators 7, 9, 11 mm.. Opened up to ~12mm.. No bleeding.Plan: Obs, surveillance bronch in a month."
+
+Output: INTERVENTIONAL PULMONOLOGY OPERATIVE REPORT
+
+DATE OF PROCEDURE: [Date] CC Referred Physician: [Name]
+
+INDICATION FOR OPERATION [Patient Name] is a [Age]-year-old [Sex] who presents with right mainstem (RMS) transplant stenosis requiring therapeutic intervention. The nature, purpose, risks, benefits, and alternatives to the procedure were discussed with the patient in detail. The patient wished to proceed and informed consent was obtained.
+
+CONSENT Obtained before the procedure. Indications, potential complications, and alternatives were discussed with the patient or surrogate.
+
+PREOPERATIVE DIAGNOSIS
+
+Transplant airway stenosis, Right Main Stem (RMS)
+
+POSTOPERATIVE DIAGNOSIS
+
+Transplant airway stenosis, Right Main Stem (RMS)
+
+Status post rigid dilation; airway patent to ~12 mm
+
+PROCEDURE
+
+Flexible Bronchoscopy
+
+Rigid Bronchoscopy (Therapeutic)
+
+Mechanical Dilation (Rigid)
+
+ANESTHESIA General Anesthesia 
+
+MONITORING Pulse oximetry, heart rate, telemetry, and blood pressure were continuously monitored by an independent trained observer throughout the procedure.
+
+ESTIMATED BLOOD LOSS Minimal 
+
+COMPLICATIONS None 
+
+PROCEDURE IN DETAIL After induction of general anesthesia, a timeout was performed confirming patient identity, planned procedures, and laterality. An endotracheal tube (ETT) was placed.
+
+Airway Inspection and Flexible Bronchoscopy A flexible bronchoscope was introduced. A complete airway survey was performed. The right mainstem (RMS) was inspected, and a tight transplant stenosis was visualized.
+
+Rigid Bronchoscopy and Dilation The rigid bronchoscope was introduced via the mouth under direct visualization. The stenosis at the RMS was engaged.
+
+Sequential mechanical dilation was performed using rigid dilators. The stenosis was dilated progressively using 7 mm, 9 mm, and 11 mm dilators. Following the intervention, the airway was inspected and estimated to be patent to approximately 12 mm.
+
+Completion Hemostasis was confirmed. The bronchoscope and adjunct instruments were withdrawn. The patient tolerated the procedure well without immediate complications.
+
+IMPRESSION / PLAN
+
+Right mainstem (RMS) transplant stenosis identified.
+
+Successful rigid dilation performed using 7, 9, and 11 mm dilators; airway opened to ~12 mm.
+
+No bleeding or immediate complications observed.
+
+Plan: Observation.
+
+Surveillance bronchoscopy scheduled in one month.
+
+input: "Indication: Exudative effusion (neg cytology),Proc: Right Dx Thoracoscopy,- Findings: Pleural plaques,- Fluid evacuated,- Chest tube placed."
+
+Output: INTERVENTIONAL PULMONOLOGY OPERATIVE REPORT
+DATE OF PROCEDURE: [Date] CC Referred Physician: [Name]
+
+INDICATION FOR OPERATION [Patient Name] is a [Age]-year-old [Sex] who presents with an exudative effusion (negative cytology) requiring diagnostic evaluation. The nature, purpose, risks, benefits, and alternatives to the procedure were discussed with the patient in detail.
+
+CONSENT Obtained before the procedure. Indications, potential complications, and alternatives were discussed. The patient or surrogate signed the consent form.
+
+PREOPERATIVE DIAGNOSIS
+
+Exudative pleural effusion (negative cytology)
+
+[Additional ICD-10 if applicable]
+
+POSTOPERATIVE DIAGNOSIS
+
+Exudative pleural effusion
+
+Pleural plaques identified
+
+PROCEDURE
+
+Right Medical Thoracoscopy (Diagnostic) 
+
+Evacuation of pleural fluid
+
+Chest tube placement
+
+ATTENDING [Name]
+
+ASSISTANT [Fellow name]
+
+ANESTHESIA [General anesthesia / airway type]
+
+MONITORING Pulse oximetry, heart rate, telemetry, and blood pressure were continuously monitored by an independent trained observer throughout the procedure.
+
+PROCEDURE IN DETAIL After the successful induction of anesthesia, a timeout was performed confirming patient identity, planned procedure, and laterality. Relevant procedural images were saved to the medical record.
+
+Right Diagnostic Thoracoscopy The chest was prepped and draped in the usual sterile fashion.
+
+
+Survey: Thoracoscopic survey performed.
+
+
+Findings: Initial thoracoscopic survey demonstrates pleural plaques.
+
+
+Intervention: Pleural fluid was evacuated.
+
+
+Closure: Chest tube left in situ.
+
+The patient tolerated the procedure well. There were no immediate complications.
+
+SPECIMENS
+
+Pleural fluid (for analysis)
+
+[Pleural Biopsies if taken - standard for Dx Thoracoscopy but not explicitly requested in prompt]
+
+IMPRESSION / PLAN
+
+Right diagnostic thoracoscopy performed for exudative effusion (negative cytology).
+
+Visual findings consistent with pleural plaques.
+
+Fluid successfully evacuated and chest tube placed.
+
+Post-procedure monitoring per protocol; obtain post-procedure chest imaging.
+
+input: "Ion Bronch RUL + Chartis LUL,- Navigated to RUL anterior seg (1.4cm nodule) w/ Ion,- Confirmed w/ CBCT,- TBNA x6, Cryo x5,- BAL RUL,- Chartis LUL: CV Negative (no flow),- No complications."
+
+Output:INTERVENTIONAL PULMONOLOGY OPERATIVE REPORT
+
+DATE OF PROCEDURE: [Date] CC Referred Physician: [Name / Self, Referred]
+
+INDICATION FOR OPERATION [Patient Name] is a [Age]-year-old [Sex] who presents with a 1.4 cm RUL pulmonary nodule requiring bronchoscopic diagnosis and staging, as well as assessment for potential lung volume reduction. The nature, purpose, risks, benefits, and alternatives to bronchoscopy were discussed with the patient in detail. The patient wished to proceed and informed consent was obtained.
+
+CONSENT Obtained before the procedure. Indications, potential complications, and alternatives were discussed with the patient or surrogate. Consent was signed and witnessed by an assisting medical professional.
+
+PREOPERATIVE DIAGNOSIS
+
+RUL pulmonary nodule, 1.4 cm anterior segment
+
+[Additional ICD-10 if applicable, e.g., COPD/Emphysema]
+
+POSTOPERATIVE DIAGNOSIS
+
+RUL pulmonary nodule, 1.4 cm anterior segment
+
+LUL Chartis assessment completed (CV Negative)
+
+PROCEDURE
+
+Robotic navigational bronchoscopy (Ion) to RUL target
+
+Cone-beam CT imaging with confirmation
+
+TBNA of RUL target (6 passes)
+
+Transbronchial cryobiopsy of RUL target (5 samples)
+
+Bronchoalveolar Lavage (BAL) RUL
+
+Chartis assessment for collateral ventilation (LUL)
+
+ATTENDING [Name]
+
+ASSISTANT [Fellow name]
+
+SUPPORT STAFF RN: [Name] RT: [Name]
+
+ANESTHESIA [General anesthesia / airway type]
+
+MONITORING Pulse oximetry, heart rate, telemetry, and blood pressure were continuously monitored by an independent trained observer throughout the procedure.
+
+INSTRUMENTATION Ion robotic bronchoscopy platform; TBNA needles; cryobiopsy system; cone-beam CT system (Cios) / fluoroscopy; Chartis system.
+
+ESTIMATED BLOOD LOSS Minimal 
+
+COMPLICATIONS None 
+
+PROCEDURE IN DETAIL After induction of anesthesia, a timeout was performed confirming patient identity, planned procedures, and laterality. Relevant procedural images were saved to the medical record.
+
+Robotic Navigational Bronchoscopy (Ion) — RUL Nodule A CT-based navigation plan was loaded and robotic registration was completed. The Ion catheter was advanced under navigational guidance to the planned RUL anterior segment target (1.4 cm).
+
+
+Cone-beam CT imaging: A 3D spin was obtained to evaluate catheter-to-target alignment.
+
+
+Confirmation: A subsequent cone-beam CT spin confirmed tool position within the lesion.
+
+RUL Target Sampling
+
+
+TBNA: 6 passes obtained from the RUL target.
+
+
+Cryobiopsy: 5 transbronchial cryobiopsy samples obtained from the RUL target.
+
+BAL: Bronchoalveolar lavage was performed in the RUL with saline instilled and returned. Specimens were submitted.
+
+Hemostasis was confirmed after sampling.
+
+Chartis Assessment The Chartis system was used to assess for collateral ventilation.
+
+Target: Left Upper Lobe (LUL).
+
+Findings: CV Negative (no flow) observed.
+
+Final Assessment Final airway inspection demonstrated no clinically significant bleeding. No immediate complications occurred.
+
+SPECIMENS
+
+RUL nodule TBNA (6 passes) — cytology
+
+RUL transbronchial cryobiopsy (5 samples) — histology
+
+RUL BAL fluid — [analysis type]
+
+IMPRESSION / PLAN
+
+RUL anterior segment nodule (1.4 cm) successfully sampled with cone-beam CT confirmation; obtained TBNA x6 and Cryobiopsy x5.
+
+BAL performed in RUL.
+
+Chartis assessment of LUL demonstrated CV Negative (no flow).
+
+Await final pathology and cytology.
+
+Post-procedure monitoring per protocol; obtain post-procedure chest imaging to assess for PTX per local workflow.
+
+input: "[INDICATION],Primary: Peripheral lung nodule with suspicious mediastinal nodes, Category: Lung Cancer Staging, Target: 19.4mm Solid lesion, RUL anterior (B3),Bronchus Sign: Positive, PET SUV: 6.7,,[ANESTHESIA],Type: General endotracheal anesthesia, ASA Class: 2, Airway: 8.0mm ETT, Duration: 131 minutes, , [DESCRIPTION], Procedure 1: Linear EBUS-TBNA, - Scope: Olympus BF-UC180F, - Needle: 19G FNB/ProCore, - Stations sampled: 10R, 2L, 11L, - Number of stations: 3 (≥3), - ROSE available: Yes, - ROSE result: Malignant - adenocarcinoma, , Procedure 2: Robotic Bronchoscopy, - Platform: Monarch (Auris Health (J&J)), - Registration: CT-to-body, error 1.5mm, - Target: RUL anterior (B3), , Procedure 3: Radial EBUS, - View: Concentric, - Confirmation: Augmented fluoroscopy, , Procedure 4: Transbronchial Biopsy, - Forceps biopsies: 6, - TBNA passes: 3, - Brushings: 2, - ROSE result: Granuloma, , Specimens: Cytology, cell block, surgical pathology, BAL cultures, Complications: None, EBL: <10mL, , [PLAN], 1. Post-procedure monitoring x2 hours, 2. Chest X-ray - completed, no pneumothorax, 3. Discharge to home if stable, 4. Follow-up: 1-2 weeks for pathology, 5. Tumor board review pending final results, 6. Molecular testing if malignancy confirmed"
+
+Output:INTERVENTIONAL PULMONOLOGY OPERATIVE REPORT
+DATE OF PROCEDURE: [Date] CC Referred Physician: [Referred Physician Name]
+
+INDICATION FOR OPERATION The patient presents with a 19.4mm solid peripheral lung nodule in the RUL anterior segment (B3) with a positive bronchus sign and suspicious mediastinal nodes (PET SUV: 6.7) requiring diagnosis and staging. The nature, purpose, risks, benefits, and alternatives to bronchoscopy were discussed with the patient in detail.
+
+CONSENT Obtained before the procedure. Its indications, potential complications, and alternatives were discussed with the patient or surrogate. The patient or surrogate read and signed the provided consent form. The consent was witnessed by an assisting medical professional.
+
+PREOPERATIVE DIAGNOSIS
+
+Peripheral lung nodule, RUL (19.4mm, Solid)
+
+Mediastinal lymphadenopathy
+
+POSTOPERATIVE DIAGNOSIS
+
+Adenocarcinoma (mediastinal lymph nodes per ROSE)
+
+Granuloma (RUL nodule per ROSE)
+
+PROCEDURE
+
+Robotic navigational bronchoscopy (Monarch)
+
+Radial EBUS (Concentric view)
+
+Linear EBUS-TBNA (Stations 10R, 2L, 11L)
+
+Transbronchial Biopsy, TBNA, and Brushing
+
+ROSE (Rapid On-Site Evaluation)
+
+ANESTHESIA General endotracheal anesthesia (ASA Class 2). Airway: 8.0mm ETT. Duration: 131 minutes.
+
+MONITORING Pulse oximetry, heart rate, telemetry, and BP were continuously monitored by an independent trained observer that was present throughout the entire procedure.
+
+ESTIMATED BLOOD LOSS <10mL.
+
+COMPLICATIONS None.
+
+PROCEDURE IN DETAIL
+After the successful induction of general anesthesia, a timeout was performed confirming the patient's name, procedure type, and procedure location. An 8.0mm endotracheal tube was utilized.
+
+Robotic Navigational Bronchoscopy (Monarch) Robotic navigation bronchoscopy was performed using the Monarch platform (Auris Health, J&J). A navigation plan from the pre-procedure CT was loaded. Registration to the body was completed with an error of 1.5mm. The robotic catheter and sheath were advanced to the target in the RUL anterior segment (B3) under navigational guidance.
+
+Target Confirmation and Sampling
+
+Radial EBUS: Radial EBUS verified a concentric position relative to the lesion.
+
+Imaging: Augmented fluoroscopy was used for trajectory confirmation.
+
+Sampling: Sampling through the working channel was performed as follows:
+
+Transbronchial Forceps Biopsy: 6 biopsies were obtained.
+
+TBNA: 3 passes were performed.
+
+Brushings: 2 samples were collected.
+
+ROSE Results (Nodule): Preliminary review suggested Granuloma.
+
+Linear EBUS-TBNA Staging The Olympus BF-UC180F linear EBUS scope was introduced. A systematic mediastinal survey was completed. Sampling was performed using a 19G FNB/ProCore needle.
+
+Stations Sampled: 10R, 2L, 11L (Total 3 stations).
+
+ROSE Results (Nodes): Malignant - adenocarcinoma.
+
+Completion Hemostasis was confirmed. The patient tolerated the procedure well without immediate complications. At the conclusion of the operation, the patient was extubated in the operating room and transported to the recovery room in stable condition.
+
+SPECIMENS
+
+Cytology
+
+Cell block
+
+Surgical pathology
+
+BAL cultures
+
+IMPRESSION / PLAN
+
+RUL Nodule: Successfully sampled with concentric rEBUS view; ROSE suggests Granuloma.
+
+Mediastinal Staging: EBUS-TBNA performed at 3 stations (10R, 2L, 11L); ROSE positive for Adenocarcinoma.
+
+Post-Procedure:
+
+Post-procedure monitoring x2 hours per protocol.
+
+Chest X-ray completed; no pneumothorax identified.
+
+Discharge to home if stable.
+
+Follow-up:
+
+Office follow-up in 1-2 weeks to review final pathology.
+
+Case to be reviewed at Tumor Board pending final results.
+
+Molecular testing will be requested given malignancy confirmation.
+
+input: "OPERATIVE REPORT: Medical Thoracoscopy with Parietal Pleural Biopsy and Pleurodesis. INDICATIONS: Malignant pleural effusion staging. INTRAOPERATIVE FINDINGS: Extensive visceral pleural metastasis observed. Eleven biopsy specimens were harvested from the parietal surface for histopathological confirmation. Due to the malignant appearance, chemical pleurodesis was undertaken utilizing sterile talc insufflation. COMPLICATIONS: None. Hemostasis achieved."
+
+Output:INTERVENTIONAL PULMONOLOGY OPERATIVE REPORT DATE OF PROCEDURE: [Date] CC Referred Physician: [Name] INDICATION FOR OPERATION [Patient Name] is a [Age]-year-old [Sex] who presents with malignant pleural effusion staging. The nature, purpose, risks, benefits, and alternatives to the procedure were discussed with the patient in detail.  CONSENT Obtained before the procedure. Indications, potential complications, and alternatives were discussed with the patient or surrogate. Consent was signed and witnessed by an assisting medical professional. 
+
+PREOPERATIVE DIAGNOSIS
+
+Malignant pleural effusion
+
+[Additional ICD-10 if applicable]
+
+POSTOPERATIVE DIAGNOSIS
+
+Malignant pleural effusion
+
+Extensive visceral pleural metastasis identified
+
+PROCEDURE
+
+Medical Thoracoscopy (Pleuroscopy) 
+
+Parietal Pleural Biopsy (11 specimens) 
+
+Chemical Pleurodesis (Talc Insufflation) 
+
+ATTENDING [Name]
+
+ASSISTANT [Fellow name] 
+
+SUPPORT STAFF RN: [Name] RT: [Name] 
+
+ANESTHESIA [General anesthesia / Moderate Sedation] 
+
+MONITORING Pulse oximetry, heart rate, telemetry, and blood pressure were continuously monitored by an independent trained observer throughout the procedure. 
+
+ESTIMATED BLOOD LOSS Minimal 
+
+COMPLICATIONS None 
+
+PROCEDURE IN DETAIL After the successful induction of anesthesia, a timeout was performed confirming patient identity, planned procedures, and laterality. Relevant procedural images were saved to the medical record. 
+
+Medical Thoracoscopy A thoracoscopic survey was performed.  Intraoperative findings demonstrated extensive visceral pleural metastasis. Based on the visual appearance, biopsies were taken from the parietal surface.  Eleven (11) biopsy specimens were harvested for histopathological confirmation.
+
+Pleurodesis Due to the malignant appearance of the pleura, chemical pleurodesis was performed.  Sterile talc insufflation was utilized to achieve pleurodesis. Hemostasis was confirmed. The patient tolerated the procedure well without immediate complications. 
+
+SPECIMENS
+
+Parietal pleural biopsy (11 specimens) — histology 
+
+IMPRESSION / PLAN
+
+Medical thoracoscopy completed for malignant pleural effusion staging.
+
+Extensive visceral pleural metastasis visualized; 11 parietal pleural biopsies obtained.
+
+Talc pleurodesis performed via insufflation.
+
+Await final pathology. 
+
+Post-procedure monitoring per protocol.
+
+
+input:  "57yo female here for bronch w EBUS staging and robotic biopsy of a 14.5mm RUL nodule that was ground-glass on CT, bronchus sign was positive, no PET done. under general we did linear EBUS first using the Fujifilm EB-580S scope with 19g needle and sampled stations 11L x4, 7 x2, 2L x3, ROSE was there and showed Malignant - NSCLC NOS at multiple stations. then switched to Monarch robot and navigated to the RUL anterior (B3) lesion, registration was 3.2mm which is fine, got radial EBUS showing concentric view and did tool in lesion confirmation with radial ebus. took 7 forceps bx, 4 needle passes, brushings x2, BAL sent for cultures. ROSE from the nodule was Atypical cells. no bleeding no ptx   patient did well specimens to path for cyto, surgical path, cell block, flow, molecular if needed d/c home after recovery with standard precautions, f/u 1-2wks for path Brian O'Connor md\nip attending"
+
+Output: INTERVENTIONAL PULMONOLOGY OPERATIVE REPORT
+
+DATE OF PROCEDURE: [Date] ATTENDING: Brian O'Connor, MD INDICATION FOR OPERATION The patient is a 57-year-old female who presents with a 14.5 mm RUL pulmonary nodule (ground-glass on CT, positive bronchus sign, no PET performed) requiring bronchoscopic diagnosis and staging. The nature, purpose, risks, benefits, and alternatives to bronchoscopy were discussed with the patient in detail. The patient wished to proceed and informed consent was obtained.
+
+CONSENT Obtained before the procedure. Indications, potential complications, and alternatives were discussed with the patient or surrogate. Consent was signed and witnessed by an assisting medical professional.
+
+PREOPERATIVE DIAGNOSIS
+
+RUL pulmonary nodule, 14.5 mm (Ground-glass opacity)
+
+POSTOPERATIVE DIAGNOSIS
+
+RUL pulmonary nodule (Atypical cells on ROSE)
+
+Malignant lymphadenopathy (NSCLC NOS on ROSE)
+
+PROCEDURE
+
+Robotic navigational bronchoscopy (Monarch) to RUL target
+
+Radial EBUS localization
+
+Transbronchial forceps biopsy (7 samples)
+
+Transbronchial needle aspiration (4 passes)
+
+Bronchial brushings (2 samples)
+
+Bronchoalveolar lavage (BAL)
+
+EBUS-TBNA staging (Stations 11L, 7, 2L) using 19-gauge needle
+
+ANESTHESIA General anesthesia.
+
+MONITORING Pulse oximetry, heart rate, telemetry, and blood pressure were continuously monitored by an independent trained observer throughout the procedure.
+
+ESTIMATED BLOOD LOSS Minimal
+
+COMPLICATIONS None (No bleeding, no pneumothorax).
+
+PROCEDURE IN DETAIL After induction of general anesthesia, a timeout was performed confirming patient identity, planned procedures, and laterality.
+
+EBUS STAGING The EBUS bronchoscope (Fujifilm EB-580S) was introduced and a systematic mediastinal/hilar survey was performed. The following lymph node stations were identified and sampled using a 19-gauge needle:
+
+Station 11L: Sampled 4 times. ROSE result: Malignant - NSCLC NOS.
+
+Station 7: Sampled 2 times. ROSE result: Malignant - NSCLC NOS.
+
+Station 2L: Sampled 3 times. ROSE result: Malignant - NSCLC NOS.
+
+ROBOTIC NAVIGATIONAL BRONCHOSCOPY (Monarch) — RUL Nodule Robotic navigation bronchoscopy was performed using the Monarch platform. Pre-procedure CT-based plan was loaded and airway registration completed. Registration error was noted to be 3.2 mm. The robotic catheter and sheath were advanced to the RUL anterior (B3) target under navigational guidance.
+
+Radial EBUS: Confirmed concentric view. Tool-in-lesion was confirmed with radial EBUS.
+
+Sampling:
+
+Forceps Biopsy: 7 samples obtained.
+
+Needle Aspiration: 4 passes obtained.
+
+Brushings: 2 samples obtained.
+
+BAL: Sent for cultures.
+
+ROSE (Nodule): Atypical cells.
+
+Hemostasis was confirmed. The patient tolerated the procedure well.
+
+SPECIMENS
+
+Station 11L, 7, 2L EBUS-TBNA (Cytology, ROSE)
+
+RUL Nodule Biopsies (Cytology, Surgical Pathology, Cell Block)
+
+BAL (Cultures)
+
+Additional studies: Flow cytometry, Molecular if needed.
+
+IMPRESSION / PLAN
+
+Successful robotic bronchoscopy and sampling of RUL nodule (14.5 mm) with concentric rEBUS confirmation. ROSE showed Atypical cells.
+
+EBUS staging performed with 19G needle; ROSE showed Malignancy (NSCLC NOS) at multiple stations (11L, 7, 2L).
+
+No bleeding or pneumothorax noted.
+
+Await final pathology and cytology.
+
+Discharge home after recovery with standard precautions.
+
+Follow-up in 1-2 weeks for pathology results.
+
+input: "Proc: Tunneled Pleural Catheter (Right).  Indication: Malignant effusion (Ovarian CA).  US marked.  15.5Fr PleurX placed.  Drained 1.1L clear yellow fluid.  CXR: Good pos."
+
+
+Output: INTERVENTIONAL PULMONOLOGY OPERATIVE REPORT
+
+DATE OF PROCEDURE: [Date] INDICATION FOR OPERATION The patient presents with a malignant pleural effusion secondary to Ovarian Cancer requiring drainage and symptom management. The nature, purpose, risks, benefits, and alternatives to the procedure were discussed with the patient in detail.
+
+PREOPERATIVE DIAGNOSIS
+
+Malignant Pleural Effusion (Ovarian CA) 
+
+POSTOPERATIVE DIAGNOSIS
+
+Malignant Pleural Effusion (Ovarian CA) 
+
+Status post right tunneled pleural catheter placement
+
+PROCEDURE
+
+Indwelling Tunneled Pleural Catheter Placement (Right) 
+
+Thoracic Ultrasound 
+
+ANESTHESIA Local anesthesia (Lidocaine 1%) 
+
+ESTIMATED BLOOD LOSS Minimal 
+
+COMPLICATIONS None 
+
+PROCEDURE IN DETAIL Chest Ultrasound Findings
+
+
+Hemithorax: Right 
+
+
+Findings: Pleural effusion identified and site marked for procedure.
+
+Catheter Placement The right chest was prepped and draped in sterile fashion. Local anesthesia was infiltrated at the insertion site. A finder needle was used to enter the pleural space; pleural fluid was aspirated to confirm location. The needle was withdrawn and a guidewire was placed into the pleural space.
+
+Two 5 mm skin incisions were made at the guidewire entry site, as well as 5-6 cm away. The tunneling device was used to tunnel the catheter in the subcutaneous tissue. Serial dilation over the guidewire was then achieved. The introducer sheath was placed and the guidewire removed.
+
+The 15.5Fr PleurX catheter was then placed into the pleural space via the introducer sheath. The pleural entry site was closed with an absorbable suture. The catheter was secured to the skin using 2-0 nylon. Sterile dressings were applied.
+
+PROCEDURE FINDINGS
+
+
+Fluid Removed: 1100 mL (1.1 L) 
+
+
+Appearance: Clear yellow (Serous) 
+
+IMPRESSION / PLAN
+
+Successful placement of Right 15.5Fr Indwelling Tunneled Pleural Catheter (PleurX).
+
+1.1 L of clear yellow fluid drained during procedure.
+
+Post-procedure chest x-ray confirmed good position.
+
+Catheter instructions and drainage kit provided to patient.

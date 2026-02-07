@@ -1,0 +1,16 @@
+Airway Inspection A flexible bronchoscope was introduced and a systematic airway inspection was performed.
+
+{% if proc.target_airway or proc.obstruction_pct is not none -%}
+Findings:{% if proc.target_airway %} The {{ proc.target_airway }} was identified{% endif %}{% if proc.obstruction_pct is not none %} and noted to be {{ proc.obstruction_pct }}% obstructed{% endif %}.
+{% endif %}
+
+Catheter Placement Under bronchoscopic{% if proc.fluoro_used %} and fluoroscopic{% endif %} guidance, a{% if proc.catheter_size_fr is not none %} {{ proc.catheter_size_fr }} French{% else %}n endobronchial{% endif %} catheter was introduced and advanced past the obstructing lesion{% if proc.target_airway %} in the {{ proc.target_airway }}{% endif %}.
+
+{% if proc.fluoro_used -%}
+Confirmation: Fluoroscopy was utilized to confirm the final position of the catheter.
+{% endif %}
+{% if proc.dummy_check -%}
+Dummy Check: A dummy check wire was inserted into the catheter to ensure patency and lack of kinking. The wire passed without difficulty.
+{% endif %}
+
+Final Assessment The bronchoscope was withdrawn. The patient tolerated the procedure well without immediate complications.

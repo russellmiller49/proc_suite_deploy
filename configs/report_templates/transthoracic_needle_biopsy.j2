@@ -1,0 +1,3 @@
+Core needle biopsy was performed{% if proc.imaging_modality %} under {{ proc.imaging_modality|lower }} guidance{% endif %} using a {{ proc.needle_gauge }} core biopsy needle with {{ proc.samples_collected }} samples collected.
+Post-biopsy imaging showed no immediate pneumothorax or hemothorax.
+{% if proc.cxr_ordered %}A post-procedure chest x-ray was ordered.{% endif %}

@@ -1,0 +1,9 @@
+{#
+  file: templates/addons/ebus_guided_intranodal_forceps_biopsy_ifb.jinja
+  Title: EBUS‑Guided Intranodal Forceps Biopsy (IFB)  [CPT: 31652/31653 — verify]
+  Category: NAVIGATION / ROBOTIC / EBUS PROCEDURES
+  CPT: 31652, 31653
+#}
+{% macro render(ctx=None) -%}
+The target lymph node station [#] measured [mm] with [ultrasound features]. The EBUS needle [gauge] was used to create a tract through the bronchial wall and nodal capsule. Mini‑forceps were advanced through the tract to obtain [number] core samples. ROSE (if available): [result]. Hemostasis adequate with no immediate complications. Specimens in [formalin/saline] submitted for [histology/microbiology].
+{%- endmacro %}

@@ -1,0 +1,9 @@
+{#
+  file: templates/addons/balloon_dilation.jinja
+  Title: Balloon Dilation (CPT 31630)
+  Category: CORE DIAGNOSTIC / THERAPEUTIC BRONCHOSCOPY PROCEDURES
+  CPT: 31630
+#}
+{% macro render(ctx=None) -%}
+Bronchial stenosis was dilated with a balloon catheter. Patency improved without complications. Performed at [Airway Segment]. [Balloon type] Elation balloon was used to perform dilation to [size] mm. Total [number] inflations with dilation time of [seconds] seconds each.
+{%- endmacro %}

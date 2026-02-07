@@ -1,0 +1,16 @@
+id: paracentesis
+label: Paracentesis
+category: other_intervention
+cpt_hints: ["49083"]
+schema_id: paracentesis_v1
+output_section: PROCEDURE_DETAILS
+template_path: paracentesis.j2
+required_fields:
+  - volume_removed_ml
+optional_fields:
+  - site_description
+  - fluid_character
+  - tests
+  - imaging_guidance
+proc_types:
+  - paracentesis

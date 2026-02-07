@@ -1,0 +1,5 @@
+Photosensitizer {{ proc.agent }}{% if proc.administration_time %} administered on {{ proc.administration_time }}{% endif %}.
+Under bronchoscopic visualization, a diffuser fiber was positioned across the {{ proc.lesion_site }}. Laser activation{% if proc.wavelength_nm is not none %} at {{ proc.wavelength_nm }} nm{% endif %}{% if proc.fluence_j_cm2 is not none %} delivered {{ proc.fluence_j_cm2 }} J/cm²{% endif %}{% if proc.duration_minutes is not none %} for {{ proc.duration_minutes }} minutes{% endif %}.
+Airway was inspected for immediate edema or bleeding; none noted. Standard light-precaution instructions were reviewed.
+{% if proc.notes %}Notes: {{ proc.notes }}.{% endif %}
+The patient tolerated the procedure well.

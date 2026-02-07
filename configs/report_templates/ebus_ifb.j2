@@ -1,0 +1,5 @@
+The target lymph node station {{ proc.station_name }}{% if proc.size_mm is not none %} measured {{ proc.size_mm }} mm{% endif %}{% if proc.ultrasound_features %} with ultrasound features of {{ proc.ultrasound_features }}{% endif %}.
+An EBUS needle {{ proc.needle_gauge }} was used to create a tract, and mini-forceps were advanced through the tract to obtain {{ proc.core_samples }} core samples.
+{% if proc.rose_result %}ROSE (if available): {{ proc.rose_result }}.{% endif %}
+{% if proc.specimen_medium %}Specimens in {{ proc.specimen_medium }} submitted for histology/microbiology.{% endif %}
+Hemostasis was adequate with no immediate complications.

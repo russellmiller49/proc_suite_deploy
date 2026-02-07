@@ -1,0 +1,294 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "IP Registry Entry",
+  "type": "object",
+  "required": [
+    "patient_mrn",
+    "procedure_date",
+    "attending_name",
+    "data_entry_status"
+  ],
+  "properties": {
+    "patient_mrn": {
+      "type": "string",
+      "description": "Medical record number"
+    },
+    "procedure_date": {
+      "type": ["string", "null"],
+      "description": "Date of procedure"
+    },
+    "provider_role": {
+      "type": ["string", "null"],
+      "description": "Role of the provider"
+    },
+    "attending_name": {
+      "type": "string",
+      "description": "Name of the attending physician"
+    },
+    "fellow_name": {
+      "type": ["string", "null"],
+      "description": "Name of the fellow if present"
+    },
+    "assistant_role": {
+      "type": ["string", "null"],
+      "description": "Role of the assistant"
+    },
+    "trainee_present": {
+      "type": ["boolean", "null"],
+      "description": "Whether a trainee was present"
+    },
+    "patient_age": {
+      "type": ["integer", "null"],
+      "description": "Patient age in years"
+    },
+    "gender": {
+      "type": ["string", "null"],
+      "enum": ["M", "F", "Other", null]
+    },
+    "asa_class": {
+      "type": ["integer", "null"],
+      "description": "ASA physical status classification"
+    },
+    "primary_indication": {
+      "type": ["string", "null"],
+      "description": "Primary indication for the procedure"
+    },
+    "sedation_type": {
+      "type": ["string", "null"],
+      "enum": ["Moderate", "General", "Local", "Monitored Anesthesia Care", null]
+    },
+    "sedation_reversal_given": {
+      "type": ["boolean", "null"],
+      "description": "Whether sedation reversal was given"
+    },
+    "sedation_reversal_agent": {
+      "type": ["string", "null"],
+      "description": "Name of sedation reversal agent"
+    },
+    "airway_type": {
+      "type": ["string", "null"],
+      "enum": ["Native", "ETT", "Tracheostomy", null]
+    },
+    "procedure_setting": {
+      "type": ["string", "null"],
+      "enum": ["OR", "Bronchoscopy Suite", "Pleural Suite", null]
+    },
+    "final_diagnosis_prelim": {
+      "type": ["string", "null"],
+      "description": "Preliminary final diagnosis"
+    },
+    "data_entry_status": {
+      "type": "string",
+      "enum": ["Complete", "Incomplete", "Pending Review"],
+      "default": "Incomplete"
+    },
+    "cpt_codes": {
+      "type": ["array", "null"],
+      "items": {
+        "type": "string"
+      },
+      "description": "CPT codes for the procedure"
+    },
+    "calculated_total_rvu": {
+      "type": ["number", "null"],
+      "description": "Calculated total RVU"
+    },
+    "radiographic_findings": {
+      "type": ["string", "null"],
+      "description": "Radiographic findings"
+    },
+    "ebus_stations_sampled": {
+      "type": ["array", "string", "null"],
+      "description": "EBUS stations sampled"
+    },
+    "linear_ebus_stations": {
+      "type": ["array", "string", "null"],
+      "description": "Linear EBUS stations"
+    },
+    "eus_b_performed": {
+      "type": ["boolean", "null"],
+      "description": "EUS-B performed"
+    },
+    "eus_b_sites_sampled": {
+      "type": ["array", "string", "null"],
+      "description": "EUS-B sites sampled"
+    },
+    "nav_platform": {
+      "type": ["string", "null"],
+      "description": "Navigation platform used"
+    },
+    "stent_type": {
+      "type": ["string", "null"],
+      "description": "Type of stent"
+    },
+    "stent_diameter_mm": {
+      "type": ["number", "null"],
+      "description": "Stent diameter in mm"
+    },
+    "stent_length_mm": {
+      "type": ["number", "null"],
+      "description": "Stent length in mm"
+    },
+    "stent_location": {
+      "type": ["string", "null"],
+      "description": "Location of stent placement"
+    },
+    "pleural_side": {
+      "type": ["string", "null"],
+      "description": "Side of pleural procedure"
+    },
+    "pleural_guidance": {
+      "type": ["string", "null"],
+      "description": "Guidance used for pleural procedure"
+    },
+    "pleural_fluid_appearance": {
+      "type": ["string", "null"],
+      "description": "Appearance of pleural fluid"
+    },
+    "pleural_volume_drained_ml": {
+      "type": ["number", "null"],
+      "description": "Volume of pleural fluid drained in mL"
+    },
+    "pleurodesis_performed": {
+      "type": ["boolean", "null"],
+      "description": "Whether pleurodesis was performed"
+    },
+    "pleurodesis_agent": {
+      "type": ["string", "null"],
+      "description": "Agent used for pleurodesis"
+    },
+    "blvr_target_lobe": {
+      "type": ["string", "null"],
+      "description": "Target lobe for BLVR"
+    },
+    "blvr_valve_type": {
+      "type": ["string", "null"],
+      "description": "Type of valve for BLVR"
+    },
+    "blvr_number_of_valves": {
+      "type": ["integer", "null"],
+      "description": "Number of valves placed for BLVR"
+    },
+    "ablation_peripheral_performed": {
+      "type": ["boolean", "null"],
+      "description": "Whether peripheral ablation was performed"
+    },
+    "ablation_modality": {
+      "type": ["string", "null"],
+      "description": "Ablation modality"
+    },
+    "ablation_device_name": {
+      "type": ["string", "null"],
+      "description": "Name of ablation device"
+    },
+    "ablation_duration_seconds": {
+      "type": ["number", "null"],
+      "description": "Duration of ablation in seconds"
+    },
+    "ablation_margin_assessed": {
+      "type": ["boolean", "null"],
+      "description": "Whether ablation margin was assessed"
+    },
+    "bleeding_severity": {
+      "type": ["string", "null"],
+      "description": "Severity of any bleeding"
+    },
+    "pneumothorax": {
+      "type": ["boolean", "null"],
+      "description": "Whether pneumothorax occurred"
+    },
+    "pneumothorax_intervention": {
+      "type": ["string", "array", "null"],
+      "description": "Intervention for pneumothorax"
+    },
+    "hypoxia_respiratory_failure": {
+      "type": ["string", "null"],
+      "description": "Hypoxia or respiratory failure details"
+    },
+    "disposition": {
+      "type": ["string", "null"],
+      "description": "Patient disposition"
+    },
+    "follow_up_plan": {
+      "type": ["string", "null"],
+      "description": "Follow-up plan"
+    },
+    "clinical_context": {
+      "type": ["object", "null"],
+      "description": "Nested clinical context (forward-compatible with extraction-first registry record).",
+      "additionalProperties": true,
+      "properties": {
+        "target_lesion": {
+          "type": ["object", "null"],
+          "description": "Detailed target lesion disease burden fields.",
+          "additionalProperties": true,
+          "properties": {
+            "long_axis_mm": {
+              "type": ["number", "null"],
+              "minimum": 0
+            },
+            "short_axis_mm": {
+              "type": ["number", "null"],
+              "minimum": 0
+            },
+            "craniocaudal_mm": {
+              "type": ["number", "null"],
+              "minimum": 0
+            },
+            "morphology": {
+              "type": ["string", "null"]
+            },
+            "suv_max": {
+              "type": ["number", "null"],
+              "minimum": 0
+            },
+            "location": {
+              "type": ["string", "null"]
+            },
+            "size_text": {
+              "type": ["string", "null"]
+            }
+          }
+        }
+      }
+    },
+    "procedures_performed": {
+      "type": ["object", "null"],
+      "description": "Nested procedures_performed (forward-compatible with extraction-first registry record).",
+      "additionalProperties": true,
+      "properties": {
+        "therapeutic_outcomes": {
+          "type": ["object", "null"],
+          "description": "Therapeutic outcomes / response metrics.",
+          "additionalProperties": true,
+          "properties": {
+            "pre_obstruction_pct": {
+              "type": ["integer", "null"],
+              "minimum": 0,
+              "maximum": 100
+            },
+            "post_obstruction_pct": {
+              "type": ["integer", "null"],
+              "minimum": 0,
+              "maximum": 100
+            },
+            "pre_diameter_mm": {
+              "type": ["number", "null"],
+              "minimum": 0
+            },
+            "post_diameter_mm": {
+              "type": ["number", "null"],
+              "minimum": 0
+            }
+          }
+        }
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "Supporting evidence and metadata"
+    }
+  },
+  "additionalProperties": false
+}

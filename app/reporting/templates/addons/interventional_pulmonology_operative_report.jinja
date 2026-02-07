@@ -1,0 +1,40 @@
+{#
+  file: templates/addons/interventional_pulmonology_operative_report.jinja
+  Title: Interventional Pulmonology Operative Report
+  Category: CLINICAL ASSESSMENT AND FOLLOW-UP TEMPLATES
+  CPT: None
+#}
+{% macro render(ctx=None) -%}
+INTERVENTIONAL PULMONOLOGY OPERATIVE REPORT
+DATE OF PROCEDURE: [Date]
+CC Referred Physician: [Name]
+INDICATION FOR OPERATION: [Patient Name] is a [Age]-year-old [Sex] who presents with [indication]. The nature, purpose, risks, benefits and alternatives to Bronchoscopy were discussed with the patient in detail. Patient indicated a wish to proceed with surgery and informed consent was signed.
+CONSENT: Obtained before the procedure. Its indications and potential complications and alternatives were discussed with the patient or surrogate. The patient or surrogate read and signed the provided consent form/provided consent over the phone. The consent was witnessed by an assisting medical professional.
+PREOPERATIVE DIAGNOSIS: [ICD10 codes]
+POSTOPERATIVE DIAGNOSIS: [ICD10 codes]
+PROCEDURE: [CPT codes]
+[Modifier codes if applicable]
+[HCPCS codes if applicable]
+ATTENDING: [Name]
+ASSISTANT: [Fellow name]
+Support Staff:
+
+RN: [Name]
+RT: [Name]
+
+ANESTHESIA: [Type and details]
+MONITORING: Pulse oximetry, heart rate, telemetry, and BP were continuously monitored by an independent trained observer that was present throughout the entire procedure.
+INSTRUMENT: [Equipment used]
+ESTIMATED BLOOD LOSS: [Amount]
+COMPLICATIONS: [None or details]
+PROCEDURE IN DETAIL:
+After the successful induction of anesthesia, a timeout was performed (confirming the patient's name, procedure type, and procedure location). All procedure related images were saved and archived in Media folder on Onedrive behind UCSD firewall, relevant images are also uploaded to PACS system or in the media section of the patient's chart.
+PATIENT POSITION: [Position]
+Initial Airway Inspection Findings:
+[Airway measurements and findings]
+The patient tolerated the procedure well. There were no immediate complications. At the conclusion of the operation, the patient was extubated in the operating room and transported to the recovery room in stable condition.
+SPECIMEN(S): [List]
+IMPRESSION/PLAN: [Patient Name] is a [Age]-year-old [Sex] who presents for bronchoscopy for [indication].
+
+Tunneled Pleural Catheter Instructions
+{%- endmacro %}

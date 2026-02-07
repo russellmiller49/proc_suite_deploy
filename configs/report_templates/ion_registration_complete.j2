@@ -1,0 +1,4 @@
+Registration to the pre-procedure CT was completed{% if proc.method %} using {{ proc.method }} methods{% endif %}{% if proc.airway_landmarks %} with airway landmarks including {{ proc.airway_landmarks | join(', ') }}{% endif %}.
+{% if proc.fiducial_error_mm is not none %}Mean fiducial error: {{ proc.fiducial_error_mm }} mm.{% endif %}{% if proc.alignment_quality %} Global alignment quality: {{ proc.alignment_quality }}.{% endif %}
+{% if proc.notes %}Notes: {{ proc.notes }}.{% endif %}
+No registration drift was observed during the case.

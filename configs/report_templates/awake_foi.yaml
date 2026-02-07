@@ -1,0 +1,18 @@
+id: awake_foi
+label: Awake Fiberoptic Intubation
+category: airway_therapy
+cpt_hints: []
+schema_id: awake_foi_v1
+output_section: PROCEDURE_DETAILS
+template_path: awake_foi.j2
+required_fields:
+  - ett_size
+  - route
+optional_fields:
+  - lidocaine_concentration
+  - lidocaine_volume_ml
+  - sedative
+  - depth_cm
+  - tolerated
+proc_types:
+  - awake_foi

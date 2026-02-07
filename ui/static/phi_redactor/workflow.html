@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Procedure Suite - Workflow</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="title">
+        <div class="h1">Procedure Suite - Clinical Dashboard</div>
+        <div class="subtle">Workflow overview and demo status</div>
+      </div>
+      <div class="topbar-links">
+        <a class="topbar-link" href="./reporter_builder.html">Reporter Builder</a>
+        <a class="topbar-link" href="./">Back to Dashboard</a>
+      </div>
+      <div class="status">
+        <span class="subtle">Workflow</span>
+      </div>
+    </header>
+
+    <main class="page-container">
+      <section class="page-hero">
+        <h2>How the workflow is intended to run</h2>
+        <p>
+          Procedure Suite is designed to scrub PHI in the browser, then run the extraction pipeline
+          on de-identified text. This page summarizes the current demo flow and what is still under
+          development.
+        </p>
+      </section>
+
+      <section class="content-card">
+        <h3>Step-by-step workflow</h3>
+        <ol class="workflow-list">
+          <li>Paste the procedural note into the editor.</li>
+          <li>Run PHI detection and review each proposed redaction.</li>
+          <li>Apply redactions (or manually add/remove them as needed).</li>
+          <li>Submit the scrubbed note for CPT and registry extraction.</li>
+          <li>Review codes, evidence, and extracted registry fields.</li>
+          <li>Edit table values in the flattened tables panel (optional).</li>
+          <li>Export JSON or tables for downstream review/training.</li>
+        </ol>
+      </section>
+
+      <section class="content-card">
+        <h3>What’s new in the workflow</h3>
+        <ul class="workflow-list">
+          <li><strong>New Note:</strong> clears the editor, tables, and JSON output so you can start fresh.</li>
+          <li><strong>Flattened Tables (Editable):</strong> expand the section at the bottom to edit values, add rows, and correct entries.</li>
+          <li><strong>Edited JSON (Training):</strong> when you edit tables, a second JSON payload is generated and labeled for training.</li>
+          <li><strong>Export JSON:</strong> download the raw response payload.</li>
+          <li><strong>Export Tables:</strong> download the flattened tables as an Excel-readable file.</li>
+        </ul>
+      </section>
+
+      <section class="content-card">
+        <h3>What happens to PHI?</h3>
+        <p class="subtle">
+          PHI detection runs entirely in your browser. The server only receives the scrubbed text
+          that you explicitly submit.
+        </p>
+      </section>
+    </main>
+  </body>
+</html>

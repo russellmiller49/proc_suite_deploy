@@ -1,0 +1,9 @@
+{#
+  file: templates/addons/airway_stent_placement.jinja
+  Title: Airway Stent Placement (CPT 31631/31636/31637)
+  Category: CORE DIAGNOSTIC / THERAPEUTIC BRONCHOSCOPY PROCEDURES
+  CPT: 31631, 31636, 31637
+#}
+{% macro render(ctx=None) -%}
+A stent was deployed across the target stenosis under bronchoscopic and fluoroscopic guidance. The following stent ([type]) was placed in the [Airway Segment].
+{%- endmacro %}

@@ -1,0 +1,19 @@
+id: emn_bronchoscopy
+label: Electromagnetic Navigation Bronchoscopy
+category: navigation
+cpt_hints: ["31627"]
+schema_id: emn_bronchoscopy_v1
+output_section: PROCEDURE_DETAILS
+template_path: emn_bronchoscopy.j2
+required_fields:
+  - navigation_system
+  - target_lung_segment
+optional_fields:
+  - lesion_size_cm
+  - tool_to_target_distance_cm
+  - navigation_catheter
+  - registration_method
+  - adjunct_imaging
+  - notes
+proc_types:
+  - emn_bronchoscopy

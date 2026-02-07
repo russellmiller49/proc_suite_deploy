@@ -1,0 +1,14 @@
+id: radial_ebus_survey
+label: Radial EBUS Survey
+category: navigation
+cpt_hints: ["31654"]
+schema_id: radial_ebus_survey_v1
+output_section: PROCEDURE_DETAILS
+template_path: radial_ebus_survey.j2
+required_fields:
+  - location
+optional_fields:
+  - rebus_features
+  - notes
+proc_types:
+  - radial_ebus_survey

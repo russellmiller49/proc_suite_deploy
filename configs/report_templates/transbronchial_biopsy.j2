@@ -1,0 +1,5 @@
+{% if proc.number_of_biopsies is not none and proc.number_of_biopsies > 0 %}
+Biopsy: Transbronchial forceps biopsies were performed with a total of {{ proc.number_of_biopsies }} sample{% if proc.number_of_biopsies != 1 %}s{% endif %} collected.
+{% else %}
+Biopsy: Transbronchial forceps biopsies were performed.
+{% endif %}

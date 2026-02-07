@@ -1,0 +1,5 @@
+Patient instructed to avoid exertion, driving, or travel for one week. Monitor for shortness of breath, chest pain, or fever.
+{% if proc.activity_restrictions %}Activity: {{ proc.activity_restrictions }}.{% endif %}
+{% if proc.monitoring_plan %}Monitoring: {{ proc.monitoring_plan }}.{% endif %}
+{% if proc.follow_up_plan %}Follow-up: {{ proc.follow_up_plan }}.{% else %}Arrange follow-up with interventional pulmonology.{% endif %}
+{% if proc.contact_info %}Emergency contact information: {{ proc.contact_info }}.{% endif %}

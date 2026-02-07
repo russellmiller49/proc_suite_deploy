@@ -1,0 +1,16 @@
+id: eUSB
+label: EUS-B
+category: ebus
+cpt_hints: ["43237"]
+schema_id: eusb_v1
+output_section: PROCEDURE_DETAILS
+template_path: eusb.j2
+required_fields:
+  - stations_sampled
+optional_fields:
+  - needle_gauge
+  - passes
+  - rose_result
+  - complications
+proc_types:
+  - eusb

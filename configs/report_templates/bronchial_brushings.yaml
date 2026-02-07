@@ -1,0 +1,15 @@
+id: bronchial_brushings
+label: Bronchial Brushings
+category: bronchoscopy
+cpt_hints: ["31623"]
+schema_id: bronchial_brushings_v1
+output_section: PROCEDURE_DETAILS
+template_path: bronchial_brushings.j2
+required_fields:
+  - lung_segment
+  - samples_collected
+  - tests
+optional_fields:
+  - brush_tool
+proc_types:
+  - bronchial_brushings

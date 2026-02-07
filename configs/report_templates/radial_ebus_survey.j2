@@ -1,0 +1,2 @@
+{% set _pattern = (proc.rebus_features or "") | lower %}
+{% if _pattern %}rEBUS localization ({{ _pattern }} view).{% else %}rEBUS localization.{% endif %}{% if proc.location %} Location: {{ proc.location }}.{% endif %}{% if proc.notes %} Notes: {{ proc.notes }}.{% endif %}

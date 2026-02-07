@@ -1,0 +1,6 @@
+A CBCT/CACT spin was obtained intra-procedurally{% if proc.ventilation_settings %} with the patient on {{ proc.ventilation_settings }}{% endif %}.
+Image fusion was performed to align intra-op imaging with the pre-procedure CT.{% if proc.translation_mm or proc.rotation_degrees %} Registration correction applied: {% if proc.translation_mm %}translation {{ proc.translation_mm }}{% endif %}{% if proc.rotation_degrees %}{% if proc.translation_mm %} / {% endif %}rotation {{ proc.rotation_degrees }}{% endif %}.{% endif %}
+The updated overlay demonstrated{% if proc.overlay_result %} {{ proc.overlay_result }}{% else %} corrected trajectory{% endif %}.
+{% if proc.confirmatory_spin_result %}A confirmatory spin showed {{ proc.confirmatory_spin_result }} position.{% endif %}
+{% if proc.notes %}Notes: {{ proc.notes }}.{% endif %}
+The patient tolerated the imaging without complications.

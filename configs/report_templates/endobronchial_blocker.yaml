@@ -1,0 +1,19 @@
+id: endobronchial_blocker
+label: Endobronchial Blocker Placement
+category: airway_therapy
+cpt_hints: []
+schema_id: endobronchial_blocker_v1
+output_section: PROCEDURE_DETAILS
+template_path: endobronchial_blocker.j2
+required_fields:
+  - blocker_type
+  - side
+  - location
+optional_fields:
+  - size
+  - inflation_volume_ml
+  - secured_method
+  - indication
+  - tolerance
+proc_types:
+  - endobronchial_blocker

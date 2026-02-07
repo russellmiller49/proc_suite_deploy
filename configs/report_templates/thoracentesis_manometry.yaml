@@ -1,0 +1,30 @@
+id: thoracentesis_manometry
+label: Thoracentesis with Manometry
+category: pleural
+cpt_hints: ["32555"]
+schema_id: thoracentesis_manometry_v1
+output_section: PROCEDURE_DETAILS
+template_path: thoracentesis_manometry.j2
+required_fields:
+  - side
+  - total_removed_ml
+optional_fields:
+  - guidance
+  - opening_pressure_cmh2o
+  - pressure_readings
+  - stopping_criteria
+  - post_procedure_imaging
+  - effusion_size
+  - effusion_echogenicity
+  - loculations
+  - diaphragm_motion
+  - lung_sliding_pre
+  - lung_sliding_post
+  - lung_consolidation
+  - pleura_description
+proc_types:
+  - thoracentesis_manometry
+critical_fields:
+  - side
+  - total_removed_ml
+  - opening_pressure_cmh2o

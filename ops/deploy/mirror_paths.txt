@@ -1,0 +1,39 @@
+# Deploy mirror allowlist (paths relative to repository root).
+# This list is intentionally runtime-focused.
+
+# Runtime app code
+app
+observability
+config
+
+# ML runtime library (excludes training scripts)
+ml/__init__.py
+ml/lib
+ml/data
+configs
+proc_kb
+proc_nlp
+proc_schemas
+schemas
+ui/__init__.py
+ui/static
+
+# Ops entrypoints and runtime tooling
+ops
+
+# DB migrations
+alembic
+alembic.ini
+
+# Minimal runtime data dependencies
+data/knowledge
+data/keyword_mappings
+data/ml_training/registry_label_fields.json
+data/models/roberta_registry_thresholds.json
+data/RVU_files/gpci_2025.csv
+
+# Build/runtime metadata
+pyproject.toml
+requirements.txt
+runtime.txt
+README.md

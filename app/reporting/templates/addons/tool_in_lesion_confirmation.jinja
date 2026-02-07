@@ -1,0 +1,9 @@
+{#
+  file: templates/addons/tool_in_lesion_confirmation.jinja
+  Title: Tool‑in‑Lesion Confirmation
+  Category: NAVIGATION / ROBOTIC / EBUS PROCEDURES
+  CPT: None
+#}
+{% macro render(ctx=None) -%}
+Tool‑in‑lesion was confirmed by [CBCT overlay/augmented fluoroscopy] showing the sampling tool tip within the lesion volume with a margin of [mm] from the lesion center, and/or radial EBUS pattern [concentric/eccentric] with lesion size [mm]. Fluoroscopy angle: [°], projection: [AP/oblique]. Screenshots were saved to the record. Proceeded to sampling as detailed.
+{%- endmacro %}

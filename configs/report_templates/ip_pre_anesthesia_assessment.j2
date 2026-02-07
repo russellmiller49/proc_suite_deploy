@@ -1,0 +1,14 @@
+Prior to the procedure, the risks and benefits of the procedure and the sedation options and sedation-related risks were discussed with the patient or surrogate. All questions were answered and written informed consent was obtained.
+
+Recent Anticoagulant or Antiplatelet Use:
+{% if proc.anticoagulant_use %}The patient has taken {{ proc.anticoagulant_use }}.{% else %}The patient has not taken anticoagulant medications.{% endif %}
+
+Prophylactic Antibiotics:
+{% if proc.prophylactic_antibiotics %}The patient requires prophylactic antibiotics.{% else %}The patient does not require prophylactic antibiotics.{% endif %}
+
+ASA Grade Assessment: {{ proc.asa_status }}
+Anesthesia plan: {{ proc.anesthesia_plan }}
+
+{% if proc.sedation_history %}The patient's prior sedation history was reviewed; {{ proc.sedation_history }}.{% else %}The patient's prior sedation history was reviewed and there is no known history of sedation-related complications.{% endif %}
+{% if proc.time_out_confirmed %}A time-out was performed with the patient correctly identified and the proposed procedure verified.{% endif %}
+Immediately prior to administration of medications, the patient was re-assessed for adequacy to receive sedatives and deemed in satisfactory condition to undergo the procedure.

@@ -1,0 +1,4 @@
+Patient advised to maintain drainage system care and monitor for infection.
+{% if proc.drainage_plan %}Drainage plan: {{ proc.drainage_plan }}.{% endif %}
+{% if proc.infection_signs %}Infection signs to watch: {{ proc.infection_signs }}.{% else %}Monitor for redness, swelling, or drainage at the site and fever.{% endif %}
+{% if proc.followup_timeframe %}Follow-up: {{ proc.followup_timeframe }}.{% endif %}

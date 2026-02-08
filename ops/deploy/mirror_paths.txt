@@ -29,6 +29,10 @@ alembic.ini
 data/knowledge
 data/keyword_mappings
 data/ml_training/registry_label_fields.json
+# RAW-ML auditor artifacts (MLCoderPredictor)
+data/models/cpt_classifier.pkl
+data/models/mlb.pkl
+data/models/ml_coder_thresholds_v1.json
 data/models/roberta_registry_thresholds.json
 data/RVU_files/gpci_2025.csv
 

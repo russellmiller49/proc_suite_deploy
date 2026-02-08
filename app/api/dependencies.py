@@ -10,8 +10,6 @@ from functools import lru_cache
 
 from fastapi import Depends
 
-from config.settings import CoderSettings, KnowledgeSettings
-
 # QA Pipeline imports
 from app.api.services.qa_pipeline import (
     QAPipelineService,
@@ -46,6 +44,7 @@ from app.reporting.engine import (
 )
 from app.reporting.inference import InferenceEngine
 from app.reporting.validation import ValidationEngine
+from config.settings import CoderSettings, KnowledgeSettings
 from observability.logging_config import get_logger
 
 logger = get_logger("api_dependencies")
@@ -279,7 +278,7 @@ def get_registry_service() -> RegistryService:
     This factory:
     - Uses the default RegistrySchemaRegistry for schema access
     - Configures default version from environment (REGISTRY_DEFAULT_VERSION)
-    - Builds SmartHybridOrchestrator for ML-first coding
+    - Builds SmartHybridOrchestrator only when legacy hybrid mode is active
     - Returns a cached instance for reuse across requests
     """
     import os
@@ -295,16 +294,27 @@ def get_registry_service() -> RegistryService:
         )
     schema_registry = get_schema_registry()
 
-    # Build hybrid orchestrator for ML-first coding
-    from app.coder.ncci import NCCIEngine
-    from app.coder.rules_engine import CodingRulesEngine
+    pipeline_mode = os.getenv("PROCSUITE_PIPELINE_MODE", "").strip().lower()
+    hybrid_orchestrator = None
+    if pipeline_mode != "extraction_first":
+        # Legacy/hybrid mode only: extraction-first does not consume SmartHybridOrchestrator.
+        from app.coder.ncci import NCCIEngine
+        from app.coder.rules_engine import CodingRulesEngine
 
-    rules_engine = CodingRulesEngine(
-        families_cfg=get_code_families_config(),
-        ncci_engine=NCCIEngine(ptp_cfg=get_ncci_ptp_config()),
-    )
-    hybrid_orchestrator = build_hybrid_orchestrator(rules_engine=rules_engine)
-    logger.info("SmartHybridOrchestrator built for RegistryService")
+        rules_engine = CodingRulesEngine(
+            families_cfg=get_code_families_config(),
+            ncci_engine=NCCIEngine(ptp_cfg=get_ncci_ptp_config()),
+        )
+        try:
+            hybrid_orchestrator = build_hybrid_orchestrator(rules_engine=rules_engine)
+            logger.info("SmartHybridOrchestrator built for RegistryService")
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "SmartHybridOrchestrator unavailable; continuing in extractor-only mode: %s",
+                exc,
+            )
+    else:
+        logger.info("Skipping SmartHybridOrchestrator bootstrap in extraction-first mode")
 
     service = RegistryService(
         schema_registry=schema_registry,

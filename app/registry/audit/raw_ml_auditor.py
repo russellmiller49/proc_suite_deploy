@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any
 
 from ml.lib.ml_coder.predictor import CaseClassification, CodePrediction, MLCoderPredictor
+from ml.lib.ml_coder.thresholds import CaseDifficulty
 
 logger = logging.getLogger(__name__)
 
@@ -93,15 +94,27 @@ class RawMLAuditConfig:
 
 class RawMLAuditor:
     def __init__(self, predictor: MLCoderPredictor | None = None) -> None:
-        self._predictor = predictor or MLCoderPredictor()
+        self._predictor: MLCoderPredictor | None = predictor
+        self._load_error: str | None = None
+        if self._predictor is None:
+            try:
+                self._predictor = MLCoderPredictor()
+            except Exception as exc:  # noqa: BLE001
+                self._load_error = f"{type(exc).__name__}: {exc}"
+                logger.warning("RAW-ML predictor unavailable: %s", self._load_error)
+
+    @property
+    def load_error(self) -> str | None:
+        return self._load_error
 
     def is_loaded(self) -> bool:
         """Return True if the auditor is ready to serve predictions."""
-        # MLCoderPredictor is instantiated in __init__; any heavy loads are internal.
-        return True
+        return self._predictor is not None
 
     def warm(self) -> "RawMLAuditor":
         """Eagerly warm underlying artifacts if any are lazily loaded."""
+        if self._predictor is None:
+            return self
         try:
             # If the predictor has its own warm method, use it.
             warm = getattr(self._predictor, "warm", None)
@@ -112,6 +125,13 @@ class RawMLAuditor:
         return self
 
     def classify(self, raw_note_text: str) -> CaseClassification:
+        if self._predictor is None:
+            return CaseClassification(
+                predictions=[],
+                high_conf=[],
+                gray_zone=[],
+                difficulty=CaseDifficulty.LOW_CONF,
+            )
         return self._predictor.classify_case(raw_note_text)
 
     def audit_predictions(

@@ -37,6 +37,16 @@ from app.registry.application.registry_builder import (
     get_builder,
 )
 from app.registry.engine import RegistryEngine
+from app.registry.heuristics import (
+    CaoDetailHeuristic,
+    LinearEbusStationDetailHeuristic,
+    NavigationTargetHeuristic,
+    apply_heuristics,
+    coverage_failures,
+    reconcile_granular_validation_warnings,
+    run_structurer_fallback,
+)
+from app.registry.infra import RegistryModelProvider
 from app.registry.schema import RegistryRecord
 from app.registry.schema_granular import derive_procedures_from_granular
 from app.registry.processing.masking import mask_extraction_noise
@@ -58,8 +68,6 @@ from app.coder.application.smart_hybrid_policy import (
     SmartHybridOrchestrator,
     HybridCoderResult,
 )
-from ml.lib.ml_coder.registry_predictor import RegistryMLPredictor
-from app.registry.model_runtime import get_registry_runtime_dir, resolve_model_backend
 from app.coder.parallel_pathway import ParallelPathwayOrchestrator
 from app.extraction.postprocessing.clinical_guardrails import ClinicalGuardrails
 
@@ -260,6 +268,7 @@ class RegistryService:
         hybrid_orchestrator: SmartHybridOrchestrator | None = None,
         registry_engine: RegistryEngine | None = None,
         parallel_orchestrator: ParallelPathwayOrchestrator | None = None,
+        model_provider: RegistryModelProvider | None = None,
     ):
         """Initialize RegistryService.
 
@@ -277,6 +286,7 @@ class RegistryService:
         self._ml_predictor_init_attempted: bool = False
         self.parallel_orchestrator = parallel_orchestrator or ParallelPathwayOrchestrator()
         self.clinical_guardrails = ClinicalGuardrails()
+        self.model_provider = model_provider or RegistryModelProvider()
 
     @property
     def registry_engine(self) -> RegistryEngine:
@@ -286,154 +296,12 @@ class RegistryService:
         return self._registry_engine
 
     def _get_registry_ml_predictor(self) -> Any | None:
-        """Get registry ML predictor with lazy initialization.
-
-        Behavior:
-        - If MODEL_BACKEND is set to "onnx", require ONNX and fail fast if unavailable.
-        - If MODEL_BACKEND is set to "pytorch", prefer Torch and fall back to sklearn if unavailable.
-        - Otherwise ("auto"), keep legacy behavior: try ONNX first (if available),
-          then sklearn TF-IDF.
-
-        Returns the predictor if available, or None if artifacts are missing.
-        Logs once on initialization failure to avoid log spam.
-        """
+        """Get registry ML predictor with lazy initialization."""
         if self._ml_predictor_init_attempted:
             return self._registry_ml_predictor
 
+        self._registry_ml_predictor = self.model_provider.get_predictor()
         self._ml_predictor_init_attempted = True
-
-        backend = resolve_model_backend()
-        runtime_dir = get_registry_runtime_dir()
-
-        def _try_pytorch() -> Any | None:
-            try:
-                from app.registry.inference_pytorch import TorchRegistryPredictor
-
-                predictor = TorchRegistryPredictor(bundle_dir=runtime_dir)
-                if predictor.available:
-                    logger.info(
-                        "Using TorchRegistryPredictor with %d labels",
-                        len(getattr(predictor, "labels", [])),
-                    )
-                    return predictor
-                logger.debug("Torch predictor initialized but not available")
-            except ImportError as e:
-                logger.debug("PyTorch/Transformers not available (%s)", e)
-            except Exception as e:
-                logger.debug("Torch predictor init failed (%s)", e)
-            return None
-
-        def _try_onnx() -> Any | None:
-            try:
-                from app.registry.inference_onnx import ONNXRegistryPredictor
-
-                # Prefer runtime bundle paths if present; otherwise keep defaults.
-                model_path: Path | None = None
-                for candidate in ("registry_model_int8.onnx", "registry_model.onnx"):
-                    p = runtime_dir / candidate
-                    if p.exists():
-                        model_path = p
-                        break
-
-                tokenizer_path: Path | None = None
-                for candidate in ("tokenizer", "roberta_registry_tokenizer"):
-                    p = runtime_dir / candidate
-                    if p.exists():
-                        tokenizer_path = p
-                        break
-
-                thresholds_path: Path | None = None
-                for candidate in ("thresholds.json", "registry_thresholds.json", "roberta_registry_thresholds.json"):
-                    p = runtime_dir / candidate
-                    if p.exists():
-                        thresholds_path = p
-                        break
-
-                label_fields_path: Path | None = None
-                candidate_label_fields = runtime_dir / "registry_label_fields.json"
-                if candidate_label_fields.exists():
-                    label_fields_path = candidate_label_fields
-                    # Prefer threshold-aligned labels; if the bundle label list is stale (common),
-                    # fall back to the canonical default shipped with the repo.
-                    try:
-                        thresholds_payload = (
-                            json.loads(thresholds_path.read_text())
-                            if thresholds_path and thresholds_path.exists()
-                            else None
-                        )
-                        labels_payload = json.loads(candidate_label_fields.read_text())
-                        if isinstance(thresholds_payload, dict) and thresholds_payload:
-                            threshold_keys = {k for k in thresholds_payload.keys() if isinstance(k, str)}
-                            label_keys = (
-                                {x for x in labels_payload if isinstance(x, str)}
-                                if isinstance(labels_payload, list)
-                                else set()
-                            )
-                            if threshold_keys and label_keys != threshold_keys:
-                                label_fields_path = None
-                    except Exception:
-                        label_fields_path = None
-
-                predictor = ONNXRegistryPredictor(
-                    model_path=model_path,
-                    tokenizer_path=tokenizer_path,
-                    thresholds_path=thresholds_path,
-                    label_fields_path=label_fields_path,
-                )
-                if predictor.available:
-                    logger.info(
-                        "Using ONNXRegistryPredictor with %d labels",
-                        len(getattr(predictor, "labels", [])),
-                    )
-                    return predictor
-                logger.debug("ONNX model not available")
-            except ImportError:
-                logger.debug("ONNX runtime not available")
-            except Exception as e:
-                logger.debug("ONNX predictor init failed (%s)", e)
-            return None
-
-        if backend == "pytorch":
-            predictor = _try_pytorch()
-            if predictor is not None:
-                self._registry_ml_predictor = predictor
-                return self._registry_ml_predictor
-        elif backend == "onnx":
-            predictor = _try_onnx()
-            if predictor is None:
-                model_path = runtime_dir / "registry_model_int8.onnx"
-                raise RuntimeError(
-                    "MODEL_BACKEND=onnx but ONNXRegistryPredictor failed to initialize. "
-                    f"Expected model at {model_path}."
-                )
-            self._registry_ml_predictor = predictor
-            return self._registry_ml_predictor
-        else:
-            predictor = _try_onnx()
-            if predictor is not None:
-                self._registry_ml_predictor = predictor
-                return self._registry_ml_predictor
-
-        # Fall back to TF-IDF sklearn predictor
-        try:
-            self._registry_ml_predictor = RegistryMLPredictor()
-            if not self._registry_ml_predictor.available:
-                logger.warning(
-                    "RegistryMLPredictor initialized but not available "
-                    "(model artifacts missing). ML hybrid audit disabled."
-                )
-                self._registry_ml_predictor = None
-            else:
-                logger.info(
-                    "Using RegistryMLPredictor (TF-IDF) with %d labels",
-                    len(self._registry_ml_predictor.labels),
-                )
-        except Exception:
-            logger.exception(
-                "Failed to initialize RegistryMLPredictor; ML hybrid audit disabled."
-            )
-            self._registry_ml_predictor = None
-
         return self._registry_ml_predictor
 
     def build_draft_entry(
@@ -703,20 +571,24 @@ class RegistryService:
             return self._apply_guardrails_to_result(masked_note_text, result)
 
         pipeline_mode = os.getenv("PROCSUITE_PIPELINE_MODE", "current").strip().lower()
-        if pipeline_mode != "extraction_first":
-            allow_legacy = os.getenv("PROCSUITE_ALLOW_LEGACY_PIPELINES", "0").strip().lower() in {
-                "1",
-                "true",
-                "yes",
-                "y",
-            }
-            if not allow_legacy:
-                raise ValueError(
-                    "Legacy pipelines are disabled. Set PROCSUITE_ALLOW_LEGACY_PIPELINES=1 to enable."
-                )
         if pipeline_mode == "extraction_first":
             return self._extract_fields_extraction_first(note_text)
+        allow_legacy = os.getenv("PROCSUITE_ALLOW_LEGACY_PIPELINES", "0").strip().lower() in {
+            "1",
+            "true",
+            "yes",
+            "y",
+        }
+        if not allow_legacy:
+            raise ValueError(
+                "Legacy pipelines are disabled. Set PROCSUITE_ALLOW_LEGACY_PIPELINES=1 to enable."
+            )
+        logger.warning(
+            "Using legacy hybrid extraction flow. This path is deprecated and will be removed in a future release."
+        )
+        return self._extract_fields_legacy_hybrid(masked_note_text)
 
+    def _extract_fields_legacy_hybrid(self, masked_note_text: str) -> RegistryExtractionResult:
         # Legacy fallback: if no hybrid orchestrator is injected, run extractor only
         if self.hybrid_orchestrator is None:
             logger.info("No hybrid_orchestrator configured, running extractor-only mode")
@@ -771,7 +643,7 @@ class RegistryService:
         merged_record = self._merge_cpt_fields_into_record(record, mapped_fields)
 
         # 5. Validate and finalize (includes ML hybrid audit)
-        final_result = self._validate_and_finalize(
+        return self._validate_and_finalize(
             RegistryExtractionResult(
                 record=merged_record,
                 cpt_codes=coder_result.codes,
@@ -783,8 +655,6 @@ class RegistryService:
             coder_result=coder_result,
             note_text=masked_note_text,
         )
-
-        return final_result
 
     def extract_fields_extraction_first(self, note_text: str) -> RegistryExtractionResult:
         """Extract registry fields using extraction-first flow.
@@ -2049,687 +1919,6 @@ class RegistryService:
             except ValueError:
                 return default
 
-        def _apply_navigation_target_heuristics(
-            note_text: str, record_in: RegistryRecord
-        ) -> tuple[RegistryRecord, list[str]]:
-            if record_in is None:
-                return RegistryRecord(), []
-
-            text = note_text or ""
-            if ("\n" not in text and "\r" not in text) and ("\\n" in text or "\\r" in text):
-                text = text.replace("\\r\\n", "\n").replace("\\n", "\n").replace("\\r", "\n")
-            nav_hint = re.search(
-                r"(?i)\b(navigational bronchoscopy|robotic bronchoscopy|electromagnetic navigation|\benb\b|\bion\b|monarch|galaxy|planning station)\b",
-                text,
-            )
-            if not nav_hint:
-                return record_in, []
-
-            from app.registry.processing.navigation_targets import (
-                extract_cryobiopsy_sites,
-                extract_navigation_targets,
-            )
-
-            parsed_targets = extract_navigation_targets(text)
-            target_lines = [
-                line
-                for line in text.splitlines()
-                if re.search(r"(?i)target lesion", line)
-                or re.search(r"(?i)^\s*target\s*\d{1,2}\s*[:\\-]", line)
-            ]
-            if not parsed_targets and not target_lines:
-                return record_in, []
-
-            record_data = record_in.model_dump()
-            granular = record_data.get("granular_data")
-            if granular is None or not isinstance(granular, dict):
-                granular = {}
-
-            evidence = record_data.get("evidence")
-            if not isinstance(evidence, dict):
-                evidence = {}
-                record_data["evidence"] = evidence
-
-            targets_raw = granular.get("navigation_targets")
-            if isinstance(targets_raw, list):
-                targets = [dict(t) for t in targets_raw if isinstance(t, dict)]
-            else:
-                targets = []
-
-            def _add_nav_evidence(idx: int, field: str, ev: object) -> None:
-                nonlocal updated
-                if not isinstance(idx, int) or idx < 0:
-                    return
-                if not isinstance(field, str) or not field:
-                    return
-                if not isinstance(ev, dict):
-                    return
-                start = ev.get("start")
-                end = ev.get("end")
-                text_snippet = ev.get("text")
-                if start is None or end is None or not text_snippet:
-                    return
-                try:
-                    start_i = int(start)
-                    end_i = int(end)
-                except Exception:
-                    return
-                if start_i < 0 or end_i <= start_i:
-                    return
-                key = f"granular_data.navigation_targets.{idx}.{field}"
-                if evidence.get(key):
-                    return
-                try:
-                    from app.common.spans import Span
-
-                    evidence.setdefault(key, []).append(
-                        Span(text=str(text_snippet), start=start_i, end=end_i, confidence=0.9)
-                    )
-                    updated = True
-                except Exception:
-                    return
-
-            def _is_placeholder_location(value: object) -> bool:
-                if value is None:
-                    return True
-                s = str(value).strip().lower()
-                if not s:
-                    return True
-                # Common boilerplate lines that are not target locations.
-                if "robotic navigation bronchoscopy was performed" in s:
-                    return True
-                if "partial registration" in s and "target lesion" in s:
-                    return True
-                if "||" in s:
-                    return True
-                if re.search(r"(?i)^(?:pt|patient)\\s*:", s):
-                    return True
-                if re.search(r"(?i)\\b(?:mrn|dob)\\b\\s*:", s):
-                    return True
-                if re.search(r"(?i)\\b(?:attending|fellow)\\b\\s*:", s):
-                    return True
-                return s in {
-                    "unknown",
-                    "unknown target",
-                    "target",
-                    "target lesion",
-                    "target lesion 1",
-                    "target lesion 2",
-                    "target lesion 3",
-                } or s.startswith("target lesion")
-
-            def _is_more_specific_location(existing_value: object, candidate_value: object) -> bool:
-                existing = str(existing_value or "").strip()
-                candidate = str(candidate_value or "").strip()
-                if not candidate:
-                    return False
-                if not existing:
-                    return True
-                existing_lower = existing.lower()
-                candidate_lower = candidate.lower()
-                existing_has_bronchus = bool(re.search(r"\\b[LR]B\\d{1,2}\\b", existing, re.IGNORECASE))
-                candidate_has_bronchus = bool(re.search(r"\\b[LR]B\\d{1,2}\\b", candidate, re.IGNORECASE))
-                if candidate_has_bronchus and not existing_has_bronchus:
-                    return True
-                if "segment" in candidate_lower and "segment" not in existing_lower:
-                    return True
-                if ("(" in candidate and ")" in candidate) and ("(" not in existing or ")" not in existing):
-                    return True
-                if ("nodule" in candidate_lower or "#" in candidate_lower) and (
-                    "nodule" not in existing_lower and "#" not in existing_lower
-                ):
-                    return True
-                return False
-
-            def _sanitize_target_location(value: str) -> str:
-                raw = (value or "").strip()
-                if not raw:
-                    return ""
-                for stop_word in ("PROCEDURE", "INDICATION", "TECHNIQUE", "DESCRIPTION"):
-                    match = re.search(rf"(?i)\b{re.escape(stop_word)}\b", raw)
-                    if match:
-                        raw = raw[: match.start()].strip()
-                if len(raw) > 100:
-                    clipped = raw[:100].rsplit(" ", 1)[0].strip()
-                    raw = clipped or raw[:100].strip()
-                return raw
-
-            warnings: list[str] = []
-            updated = False
-
-            if parsed_targets:
-                # Merge parsed targets (from TARGET headings / "Target:" lines) into existing targets.
-                max_len = max(len(targets), len(parsed_targets))
-                merged: list[dict[str, Any]] = []
-                for idx in range(max_len):
-                    base = targets[idx] if idx < len(targets) else {}
-                    parsed = parsed_targets[idx] if idx < len(parsed_targets) else {}
-                    out = dict(base)
-                    parsed_evidence = (
-                        parsed.get("_evidence")
-                        if isinstance(parsed, dict) and isinstance(parsed.get("_evidence"), dict)
-                        else None
-                    )
-
-                    # Always normalize target_number to 1..N for consistency.
-                    out["target_number"] = idx + 1
-
-                    for key, value in parsed.items():
-                        if value in (None, "", [], {}):
-                            continue
-                        if key == "_evidence":
-                            continue
-                        if key == "target_location_text":
-                            if _is_placeholder_location(out.get(key)) or _is_more_specific_location(
-                                out.get(key), value
-                            ):
-                                out[key] = value
-                                updated = True
-                            continue
-                        if key == "fiducial_marker_placed":
-                            if value is True and out.get(key) is not True:
-                                out[key] = True
-                                updated = True
-                            continue
-                        if out.get(key) in (None, "", [], {}):
-                            out[key] = value
-                            updated = True
-                            if parsed_evidence and key in parsed_evidence:
-                                _add_nav_evidence(idx, key, parsed_evidence.get(key))
-
-                    merged.append(out)
-
-                targets = merged
-                warnings.append(
-                    f"NAV_TARGET_HEURISTIC: parsed {len(parsed_targets)} navigation target(s) from target text"
-                )
-            else:
-                existing_count = len(targets)
-                needed_count = len(target_lines)
-                if existing_count >= needed_count:
-                    return record_in, []
-
-                for idx in range(existing_count, needed_count):
-                    line = _sanitize_target_location(target_lines[idx])
-                    targets.append(
-                        {
-                            "target_number": idx + 1,
-                            "target_location_text": line or f"Target lesion {idx + 1}",
-                        }
-                    )
-                added = needed_count - existing_count
-                warnings.append(f"NAV_TARGET_HEURISTIC: added {added} navigation target(s) from text")
-                updated = True
-
-            granular["navigation_targets"] = targets
-
-            # Tier 2 roll-up: tool-in-lesion confirmation summary (procedure-level).
-            # Prefer explicit per-target evidence; do not infer from equipment lists.
-            try:
-                procedures = record_data.get("procedures_performed")
-                if not isinstance(procedures, dict):
-                    procedures = {}
-                    record_data["procedures_performed"] = procedures
-
-                nav_proc = procedures.get("navigational_bronchoscopy")
-                if nav_proc is None or not isinstance(nav_proc, dict):
-                    nav_proc = {}
-                    procedures["navigational_bronchoscopy"] = nav_proc
-
-                def _copy_first_span(src_key: str, dest_key: str) -> bool:
-                    if evidence.get(dest_key):
-                        return False
-                    spans = evidence.get(src_key)
-                    if not isinstance(spans, list) or not spans:
-                        return False
-                    evidence[dest_key] = [spans[0]]
-                    return True
-
-                # tool_in_lesion_confirmed: set only when explicitly extracted per-target.
-                if nav_proc.get("tool_in_lesion_confirmed") not in (True, False):
-                    chosen_idx: int | None = None
-                    chosen_value: bool | None = None
-
-                    for idx, item in enumerate(targets):
-                        if not isinstance(item, dict):
-                            continue
-                        if item.get("tool_in_lesion_confirmed") is True and evidence.get(
-                            f"granular_data.navigation_targets.{idx}.tool_in_lesion_confirmed"
-                        ):
-                            chosen_idx = idx
-                            chosen_value = True
-                            break
-
-                    if chosen_value is None:
-                        false_indices: list[int] = []
-                        for idx, item in enumerate(targets):
-                            if not isinstance(item, dict):
-                                continue
-                            if item.get("tool_in_lesion_confirmed") is False and evidence.get(
-                                f"granular_data.navigation_targets.{idx}.tool_in_lesion_confirmed"
-                            ):
-                                false_indices.append(idx)
-
-                        if false_indices:
-                            any_true = any(
-                                isinstance(item, dict) and item.get("tool_in_lesion_confirmed") is True for item in targets
-                            )
-                            if not any_true:
-                                chosen_idx = false_indices[0]
-                                chosen_value = False
-
-                    if chosen_idx is not None and chosen_value is not None:
-                        nav_proc["tool_in_lesion_confirmed"] = chosen_value
-                        if _copy_first_span(
-                            f"granular_data.navigation_targets.{chosen_idx}.tool_in_lesion_confirmed",
-                            "procedures_performed.navigational_bronchoscopy.tool_in_lesion_confirmed",
-                        ):
-                            updated = True
-                        updated = True
-
-                # confirmation_method: only when tool-in-lesion is confirmed true.
-                if (
-                    nav_proc.get("tool_in_lesion_confirmed") is True
-                    and nav_proc.get("confirmation_method") in (None, "", [], {})
-                ):
-                    for idx, item in enumerate(targets):
-                        if not isinstance(item, dict):
-                            continue
-                        method = item.get("confirmation_method")
-                        if not method:
-                            continue
-                        if not evidence.get(f"granular_data.navigation_targets.{idx}.confirmation_method"):
-                            continue
-
-                        method_norm = str(method)
-                        # Enum mismatch between granular per-target vs procedure-level schema.
-                        if method_norm == "Augmented fluoroscopy":
-                            method_norm = "Augmented Fluoroscopy"
-
-                        nav_proc["confirmation_method"] = method_norm
-                        if _copy_first_span(
-                            f"granular_data.navigation_targets.{idx}.confirmation_method",
-                            "procedures_performed.navigational_bronchoscopy.confirmation_method",
-                        ):
-                            updated = True
-                        updated = True
-                        break
-            except Exception:
-                pass
-
-            # Cryobiopsy sites: populate granular per-site detail when target sections include cryobiopsy.
-            existing_sites = granular.get("cryobiopsy_sites")
-            if not existing_sites:
-                sites = extract_cryobiopsy_sites(text)
-                if sites:
-                    granular["cryobiopsy_sites"] = sites
-                    warnings.append(f"CRYOBIOPSY_SITE_HEURISTIC: added {len(sites)} cryobiopsy site(s) from text")
-                    updated = True
-
-            record_data["granular_data"] = granular
-            record_out = RegistryRecord(**record_data)
-            if not updated:
-                return record_in, []
-            return record_out, warnings
-
-        def _apply_linear_ebus_station_detail_heuristics(
-            note_text: str, record_in: RegistryRecord
-        ) -> tuple[RegistryRecord, list[str]]:
-            if record_in is None:
-                return RegistryRecord(), []
-
-            text = note_text or ""
-            if not re.search(r"(?i)\b(?:ebus|endobronchial\s+ultrasound|ebus-tbna)\b", text):
-                return record_in, []
-
-            from app.registry.processing.linear_ebus_stations_detail import (
-                extract_linear_ebus_stations_detail,
-            )
-
-            parsed = extract_linear_ebus_stations_detail(text)
-            if not parsed:
-                return record_in, []
-
-            evidence_by_station: dict[str, dict[str, dict[str, Any]]] = {}
-            for item in parsed:
-                if not isinstance(item, dict):
-                    continue
-                station = str(item.get("station") or "").strip()
-                if not station:
-                    continue
-
-                for field, meta_key in (
-                    ("lymphocytes_present", "_lymphocytes_present_evidence"),
-                    ("needle_gauge", "_needle_gauge_evidence"),
-                    ("number_of_passes", "_number_of_passes_evidence"),
-                    ("short_axis_mm", "_short_axis_mm_evidence"),
-                    ("long_axis_mm", "_long_axis_mm_evidence"),
-                ):
-                    ev = item.get(meta_key)
-                    if not isinstance(ev, dict):
-                        continue
-                    start = ev.get("start")
-                    end = ev.get("end")
-                    snippet = ev.get("text")
-                    if start is None or end is None or not snippet:
-                        continue
-                    try:
-                        evidence_by_station.setdefault(station, {})[field] = {
-                            "start": int(start),
-                            "end": int(end),
-                            "text": str(snippet),
-                        }
-                    except Exception:
-                        continue
-
-            record_data = record_in.model_dump()
-            granular = record_data.get("granular_data")
-            if granular is None or not isinstance(granular, dict):
-                granular = {}
-
-            evidence = record_data.get("evidence")
-            if not isinstance(evidence, dict):
-                evidence = {}
-                record_data["evidence"] = evidence
-
-            existing_raw = granular.get("linear_ebus_stations_detail")
-            existing: list[dict[str, Any]] = []
-            if isinstance(existing_raw, list):
-                existing = [dict(item) for item in existing_raw if isinstance(item, dict)]
-
-            by_station: dict[str, dict[str, Any]] = {}
-            order: list[str] = []
-            for item in existing:
-                station = str(item.get("station") or "").strip()
-                if not station:
-                    continue
-                if station not in by_station:
-                    order.append(station)
-                by_station[station] = item
-
-            added = 0
-            for item in parsed:
-                if not isinstance(item, dict):
-                    continue
-                station = str(item.get("station") or "").strip()
-                if not station:
-                    continue
-                existing_item = by_station.get(station)
-                if existing_item is None:
-                    by_station[station] = dict(item)
-                    order.append(station)
-                    added += 1
-                    continue
-                updated = False
-                for key, value in item.items():
-                    if key == "station":
-                        continue
-                    if value in (None, "", [], {}):
-                        continue
-                    if existing_item.get(key) in (None, "", [], {}):
-                        existing_item[key] = value
-                        updated = True
-                if updated:
-                    by_station[station] = existing_item
-
-            merged = [by_station[s] for s in order if s in by_station]
-
-            # Evidence spans: ensure UI-highlightable support for EBUS station detail values.
-            try:
-                from app.common.spans import Span
-
-                for idx, item in enumerate(merged):
-                    if not isinstance(item, dict):
-                        continue
-                    station = str(item.get("station") or "").strip()
-                    if not station:
-                        continue
-
-                    station_evidence = evidence_by_station.get(station) or {}
-
-                    def _add_field_evidence(field: str) -> None:
-                        ev = station_evidence.get(field)
-                        if not ev:
-                            return
-                        key = f"granular_data.linear_ebus_stations_detail.{idx}.{field}"
-                        if evidence.get(key):
-                            return
-                        evidence.setdefault(key, []).append(
-                            Span(
-                                text=str(ev.get("text") or ""),
-                                start=int(ev.get("start") or 0),
-                                end=int(ev.get("end") or 0),
-                                confidence=0.9,
-                            )
-                        )
-
-                    lymph = item.get("lymphocytes_present")
-                    if lymph in (True, False):
-                        _add_field_evidence("lymphocytes_present")
-
-                    gauge = item.get("needle_gauge")
-                    if isinstance(gauge, int):
-                        _add_field_evidence("needle_gauge")
-
-                    passes = item.get("number_of_passes")
-                    if isinstance(passes, int):
-                        _add_field_evidence("number_of_passes")
-
-                    short_axis = item.get("short_axis_mm")
-                    if isinstance(short_axis, (int, float)):
-                        _add_field_evidence("short_axis_mm")
-
-                    long_axis = item.get("long_axis_mm")
-                    if isinstance(long_axis, (int, float)):
-                        _add_field_evidence("long_axis_mm")
-            except Exception:
-                # Evidence is best-effort; do not fail extraction.
-                pass
-
-            granular["linear_ebus_stations_detail"] = merged
-
-            record_data["granular_data"] = granular
-            record_out = RegistryRecord(**record_data)
-            return (
-                record_out,
-                [f"EBUS_STATION_DETAIL_HEURISTIC: parsed {len(parsed)} station detail entr{'y' if len(parsed) == 1 else 'ies'} from text"],
-            )
-
-        def _apply_cao_detail_heuristics(
-            note_text: str, record_in: RegistryRecord
-        ) -> tuple[RegistryRecord, list[str]]:
-            if record_in is None:
-                return RegistryRecord(), []
-
-            text = note_text or ""
-            if not re.search(
-                r"(?i)\b(?:"
-                r"central\s+airway|airway\s+obstruct\w*|"
-                r"rigid\s+bronchos\w*|"
-                r"debulk\w*|"
-                r"tumou?r\s+(?:ablation|destruction)|"
-                r"stent"
-                r")\b",
-                text,
-            ):
-                return record_in, []
-
-            from app.registry.processing.cao_interventions_detail import (
-                extract_cao_interventions_detail,
-            )
-
-            parsed = extract_cao_interventions_detail(text)
-            if not parsed:
-                return record_in, []
-
-            record_data = record_in.model_dump()
-            granular = record_data.get("granular_data")
-            if granular is None or not isinstance(granular, dict):
-                granular = {}
-
-            existing_raw = granular.get("cao_interventions_detail")
-            existing: list[dict[str, Any]] = []
-            if isinstance(existing_raw, list):
-                existing = [dict(item) for item in existing_raw if isinstance(item, dict)]
-
-            def _key(item: dict[str, Any]) -> str:
-                return str(item.get("location") or "").strip()
-
-            by_loc: dict[str, dict[str, Any]] = {}
-            order: list[str] = []
-            for item in existing:
-                loc = _key(item)
-                if not loc:
-                    continue
-                if loc not in by_loc:
-                    order.append(loc)
-                by_loc[loc] = item
-
-            added = 0
-            for item in parsed:
-                if not isinstance(item, dict):
-                    continue
-                loc = _key(item)
-                if not loc:
-                    continue
-                existing_item = by_loc.get(loc)
-                if existing_item is None:
-                    by_loc[loc] = dict(item)
-                    order.append(loc)
-                    added += 1
-                    continue
-
-                updated = False
-                for key, value in item.items():
-                    if key == "location":
-                        continue
-                    if value in (None, "", [], {}):
-                        continue
-                    if key == "modalities_applied":
-                        existing_apps = existing_item.get("modalities_applied")
-                        if not isinstance(existing_apps, list):
-                            existing_apps = []
-                        existing_mods = {
-                            str(a.get("modality"))
-                            for a in existing_apps
-                            if isinstance(a, dict) and a.get("modality")
-                        }
-                        new_apps = []
-                        if isinstance(value, list):
-                            for app in value:
-                                if not isinstance(app, dict):
-                                    continue
-                                mod = app.get("modality")
-                                if not mod or str(mod) in existing_mods:
-                                    continue
-                                new_apps.append(app)
-                        if new_apps:
-                            existing_apps.extend(new_apps)
-                            existing_item["modalities_applied"] = existing_apps
-                            updated = True
-                        continue
-                    if existing_item.get(key) in (None, "", [], {}):
-                        existing_item[key] = value
-                        updated = True
-                if updated:
-                    by_loc[loc] = existing_item
-
-            merged = [by_loc[loc] for loc in order if loc in by_loc]
-            granular["cao_interventions_detail"] = merged
-
-            record_data["granular_data"] = granular
-            record_out = RegistryRecord(**record_data)
-            return (
-                record_out,
-                [f"CAO_DETAIL_HEURISTIC: parsed {len(parsed)} CAO site entr{'y' if len(parsed) == 1 else 'ies'} from text"],
-            )
-
-        def _coverage_failures(note_text: str, record_in: RegistryRecord) -> list[str]:
-            failures: list[str] = []
-            text = note_text or ""
-
-            ebus_hit = re.search(r"(?i)EBUS[- ]Findings|EBUS Lymph Nodes Sampled|\blinear\s+ebus\b", text)
-            ebus_performed = False
-            try:
-                ebus_obj = (
-                    record_in.procedures_performed.linear_ebus
-                    if record_in.procedures_performed
-                    else None
-                )
-                ebus_performed = bool(getattr(ebus_obj, "performed", False))
-            except Exception:
-                ebus_performed = False
-            if ebus_hit and not ebus_performed:
-                failures.append("linear_ebus missing")
-
-            eus_hit = re.search(
-                r"(?i)\bEUS-?B\b|\bleft adrenal\b|\btransgastric\b|\btransesophageal\b",
-                text,
-            )
-            procedures = record_in.procedures_performed if record_in.procedures_performed else None
-            if eus_hit and procedures is not None and hasattr(procedures, "eus_b"):
-                eus_b_performed = False
-                try:
-                    eus_b_obj = getattr(procedures, "eus_b", None)
-                    eus_b_performed = bool(getattr(eus_b_obj, "performed", False)) if eus_b_obj else False
-                except Exception:
-                    eus_b_performed = False
-                if not eus_b_performed:
-                    failures.append("eus_b missing")
-
-            nav_hit = re.search(
-                r"(?i)\b(navigational bronchoscopy|robotic bronchoscopy|electromagnetic navigation|\benb\b|\bion\b|monarch|galaxy)\b",
-                text,
-            )
-            if nav_hit:
-                target_mentions = len(re.findall(r"(?i)target lesion", text))
-                try:
-                    nav_targets = (
-                        record_in.granular_data.navigation_targets
-                        if record_in.granular_data is not None
-                        else None
-                    )
-                    nav_count = len(nav_targets or [])
-                except Exception:
-                    nav_count = 0
-                if target_mentions and nav_count < target_mentions:
-                    failures.append(f"navigation_targets {nav_count} < {target_mentions}")
-
-            return failures
-
-        def _run_structurer_fallback(note_text: str) -> tuple[RegistryRecord | None, list[str]]:
-            warnings: list[str] = []
-            context: dict[str, Any] = {"schema_version": "v3"}
-            try:
-                run_with_warnings = getattr(self.registry_engine, "run_with_warnings", None)
-                if callable(run_with_warnings):
-                    record_out, engine_warnings = run_with_warnings(note_text, context=context)
-                    warnings.extend(engine_warnings or [])
-                else:
-                    record_out = self.registry_engine.run(note_text, context=context)
-                    if isinstance(record_out, tuple):
-                        record_out = record_out[0]
-
-                record_out, granular_warnings = _apply_granular_up_propagation(record_out)
-                warnings.extend(granular_warnings)
-
-                from app.registry.evidence.verifier import verify_evidence_integrity
-                from app.registry.postprocess import (
-                    cull_hollow_ebus_claims,
-                    populate_ebus_node_events_fallback,
-                    sanitize_ebus_events,
-                )
-
-                record_out, verifier_warnings = verify_evidence_integrity(record_out, note_text)
-                warnings.extend(verifier_warnings)
-                warnings.extend(sanitize_ebus_events(record_out, note_text))
-                warnings.extend(populate_ebus_node_events_fallback(record_out, note_text))
-                warnings.extend(cull_hollow_ebus_claims(record_out, note_text))
-                return record_out, warnings
-            except Exception as exc:
-                warnings.append(f"STRUCTURER_FALLBACK_FAILED: {exc}")
-                return None, warnings
-
         record, extraction_warnings, meta = self.extract_record(raw_note_text)
         extraction_text = meta.get("extraction_text") if isinstance(meta.get("extraction_text"), str) else None
         if isinstance(meta.get("masked_note_text"), str):
@@ -2742,17 +1931,20 @@ class RegistryService:
         from app.registry.processing.masking import mask_offset_preserving
 
         nav_scan_text = mask_offset_preserving(raw_note_text or "")
-        record, nav_target_warnings = _apply_navigation_target_heuristics(nav_scan_text, record)
-        if nav_target_warnings:
-            extraction_warnings.extend(nav_target_warnings)
-
-        record, ebus_station_warnings = _apply_linear_ebus_station_detail_heuristics(nav_scan_text, record)
-        if ebus_station_warnings:
-            extraction_warnings.extend(ebus_station_warnings)
+        record, nav_ebus_warnings = apply_heuristics(
+            note_text=nav_scan_text,
+            record=record,
+            heuristics=(
+                NavigationTargetHeuristic(),
+                LinearEbusStationDetailHeuristic(),
+            ),
+        )
+        if nav_ebus_warnings:
+            extraction_warnings.extend(nav_ebus_warnings)
 
         # Use the extraction-masked text so CAO/stent heuristics don't read non-procedural
         # plan/assessment sections (common source of "possible stent placement" false positives).
-        record, cao_detail_warnings = _apply_cao_detail_heuristics(masked_note_text, record)
+        record, cao_detail_warnings = CaoDetailHeuristic().apply(masked_note_text, record)
         if cao_detail_warnings:
             extraction_warnings.extend(cao_detail_warnings)
 
@@ -2850,83 +2042,7 @@ class RegistryService:
         if comp_warnings:
             extraction_warnings.extend(comp_warnings)
 
-        # Reconcile granular validation warnings against the final record state.
-        # Guardrails and other postprocess steps may flip performed flags after
-        # granular propagation has already emitted structural warnings.
-        def _reconcile_granular_validation_warnings(record_in: RegistryRecord) -> tuple[RegistryRecord, set[str]]:
-            warnings_in = getattr(record_in, "granular_validation_warnings", None)
-            if not isinstance(warnings_in, list) or not warnings_in:
-                return record_in, set()
-
-            procs = getattr(record_in, "procedures_performed", None)
-
-            def _performed(proc_name: str) -> bool:
-                if procs is None:
-                    return False
-                proc = getattr(procs, proc_name, None)
-                if proc is None:
-                    return False
-                return bool(getattr(proc, "performed", False))
-
-            linear_performed = _performed("linear_ebus")
-            tbna_performed = _performed("tbna_conventional")
-            peripheral_tbna_performed = _performed("peripheral_tbna")
-            brushings_performed = _performed("brushings")
-            tbbx_performed = _performed("transbronchial_biopsy")
-            bronchial_wash_performed = _performed("bronchial_wash")
-
-            removed: set[str] = set()
-            cleaned: list[str] = []
-            seen: set[str] = set()
-            for warning in warnings_in:
-                if not isinstance(warning, str) or not warning.strip():
-                    continue
-                if (
-                    "procedures_performed.linear_ebus.performed=true" in warning
-                    and not linear_performed
-                ):
-                    removed.add(warning)
-                    continue
-                if (
-                    "procedures_performed.tbna_conventional.performed=true" in warning
-                    and not tbna_performed
-                ):
-                    removed.add(warning)
-                    continue
-                if (
-                    "procedures_performed.peripheral_tbna.performed=true" in warning
-                    and not peripheral_tbna_performed
-                ):
-                    removed.add(warning)
-                    continue
-                if "procedures_performed.brushings.performed=true" in warning and not brushings_performed:
-                    removed.add(warning)
-                    continue
-                if (
-                    "procedures_performed.transbronchial_biopsy.performed=true" in warning
-                    and not tbbx_performed
-                ):
-                    removed.add(warning)
-                    continue
-                if (
-                    "procedures_performed.bronchial_wash.performed=true" in warning
-                    and not bronchial_wash_performed
-                ):
-                    removed.add(warning)
-                    continue
-                if warning in seen:
-                    continue
-                seen.add(warning)
-                cleaned.append(warning)
-
-            if not removed and len(cleaned) == len(warnings_in):
-                return record_in, set()
-
-            record_data = record_in.model_dump()
-            record_data["granular_validation_warnings"] = cleaned
-            return RegistryRecord(**record_data), removed
-
-        record, removed_granular_warnings = _reconcile_granular_validation_warnings(record)
+        record, removed_granular_warnings = reconcile_granular_validation_warnings(record)
         if removed_granular_warnings:
             extraction_warnings = [
                 w for w in extraction_warnings if not (isinstance(w, str) and w in removed_granular_warnings)
@@ -2967,8 +2083,20 @@ class RegistryService:
 
             auditor = RawMLAuditor()
             cfg = RawMLAuditConfig.from_env()
+            auditor_loaded = auditor.is_loaded()
+            unavailable_warning: str | None = None
+            if not auditor_loaded:
+                load_error = (auditor.load_error or "missing ML artifacts").strip()
+                unavailable_warning = (
+                    "RAW_ML_UNAVAILABLE: predictor artifacts unavailable; audit set is empty "
+                    f"({load_error})"
+                )
+                audit_warnings.append(unavailable_warning)
+                needs_manual_review = True
+                baseline_needs_manual_review = True
+
             ml_case = auditor.classify(raw_text_for_audit)
-            coder_difficulty = ml_case.difficulty.value
+            coder_difficulty = ml_case.difficulty.value if auditor_loaded else "unavailable"
 
             audit_preds = auditor.audit_predictions(ml_case, cfg)
 
@@ -2977,6 +2105,7 @@ class RegistryService:
                 cfg=cfg,
                 ml_case=ml_case,
                 audit_preds=audit_preds,
+                warnings=[unavailable_warning] if unavailable_warning else None,
             )
 
             header_codes = _scan_header_for_codes(raw_note_text)
@@ -3277,14 +2406,18 @@ class RegistryService:
                     )
 
             if _env_flag("REGISTRY_LLM_FALLBACK_ON_COVERAGE_FAIL", "0"):
-                coverage_failures = _coverage_failures(masked_note_text, record)
-                if coverage_failures:
+                coverage_failures_list = coverage_failures(masked_note_text, record)
+                if coverage_failures_list:
                     coverage_warnings.append(
-                        "COVERAGE_FAIL: " + "; ".join(coverage_failures)
+                        "COVERAGE_FAIL: " + "; ".join(coverage_failures_list)
                     )
                     needs_manual_review = True
 
-                    fallback_record, fallback_warns = _run_structurer_fallback(masked_note_text)
+                    fallback_record, fallback_warns = run_structurer_fallback(
+                        masked_note_text,
+                        registry_engine=self.registry_engine,
+                        granular_propagator=_apply_granular_up_propagation,
+                    )
                     if fallback_warns:
                         coverage_warnings.extend(fallback_warns)
 
@@ -3305,7 +2438,7 @@ class RegistryService:
                             audit_report, masked_note_text
                         )
 
-                        remaining = _coverage_failures(masked_note_text, record)
+                        remaining = coverage_failures(masked_note_text, record)
                         if remaining:
                             coverage_warnings.append(
                                 "COVERAGE_FAIL_REMAINS: " + "; ".join(remaining)

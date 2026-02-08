@@ -12,10 +12,9 @@ dependencies = [
   "spacy>=3.7,<4",
   "scispacy==0.5.4",
   "en-core-sci-sm @ https://s3-us-west-2.amazonaws.com/ai2-s2-scispacy/releases/v0.5.4/en_core_sci_sm-0.5.4.tar.gz",
-  "medspacy>=1.0,<2",
   "sqlalchemy>=2.0,<3",
   "alembic>=1.13,<2",
-  "scikit-learn>=1.5.2,<2.0",
+  "scikit-learn>=1.5.2,<1.6",
   "scikit-multilearn>=0.2.0,<1",
   "pandas>=2.0,<3",
   "psycopg[binary,pool]>=3.2,<4",
@@ -29,7 +28,7 @@ dependencies = [
   "boto3>=1.34,<2",
   "google-auth>=2.23,<3",
   "google-generativeai>=0.8,<1",
-  "cryptography>=42.0,<45",
+  "cryptography>=46.0,<47",
   "presidio-analyzer>=2.2,<3",
   "pyyaml>=6.0,<7",
   "onnx>=1.16,<2",
@@ -49,6 +48,7 @@ dev = [
   "types-regex",
   "httpx",
   "pytest-asyncio",
+  "pip-tools>=7.4,<8",
 ]
 
 [tool.setuptools.packages.find]

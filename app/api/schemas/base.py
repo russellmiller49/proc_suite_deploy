@@ -5,7 +5,7 @@ from __future__ import annotations
 from enum import Enum
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from app.coder.schema import CoderOutput
 from app.common.spans import Span
@@ -88,6 +88,50 @@ class RenderRequest(BaseModel):
     patch: BundlePatch | list[JsonPatchOperation] | None = None
     embed_metadata: bool = False
     strict: bool = False
+
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_json_patch_values(cls, data: Any) -> Any:
+        """Coerce interactive UI patch values into schema-friendly shapes."""
+        if not isinstance(data, dict):
+            return data
+        patch_payload = data.get("patch")
+        if not isinstance(patch_payload, list):
+            return data
+
+        normalized_patch: list[Any] = []
+        for op in patch_payload:
+            if isinstance(op, BaseModel):
+                op_data = op.model_dump(exclude_none=False)
+            elif isinstance(op, dict):
+                op_data = dict(op)
+            else:
+                normalized_patch.append(op)
+                continue
+
+            path = op_data.get("path")
+            if not isinstance(path, str):
+                normalized_patch.append(op_data)
+                continue
+
+            value = op_data.get("value")
+            if path.endswith("/echo_features") and isinstance(value, list):
+                parts = [str(item).strip() for item in value if str(item).strip()]
+                op_data["value"] = ", ".join(parts)
+            elif path.endswith("/tests"):
+                if isinstance(value, str):
+                    normalized = value.replace(";", ",").replace("\n", ",")
+                    op_data["value"] = [
+                        part.strip() for part in normalized.split(",") if part.strip()
+                    ]
+                elif isinstance(value, list):
+                    op_data["value"] = [str(item).strip() for item in value if str(item).strip()]
+
+            normalized_patch.append(op_data)
+
+        out = dict(data)
+        out["patch"] = normalized_patch
+        return out
 
 
 class RenderResponse(BaseModel):
@@ -189,7 +233,9 @@ class MissingFieldPrompt(BaseModel):
     )
     path: str = Field(
         ...,
-        description="Dotted path relative to the registry root (supports [*] wildcards for arrays).",
+        description=(
+            "Dotted path relative to the registry root (supports [*] wildcards for arrays)."
+        ),
     )
     label: str = Field(..., description="Short human label for the missing field.")
     severity: Literal["required", "recommended"] = Field(

@@ -1,0 +1,30 @@
+You are generating a high-quality interventional pulmonology operative report from a short synthetic source note.
+
+Rules:
+1. Use factual content from SOURCE_SHORT_NOTE as primary evidence.
+2. Use CANONICAL_ANCHOR_NOTE only to resolve formatting/detail style, not to invent new performed procedures.
+3. Output a full-shell report that includes these section headers:
+   - INTERVENTIONAL PULMONOLOGY OPERATIVE REPORT
+   - INDICATION FOR OPERATION
+   - CONSENT
+   - PREOPERATIVE DIAGNOSIS
+   - POSTOPERATIVE DIAGNOSIS
+   - PROCEDURE
+   - ANESTHESIA
+   - MONITORING
+   - COMPLICATIONS
+   - PROCEDURE IN DETAIL
+   - IMPRESSION / PLAN
+4. Past tense, clean prose, no placeholders except approved canonical bracket placeholders.
+5. Allowed placeholders (if needed): [Date], [Name], [Patient Name], [Age], [Sex], [Name / Self, Referred], [Referred Physician Name], [General anesthesia / airway type], [General anesthesia / Deep sedation], [General anesthesia / Moderate Sedation], [Fellow name], [Supine], [analysis type], [Additional ICD-10 if applicable], [Additional ICD-10 if applicable, e.g., COPD/Emphysema], [pleural effusion/nodules]
+6. Do not emit template artifacts (no {{ }}, no TODO, no literal None).
+7. Return only valid JSON with exactly one key: report_text.
+
+REPAIR_FEEDBACK:
+{repair_feedback}
+
+SOURCE_SHORT_NOTE:
+{input_text}
+
+CANONICAL_ANCHOR_NOTE:
+{anchor_text}

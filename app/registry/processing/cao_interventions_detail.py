@@ -136,6 +136,9 @@ _PATENCY_PCT_AFTER_WORD_RE = re.compile(
 _RESIDUAL_OBSTRUCTION_PCT_RE = re.compile(
     r"(?i)\bresidual(?:\s+(?:obstruction|stenosis|narrowing))?\b[^%]{0,24}?(?P<pct>\d{1,3})\s*%"
 )
+_PCT_RESIDUAL_OBSTRUCTION_RE = re.compile(
+    r"(?i)\b(?P<pct>\d{1,3})\s*%\s*(?:residual\s+)?(?:obstruction|stenosis|narrowing)\b"
+)
 _OBSTRUCTION_WORD_BEFORE_PCT_RE = re.compile(
     r"(?i)\b(?:"
     r"obstruct(?:ed|ion)?|occlud(?:ed|ing|e)?|stenos(?:is|ed)|narrow(?:ed|ing)?|block(?:ed|ing)?"
@@ -416,6 +419,19 @@ def _extract_cao_interventions_detail(
                 continue
             _assign_pct(loc, pct, is_post=not is_pre)
 
+        # 4d) "20% residual stenosis/obstruction" phrasing (percent-first variant).
+        for match in _PCT_RESIDUAL_OBSTRUCTION_RE.finditer(sentence):
+            loc = current_location or fallback_location
+            if not loc and len(locations_in_sentence) == 1:
+                loc = locations_in_sentence[0]
+            if not loc:
+                continue
+            try:
+                pct = int(match.group("pct"))
+            except Exception:
+                continue
+            _assign_pct(loc, pct, is_post=not is_pre)
+
         # 5) Complete obstruction/occlusion with explicit "of <location>" (multi-hit).
         for match in _COMPLETE_OBSTRUCTION_OF_RE.finditer(sentence):
             loc = _infer_location(match.group("loc") or "") or current_location
@@ -541,6 +557,9 @@ def _extract_cao_interventions_detail(
             filtered.append(item)
             continue
         if item.get("stent_placed_at_site") is True:
+            filtered.append(item)
+            continue
+        if isinstance(item.get("modalities_applied"), list) and item.get("modalities_applied"):
             filtered.append(item)
             continue
     return filtered, pct_candidates

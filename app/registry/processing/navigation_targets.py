@@ -64,13 +64,70 @@ _NEEDLE_GAUGE_RE = re.compile(r"(?i)\b(19|21|22|25)\s*[- ]?(?:g|gauge)\b")
 _PASSES_RE = re.compile(r"(?i)\b(\d{1,2})\s+passes?\b")
 _SPECIMEN_COUNT_RE = re.compile(r"(?i)\b(\d{1,2})\s+(?:specimens?|samples?|biops(?:y|ies))\b")
 
-_CT_CHARACTERISTICS_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
-    ("Part-solid", re.compile(r"(?i)\b(?:part[-\s]?solid|semi[-\s]?solid)\b")),
-    ("Ground-glass", re.compile(r"(?i)\b(?:ground[-\s]?glass|groundglass|ggo)\b")),
-    ("Cavitary", re.compile(r"(?i)\b(?:cavitary|cavit(?:y|ation))\b")),
-    ("Calcified", re.compile(r"(?i)\b(?:calcified|calcification)\b")),
-    ("Solid", re.compile(r"(?i)\bsolid\b")),
+_CT_PART_SOLID_EXPLICIT_RE = re.compile(
+    r"(?i)\b(?:"
+    r"part[-\s]?solid|semi[-\s]?solid|mixed\s+(?:density|attenuation)|"
+    r"solid\s+component|increasing\s+density"
+    r")\b"
 )
+_CT_GROUND_GLASS_RE = re.compile(
+    r"(?i)\b(?:ground[-\s]?glass|groundglass|ggo|ggn|non[-\s]?solid|nonsolid)\b"
+)
+_CT_SUBSOLID_RE = re.compile(r"(?i)\bsub[-\s]?solid|subsolid\b")
+_CT_CAVITARY_RE = re.compile(r"(?i)\b(?:cavitary|cavit(?:y|ation))\b")
+_CT_CALCIFIED_RE = re.compile(r"(?i)\b(?:calcified|calcification)\b")
+_CT_SOLID_CONTEXT_RE = re.compile(
+    r"(?i)\bsolid\b[^.\n]{0,60}\b(?:nodule|lesion|mass|opacity)\b"
+    r"|\b(?:nodule|lesion|mass|opacity)\b[^.\n]{0,60}\bsolid\b"
+)
+
+_PLEURAL_DISTANCE_RE = re.compile(
+    r"(?i)\b(?P<val>\d+(?:\.\d+)?)\s*(?P<unit>mm|cm)\s+(?:from|to)\s+(?:the\s+)?"
+    r"pleura(?:l\s+(?:surface|space))?\b"
+)
+_PLEURAL_ABUTTING_RE = re.compile(
+    r"(?i)\b(?:abutting|abuts|touching|contacting|against|pleural[-\s]?based)\b[^.\n]{0,60}\bpleura\b"
+    r"|\bpleura\b[^.\n]{0,60}\b(?:abutting|abuts|touching|contacting|against|pleural[-\s]?based)\b"
+)
+
+_AIR_BRONCHOGRAM_POS_RE = re.compile(r"(?i)\bair\s+bronchogram(?:s)?\b")
+_AIR_BRONCHOGRAM_NEG_RE = re.compile(
+    r"(?i)\b(?:no|without|absent)\b[^.\n]{0,60}\bair\s+bronchogram(?:s)?\b"
+    r"|\bair\s+bronchogram(?:s)?\b[^.\n]{0,60}\b(?:not\s+present|absent)\b"
+)
+
+_SUV_RE = re.compile(r"(?i)\bSUV(?:\s*max)?\s*(?:of|is|:)?\s*(\d+(?:\.\d+)?)\b")
+
+_BRONCHUS_SIGN_NOT_ASSESSED_RE = re.compile(
+    r"(?i)\bbronchus\s+sign\b[^.\n]{0,40}\b(?:not\s+assessed|unknown|indeterminate|n/?a)\b"
+)
+_BRONCHUS_SIGN_NEG_RE = re.compile(
+    r"(?i)\bbronchus\s+sign\b[^.\n]{0,40}\b(?:negative|absent|no|not\s+present)\b"
+    r"|\b(?:negative|absent|not\s+present)\b[^.\n]{0,20}\bbronchus\s+sign\b"
+)
+_BRONCHUS_SIGN_POS_RE = re.compile(
+    r"(?i)\bbronchus\s+sign\b[^.\n]{0,40}\b(?:positive|present|yes)\b"
+    r"|\b(?:positive|present)\b[^.\n]{0,20}\bbronchus\s+sign\b"
+)
+
+_TIL_NEG_RE = re.compile(
+    r"(?i)\b(?:tool\s*[- ]?\s*in\s*[- ]?\s*lesion|t\.?i\.?l\.?)\b"
+    r"(?:\s+(?:confirmation|confirm(?:ed|ation)?)\b)?\s*[:=]?\s*"
+    r"(?:not\s+confirmed|unable\s+to\s+confirm|unconfirmed|negative|failed|not\s+achieved|no)\b"
+    r"|\b(?:not\s+confirmed|unable\s+to\s+confirm|unconfirmed|negative|failed|not\s+achieved)\b[^.\n]{0,40}"
+    r"\b(?:tool\s*[- ]?\s*in\s*[- ]?\s*lesion|t\.?i\.?l\.?)\b"
+)
+_TIL_POS_RE = re.compile(
+    r"(?i)\b(?:tool\s*[- ]?\s*in\s*[- ]?\s*lesion|t\.?i\.?l\.?)\b"
+    r"(?:\s+(?:confirmation|confirm(?:ed|ation)?)\b)?\s*[:=]?\s*"
+    r"(?:confirmed|achieved|yes|positive)\b"
+    r"|\b(?:confirmed|achieved|yes|positive)\b[^.\n]{0,40}"
+    r"\b(?:tool\s*[- ]?\s*in\s*[- ]?\s*lesion|t\.?i\.?l\.?)\b"
+)
+_TIL_METHOD_CBCT_RE = re.compile(r"(?i)\b(?:cbct|cone[-\s]?beam\s+ct)\b")
+_TIL_METHOD_AUG_FLUORO_RE = re.compile(r"(?i)\b(?:augmented\s+fluor(?:oscopy|o)|aug\s+fluoro)\b")
+_TIL_METHOD_FLUORO_RE = re.compile(r"(?i)\bfluor(?:oscopy|o)\b")
+_TIL_METHOD_REBUS_RE = re.compile(r"(?i)\b(?:radial\s+ebus|r-?ebus|rebus)\b")
 
 _INLINE_TARGET_RE = re.compile(
     r"\bTarget(?:\s+Lesion)?\s*[:\-]\s*(?P<loc>[^\n\r]+)",
@@ -153,13 +210,196 @@ def _first_line_containing(text: str, pattern: re.Pattern[str]) -> str | None:
 
 
 def _detect_ct_characteristics(text: str) -> str | None:
+    label, _match = _match_ct_characteristics(text)
+    return label
+
+
+def _match_ct_characteristics(text: str) -> tuple[str | None, re.Match[str] | None]:
     raw = (text or "").strip()
     if not raw:
-        return None
-    for label, pattern in _CT_CHARACTERISTICS_PATTERNS:
-        if pattern.search(raw):
-            return label
-    return None
+        return None, None
+
+    # Prefer explicit mixed/part-solid terms before GGO/subsolid.
+    match = _CT_PART_SOLID_EXPLICIT_RE.search(raw)
+    if match:
+        return "Part-solid", match
+
+    match = _CT_GROUND_GLASS_RE.search(raw)
+    if match:
+        return "Ground-glass", match
+
+    match = _CT_SUBSOLID_RE.search(raw)
+    if match:
+        return "Part-solid", match
+
+    match = _CT_CAVITARY_RE.search(raw)
+    if match:
+        return "Cavitary", match
+
+    match = _CT_CALCIFIED_RE.search(raw)
+    if match:
+        return "Calcified", match
+
+    match = _CT_SOLID_CONTEXT_RE.search(raw)
+    if match:
+        return "Solid", match
+
+    return None, None
+
+
+def _extract_distance_from_pleura_mm(text: str) -> tuple[float | None, re.Match[str] | None]:
+    raw = (text or "").strip()
+    if not raw:
+        return None, None
+
+    match = _PLEURAL_ABUTTING_RE.search(raw)
+    if match:
+        return 0.0, match
+
+    match = _PLEURAL_DISTANCE_RE.search(raw)
+    if not match:
+        return None, None
+
+    try:
+        val = float(match.group("val"))
+    except Exception:
+        return None, None
+    unit = (match.group("unit") or "").lower()
+    if unit == "cm":
+        val *= 10.0
+    if val < 0:
+        return None, None
+    return val, match
+
+
+def _extract_air_bronchogram_present(text: str) -> tuple[bool | None, re.Match[str] | None]:
+    raw = (text or "").strip()
+    if not raw:
+        return None, None
+
+    match = _AIR_BRONCHOGRAM_NEG_RE.search(raw)
+    if match:
+        return False, match
+
+    match = _AIR_BRONCHOGRAM_POS_RE.search(raw)
+    if match:
+        return True, match
+
+    return None, None
+
+
+def _extract_pet_suv_max(text: str) -> tuple[float | None, re.Match[str] | None]:
+    raw = (text or "").strip()
+    if not raw:
+        return None, None
+
+    match = _SUV_RE.search(raw)
+    if not match:
+        return None, None
+    try:
+        value = float(match.group(1))
+    except Exception:
+        return None, None
+    if value < 0:
+        return None, None
+    return value, match
+
+
+def _extract_bronchus_sign(text: str) -> tuple[bool | None, re.Match[str] | None]:
+    raw = (text or "").strip()
+    if not raw:
+        return None, None
+
+    if _BRONCHUS_SIGN_NOT_ASSESSED_RE.search(raw):
+        return None, None
+
+    match = _BRONCHUS_SIGN_NEG_RE.search(raw)
+    if match:
+        return False, match
+
+    match = _BRONCHUS_SIGN_POS_RE.search(raw)
+    if match:
+        return True, match
+
+    return None, None
+
+
+def _extract_registration_error_mm(text: str) -> tuple[float | None, re.Match[str] | None]:
+    raw = (text or "").strip()
+    if not raw:
+        return None, None
+
+    match = _REGISTRATION_ERROR_RE.search(raw)
+    if match:
+        reg_err = _coerce_float(match.group(1))
+        if reg_err is not None:
+            return reg_err, match
+
+    if re.search(r"(?i)\bregistration\b", raw):
+        match2 = _REGISTRATION_ERROR_FALLBACK_RE.search(raw)
+        if match2:
+            reg_err = _coerce_float(match2.group(1))
+            if reg_err is not None:
+                return reg_err, match2
+
+    return None, None
+
+
+def _match_til_confirmation_method(text: str) -> tuple[str | None, re.Match[str] | None]:
+    raw = (text or "").strip()
+    if not raw:
+        return None, None
+
+    # Priority: CBCT > augmented fluoro > fluoro > rEBUS.
+    for label, pattern in (
+        ("CBCT", _TIL_METHOD_CBCT_RE),
+        ("Augmented fluoroscopy", _TIL_METHOD_AUG_FLUORO_RE),
+        ("Fluoroscopy", _TIL_METHOD_FLUORO_RE),
+        ("Radial EBUS", _TIL_METHOD_REBUS_RE),
+    ):
+        match = pattern.search(raw)
+        if match:
+            return label, match
+
+    return None, None
+
+
+def _extract_tool_in_lesion_confirmation(
+    text: str,
+) -> tuple[bool | None, re.Match[str] | None, str | None, dict[str, object] | None]:
+    """Extract tool-in-lesion confirmation (explicit-only) plus method (when present).
+
+    Returns:
+      (tool_in_lesion_confirmed, til_match, confirmation_method, method_evidence_meta)
+    """
+    raw = (text or "").strip()
+    if not raw:
+        return None, None, None, None
+
+    neg = _TIL_NEG_RE.search(raw)
+    if neg:
+        return False, neg, None, None
+
+    pos = _TIL_POS_RE.search(raw)
+    if not pos:
+        return None, None, None, None
+
+    window_start = max(0, pos.start() - 120)
+    window_end = min(len(raw), pos.end() + 240)
+    window = raw[window_start:window_end]
+    method, method_match = _match_til_confirmation_method(window)
+
+    method_meta: dict[str, object] | None = None
+    if method and method_match:
+        snippet = (method_match.group(0) or "").strip()
+        if snippet:
+            method_meta = {
+                "text": snippet,
+                "start": int(window_start + method_match.start()),
+                "end": int(window_start + method_match.end()),
+            }
+
+    return True, pos, method, method_meta
 
 
 _INLINE_TARGET_STOP_WORDS: tuple[str, ...] = (
@@ -285,8 +525,10 @@ def extract_navigation_targets(note_text: str) -> list[dict[str, Any]]:
         # relying on explicit "... LOBE TARGET" section headings.
         targets: list[dict[str, Any]] = []
         for match in _INLINE_TARGET_RE.finditer(scan_text):
-            raw_loc_full = (match.group("loc") or "").strip()
-            raw_loc_full = _trim_at_stop_words(raw_loc_full)
+            raw_loc_full_raw = _trim_at_stop_words(match.group("loc") or "")
+            leading_trim = len(raw_loc_full_raw) - len(raw_loc_full_raw.lstrip())
+            raw_loc_full = raw_loc_full_raw.strip()
+            loc_offset = match.start("loc") + leading_trim
             raw_loc = _truncate_location(raw_loc_full)
             if not raw_loc:
                 continue
@@ -297,6 +539,7 @@ def extract_navigation_targets(note_text: str) -> list[dict[str, Any]]:
                 "target_number": len(targets) + 1,
                 "target_location_text": raw_loc,
             }
+            evidence: dict[str, dict[str, object]] = {}
 
             lobe = _infer_lobe_from_text(raw_loc_full)
             if lobe:
@@ -315,9 +558,78 @@ def extract_navigation_targets(note_text: str) -> list[dict[str, Any]]:
             if lesion_size_mm is not None:
                 target["lesion_size_mm"] = lesion_size_mm
 
-            ct_char = _detect_ct_characteristics(raw_loc_full)
+            ct_char, ct_match = _match_ct_characteristics(raw_loc_full)
             if ct_char:
                 target["ct_characteristics"] = ct_char
+                if ct_match:
+                    evidence["ct_characteristics"] = {
+                        "text": ct_match.group(0).strip(),
+                        "start": int(loc_offset + ct_match.start()),
+                        "end": int(loc_offset + ct_match.end()),
+                    }
+
+            pleural_mm, pleural_match = _extract_distance_from_pleura_mm(raw_loc_full)
+            if pleural_mm is not None:
+                target["distance_from_pleura_mm"] = pleural_mm
+                if pleural_match:
+                    evidence["distance_from_pleura_mm"] = {
+                        "text": pleural_match.group(0).strip(),
+                        "start": int(loc_offset + pleural_match.start()),
+                        "end": int(loc_offset + pleural_match.end()),
+                    }
+
+            suv_max, suv_match = _extract_pet_suv_max(raw_loc_full)
+            if suv_max is not None:
+                target["pet_suv_max"] = suv_max
+                if suv_match:
+                    evidence["pet_suv_max"] = {
+                        "text": suv_match.group(0).strip(),
+                        "start": int(loc_offset + suv_match.start()),
+                        "end": int(loc_offset + suv_match.end()),
+                    }
+
+            air_bronch, air_match = _extract_air_bronchogram_present(raw_loc_full)
+            if air_bronch is not None:
+                target["air_bronchogram_present"] = air_bronch
+                if air_match:
+                    evidence["air_bronchogram_present"] = {
+                        "text": air_match.group(0).strip(),
+                        "start": int(loc_offset + air_match.start()),
+                        "end": int(loc_offset + air_match.end()),
+                    }
+
+            bronchus_sign, bs_match = _extract_bronchus_sign(raw_loc_full)
+            if bronchus_sign is not None:
+                target["bronchus_sign"] = bronchus_sign
+                if bs_match:
+                    evidence["bronchus_sign"] = {
+                        "text": bs_match.group(0).strip(),
+                        "start": int(loc_offset + bs_match.start()),
+                        "end": int(loc_offset + bs_match.end()),
+                    }
+
+            til_confirmed, til_match, til_method, til_method_meta = _extract_tool_in_lesion_confirmation(raw_loc_full)
+            if til_confirmed is not None:
+                target["tool_in_lesion_confirmed"] = til_confirmed
+                if til_match:
+                    evidence["tool_in_lesion_confirmed"] = {
+                        "text": til_match.group(0).strip(),
+                        "start": int(loc_offset + til_match.start()),
+                        "end": int(loc_offset + til_match.end()),
+                    }
+                if til_confirmed is True and til_method:
+                    target["confirmation_method"] = til_method
+                    if til_method_meta:
+                        evidence["confirmation_method"] = {
+                            "text": str(til_method_meta.get("text") or ""),
+                            "start": int(loc_offset + int(til_method_meta.get("start") or 0)),
+                            "end": int(loc_offset + int(til_method_meta.get("end") or 0)),
+                        }
+                    if til_method == "CBCT":
+                        target["cbct_til_confirmed"] = True
+
+            if evidence:
+                target["_evidence"] = evidence
 
             targets.append(target)
 
@@ -359,19 +671,18 @@ def extract_navigation_targets(note_text: str) -> list[dict[str, Any]]:
                 if ct_char:
                     target["ct_characteristics"] = ct_char
 
-            reg_err = None
-            reg = _REGISTRATION_ERROR_RE.search(scan_text)
-            if reg:
-                reg_err = _coerce_float(reg.group(1))
-            else:
-                # Conservative fallback: only accept generic "error of Xmm" when the note
-                # also contains an explicit registration marker.
-                if re.search(r"(?i)\bregistration\b", scan_text):
-                    reg2 = _REGISTRATION_ERROR_FALLBACK_RE.search(scan_text)
-                    if reg2:
-                        reg_err = _coerce_float(reg2.group(1))
+            reg_err, reg_match = _extract_registration_error_mm(scan_text)
             if reg_err is not None:
                 target["registration_error_mm"] = reg_err
+                if reg_match:
+                    existing_evidence = target.get("_evidence") if isinstance(target.get("_evidence"), dict) else {}
+                    if isinstance(existing_evidence, dict) and "registration_error_mm" not in existing_evidence:
+                        existing_evidence["registration_error_mm"] = {
+                            "text": reg_match.group(0).strip(),
+                            "start": int(reg_match.start()),
+                            "end": int(reg_match.end()),
+                        }
+                        target["_evidence"] = existing_evidence
 
             rebus_match = _REBUS_VIEW_RE.search(scan_text)
             if rebus_match:
@@ -536,6 +847,13 @@ def extract_navigation_targets(note_text: str) -> list[dict[str, Any]]:
         section_start = match.end()
         section_end = matches[idx + 1].start() if idx + 1 < len(matches) else len(scan_text)
         section = scan_text[section_start:section_end] if section_end > section_start else ""
+        section_leading_trim = len(section) - len(section.lstrip())
+        section_offset = section_start + section_leading_trim
+        section_text = section.strip()
+
+        header_leading_trim = len(header_raw) - len(header_raw.lstrip())
+        header_offset = match.start("header") + header_leading_trim
+        header_text = header_raw.strip()
 
         lobe = _TARGET_LOBE_FROM_HEADER.get(header)
         if match_mode in {"nodule_header", "numbered_target"}:
@@ -589,12 +907,14 @@ def extract_navigation_targets(note_text: str) -> list[dict[str, Any]]:
                     lesion_size_mm = _coerce_float(size_match.group(1))
 
         rebus_view: str | None = None
-        rebus_match = _REBUS_VIEW_RE.search(section)
+        rebus_match = _REBUS_VIEW_RE.search(section_text)
         if rebus_match:
             view = (rebus_match.group(1) or "").strip().title()
             rebus_view = view or None
 
-        fiducial_placed, fiducial_details = _fiducial_in_section(section)
+        fiducial_placed, fiducial_details = _fiducial_in_section(section_text)
+
+        evidence: dict[str, dict[str, object]] = {}
 
         target: dict[str, Any] = {
             "target_number": idx + 1,
@@ -609,21 +929,127 @@ def extract_navigation_targets(note_text: str) -> list[dict[str, Any]]:
         if rebus_view is not None:
             target["rebus_used"] = True
             target["rebus_view"] = rebus_view
-        ct_char = _detect_ct_characteristics(section)
-        if ct_char is None and match_mode == "numbered_target":
-            ct_char = _detect_ct_characteristics(header_raw)
+
+        ct_char, ct_match = _match_ct_characteristics(section_text)
+        ct_base_offset = section_offset
+        if ct_char is None and match_mode in {"nodule_header", "numbered_target"}:
+            ct_char, ct_match = _match_ct_characteristics(header_text)
+            ct_base_offset = header_offset
         if ct_char is not None:
             target["ct_characteristics"] = ct_char
+            if ct_match:
+                evidence["ct_characteristics"] = {
+                    "text": ct_match.group(0).strip(),
+                    "start": int(ct_base_offset + ct_match.start()),
+                    "end": int(ct_base_offset + ct_match.end()),
+                }
+
+        pleural_mm, pleural_match = _extract_distance_from_pleura_mm(section_text)
+        pleural_base_offset = section_offset
+        if pleural_mm is None and match_mode in {"nodule_header", "numbered_target"}:
+            pleural_mm, pleural_match = _extract_distance_from_pleura_mm(header_text)
+            pleural_base_offset = header_offset
+        if pleural_mm is not None:
+            target["distance_from_pleura_mm"] = pleural_mm
+            if pleural_match:
+                evidence["distance_from_pleura_mm"] = {
+                    "text": pleural_match.group(0).strip(),
+                    "start": int(pleural_base_offset + pleural_match.start()),
+                    "end": int(pleural_base_offset + pleural_match.end()),
+                }
+
+        suv_max, suv_match = _extract_pet_suv_max(section_text)
+        suv_base_offset = section_offset
+        if suv_max is None and match_mode in {"nodule_header", "numbered_target"}:
+            suv_max, suv_match = _extract_pet_suv_max(header_text)
+            suv_base_offset = header_offset
+        if suv_max is not None:
+            target["pet_suv_max"] = suv_max
+            if suv_match:
+                evidence["pet_suv_max"] = {
+                    "text": suv_match.group(0).strip(),
+                    "start": int(suv_base_offset + suv_match.start()),
+                    "end": int(suv_base_offset + suv_match.end()),
+                }
+
+        air_bronch, air_match = _extract_air_bronchogram_present(section_text)
+        air_base_offset = section_offset
+        if air_bronch is None and match_mode in {"nodule_header", "numbered_target"}:
+            air_bronch, air_match = _extract_air_bronchogram_present(header_text)
+            air_base_offset = header_offset
+        if air_bronch is not None:
+            target["air_bronchogram_present"] = air_bronch
+            if air_match:
+                evidence["air_bronchogram_present"] = {
+                    "text": air_match.group(0).strip(),
+                    "start": int(air_base_offset + air_match.start()),
+                    "end": int(air_base_offset + air_match.end()),
+                }
+
+        bronchus_sign, bs_match = _extract_bronchus_sign(section_text)
+        bs_base_offset = section_offset
+        if bronchus_sign is None and match_mode in {"nodule_header", "numbered_target"}:
+            bronchus_sign, bs_match = _extract_bronchus_sign(header_text)
+            bs_base_offset = header_offset
+        if bronchus_sign is not None:
+            target["bronchus_sign"] = bronchus_sign
+            if bs_match:
+                evidence["bronchus_sign"] = {
+                    "text": bs_match.group(0).strip(),
+                    "start": int(bs_base_offset + bs_match.start()),
+                    "end": int(bs_base_offset + bs_match.end()),
+                }
+
+        reg_err, reg_match = _extract_registration_error_mm(section_text)
+        reg_base_offset = section_offset
+        if reg_err is None and match_mode in {"nodule_header", "numbered_target"}:
+            reg_err, reg_match = _extract_registration_error_mm(header_text)
+            reg_base_offset = header_offset
+        if reg_err is not None:
+            target["registration_error_mm"] = reg_err
+            if reg_match:
+                evidence["registration_error_mm"] = {
+                    "text": reg_match.group(0).strip(),
+                    "start": int(reg_base_offset + reg_match.start()),
+                    "end": int(reg_base_offset + reg_match.end()),
+                }
+
+        til_confirmed, til_match, til_method, til_method_meta = _extract_tool_in_lesion_confirmation(section_text)
+        til_base_offset = section_offset
+        if til_confirmed is None and match_mode in {"nodule_header", "numbered_target"}:
+            til_confirmed, til_match, til_method, til_method_meta = _extract_tool_in_lesion_confirmation(header_text)
+            til_base_offset = header_offset
+        if til_confirmed is not None:
+            target["tool_in_lesion_confirmed"] = til_confirmed
+            if til_match:
+                evidence["tool_in_lesion_confirmed"] = {
+                    "text": til_match.group(0).strip(),
+                    "start": int(til_base_offset + til_match.start()),
+                    "end": int(til_base_offset + til_match.end()),
+                }
+            if til_confirmed is True and til_method:
+                target["confirmation_method"] = til_method
+                if til_method_meta:
+                    evidence["confirmation_method"] = {
+                        "text": str(til_method_meta.get("text") or ""),
+                        "start": int(til_base_offset + int(til_method_meta.get("start") or 0)),
+                        "end": int(til_base_offset + int(til_method_meta.get("end") or 0)),
+                    }
+                if til_method == "CBCT":
+                    target["cbct_til_confirmed"] = True
+
+        if evidence:
+            target["_evidence"] = evidence
         if fiducial_placed:
             target["fiducial_marker_placed"] = True
         if fiducial_details:
             target["fiducial_marker_details"] = fiducial_details
 
         # Light-touch sampling hints (used for downstream aggregation).
-        cryo_match = _CRYO_RE.search(section)
+        cryo_match = _CRYO_RE.search(section_text)
         if cryo_match:
             target.setdefault("sampling_tools_used", []).append("Cryoprobe")
-            window = section[cryo_match.start() : cryo_match.start() + 600]
+            window = section_text[cryo_match.start() : cryo_match.start() + 600]
             samples = _TOTAL_SAMPLES_RE.search(window)
             if samples:
                 try:
@@ -631,10 +1057,10 @@ def extract_navigation_targets(note_text: str) -> list[dict[str, Any]]:
                 except Exception:
                     pass
 
-        tbna_match = re.search(r"(?i)\btransbronchial\s+needle\s+aspiration\b|\btbna\b", section)
+        tbna_match = re.search(r"(?i)\btransbronchial\s+needle\s+aspiration\b|\btbna\b", section_text)
         if tbna_match:
             target.setdefault("sampling_tools_used", []).append("Needle")
-            window = section[tbna_match.start() : tbna_match.start() + 600]
+            window = section_text[tbna_match.start() : tbna_match.start() + 600]
             samples = _TOTAL_SAMPLES_RE.search(window)
             if samples:
                 try:
@@ -642,17 +1068,20 @@ def extract_navigation_targets(note_text: str) -> list[dict[str, Any]]:
                 except Exception:
                     pass
 
-        brush_match = re.search(r"(?i)\b(?:transbronchial\s+)?brush(?:ing|ings)?\b|\bcytology\s+brush\b", section)
+        brush_match = re.search(
+            r"(?i)\b(?:transbronchial\s+)?brush(?:ing|ings)?\b|\bcytology\s+brush\b",
+            section_text,
+        )
         if brush_match:
             target.setdefault("sampling_tools_used", []).append("Brush")
 
         forceps_match = re.search(
             r"(?i)\bforceps\s+biops(?:y|ies)\b|\btransbronchial\s+forceps\s+biops(?:y|ies)\b",
-            section,
+            section_text,
         )
         if forceps_match:
             target.setdefault("sampling_tools_used", []).append("Forceps")
-            window = section[forceps_match.start() : forceps_match.start() + 500]
+            window = section_text[forceps_match.start() : forceps_match.start() + 500]
             spec_match = _SPECIMEN_COUNT_RE.search(window)
             if spec_match:
                 try:

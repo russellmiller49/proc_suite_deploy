@@ -359,7 +359,13 @@ class ClinicalGuardrails:
                 if self._clear_stent(record_data):
                     warnings.append("Stent placement discussed/considered only; treating as not performed.")
                     changed = True
-            elif removal_text_present and not placement_present and not strong_placement:
+            elif (
+                removal_text_present
+                and not placement_present
+                and not strong_placement
+                and not placement_action_present
+                and not revision_action
+            ):
                 if self._set_stent_action(record_data, "Removal"):
                     warnings.append("Stent removal language; treating as removal only.")
                     changed = True

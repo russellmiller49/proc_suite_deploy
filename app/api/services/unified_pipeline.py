@@ -16,7 +16,12 @@ from fastapi import HTTPException, Request
 
 from app.api.adapters.response_adapter import build_v3_evidence_payload
 from app.api.phi_redaction import apply_phi_redaction
-from app.api.schemas import CodeSuggestionSummary, UnifiedProcessRequest, UnifiedProcessResponse
+from app.api.schemas import (
+    CodeSuggestionSummary,
+    MissingFieldPrompt,
+    UnifiedProcessRequest,
+    UnifiedProcessResponse,
+)
 from app.coder.application.coding_service import CodingService
 from app.coder.phi_gating import is_phi_review_required
 from app.common.exceptions import LLMError
@@ -200,6 +205,23 @@ async def run_unified_pipeline_logic(
     if payload.explain is False and not evidence_payload:
         evidence_payload = {}
 
+    # Completeness prompts: suggested missing fields (used by UI to nudge documentation).
+    try:
+        from app.registry.completeness import generate_missing_field_prompts
+
+        missing_field_prompts = [
+            MissingFieldPrompt(
+                group=p.group,
+                path=p.path,
+                label=p.label,
+                severity=p.severity,
+                message=p.message,
+            )
+            for p in generate_missing_field_prompts(record)
+        ]
+    except Exception:
+        missing_field_prompts = []
+
     needs_manual_review = result.needs_manual_review
     if is_phi_review_required():
         review_status = "pending_phi_review"
@@ -215,6 +237,7 @@ async def run_unified_pipeline_logic(
         registry=record.model_dump(exclude_none=True),
         registry_v3_event_log=registry_v3_event_log,
         evidence=evidence_payload,
+        missing_field_prompts=missing_field_prompts,
         cpt_codes=codes,
         suggestions=suggestions,
         total_work_rvu=total_work_rvu,

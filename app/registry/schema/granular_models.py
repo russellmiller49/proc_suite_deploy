@@ -99,6 +99,16 @@ class ClinicalContext(BaseModel):
         le=6,
         description="ASA physical status classification (1-6)",
     )
+    ecog_score: int | None = Field(
+        None,
+        ge=0,
+        le=4,
+        description="ECOG performance status score (0-4) when explicitly documented",
+    )
+    ecog_text: str | None = Field(
+        None,
+        description="Raw ECOG/Zubrod performance status text when not a single integer (e.g., '0-1')",
+    )
     primary_indication: str | None = Field(
         None,
         description="Primary indication for the procedure (free text)",
@@ -170,6 +180,45 @@ class ClinicalContext(BaseModel):
         if s in {"na", "n/a", "not assessed", "unknown", "indeterminate"}:
             return "Not assessed"
         return v
+
+    @field_validator("ecog_score", mode="before")
+    @classmethod
+    def normalize_ecog_score(cls, v):
+        """Normalize ECOG/Zubrod performance status into a single 0-4 integer when explicit."""
+        if v is None:
+            return None
+
+        # Avoid bool being treated as int
+        if isinstance(v, bool):
+            return None
+
+        if isinstance(v, int):
+            return v if 0 <= v <= 4 else None
+
+        if isinstance(v, float):
+            if not v.is_integer():
+                return None
+            iv = int(v)
+            return iv if 0 <= iv <= 4 else None
+
+        s = str(v).strip()
+        if not s:
+            return None
+
+        lower = s.lower()
+        # Do not coerce ranges like "0-1" or "0 to 1" into a single score.
+        if re.search(r"\b[0-4]\b\s*(?:-|–|to|/|\+|or)\s*\b[0-4]\b", lower):
+            return None
+
+        match = re.search(r"(?i)\b(?:ecog|zubrod)\s*[:=]?\s*([0-4])\b", s)
+        if match:
+            return int(match.group(1))
+
+        match2 = re.fullmatch(r"\s*([0-4])\s*", s)
+        if match2:
+            return int(match2.group(1))
+
+        return None
 
 
 class PatientDemographics(BaseModel):
@@ -401,6 +450,10 @@ class EBUSStationDetail(BaseModel):
         "Adequate lymphocytes", "Malignant", "Suspicious for malignancy",
         "Atypical cells", "Granuloma", "Necrosis only", "Nondiagnostic", "Deferred"
     ] | None = None
+    lymphocytes_present: bool | None = Field(
+        None,
+        description="Lymphocytes/lymphoid tissue present for this station when explicitly documented (ROSE/pathology). None when not assessable from note.",
+    )
     rose_adequacy: bool | None = None
 
     @field_validator("needle_gauge", mode="before")
@@ -540,6 +593,10 @@ class NavigationTarget(BaseModel):
     ct_characteristics: Literal[
         "Solid", "Part-solid", "Ground-glass", "Cavitary", "Calcified"
     ] | None = None
+    air_bronchogram_present: bool | None = Field(
+        default=None,
+        description="Air bronchogram documented on CT for this target lesion when explicitly stated.",
+    )
     pet_suv_max: float | None = Field(None, ge=0)
     
     # Navigation performance

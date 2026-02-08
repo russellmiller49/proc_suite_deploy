@@ -301,6 +301,22 @@
           "maximum": 6,
           "description": "ASA physical status classification (1-6)"
         },
+        "ecog_score": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 4,
+          "description": "ECOG performance status score (0-4) when explicitly documented"
+        },
+        "ecog_text": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Raw ECOG/Zubrod performance status text when not a single integer (e.g., '0-1')"
+        },
         "primary_indication": {
           "type": [
             "string",
@@ -3368,6 +3384,15 @@
                   "None"
                 ]
               }
+            },
+            "bleeding_grade_nashville": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0,
+              "maximum": 4,
+              "description": "Nashville bleeding grade (0-4) derived from documented interventions when possible (0 = none)"
             }
           }
         },
@@ -4782,6 +4807,13 @@
                   null
                 ]
               },
+              "lymphocytes_present": {
+                "type": [
+                  "boolean",
+                  "null"
+                ],
+                "description": "Lymphocytes/lymphoid tissue present for this station when explicitly documented (ROSE/pathology). None when not assessable from note."
+              },
               "rose_adequacy": {
                 "type": [
                   "boolean",
@@ -4921,6 +4953,13 @@
                   "Calcified",
                   null
                 ]
+              },
+              "air_bronchogram_present": {
+                "type": [
+                  "boolean",
+                  "null"
+                ],
+                "description": "Air bronchogram documented on CT for this target lesion when explicitly stated"
               },
               "pet_suv_max": {
                 "type": [

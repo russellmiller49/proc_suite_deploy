@@ -314,6 +314,88 @@ def _maybe_unescape_newlines(text: str) -> str:
     return raw.replace("\\r\\n", "\n").replace("\\n", "\n").replace("\\r", "\n")
 
 
+def extract_bronchus_sign(note_text: str) -> Optional[bool]:
+    """Extract CT bronchus sign polarity when explicitly documented.
+
+    Returns:
+        True when positive/present, False when negative/absent, None when not documented/indeterminate.
+    """
+    text = _maybe_unescape_newlines(note_text or "")
+    if not text.strip():
+        return None
+
+    # If explicitly "not assessed"/unknown, treat as missing (do not infer).
+    if re.search(
+        r"(?i)\bbronchus\s+sign\b[^.\n]{0,40}\b(?:not\s+assessed|unknown|indeterminate|n/?a)\b",
+        text,
+    ):
+        return None
+
+    candidates: list[tuple[int, bool]] = []
+    patterns: list[tuple[bool, str]] = [
+        # Negative first (also catches "not present")
+        (
+            False,
+            r"\bbronchus\s+sign\b[^.\n]{0,40}\b(?:negative|absent|no|not\s+present)\b",
+        ),
+        (False, r"\b(?:negative|absent|not\s+present)\b[^.\n]{0,20}\bbronchus\s+sign\b"),
+        (False, r"\bno\b[^.\n]{0,20}\bbronchus\s+sign\b"),
+        # Positive
+        (True, r"\bbronchus\s+sign\b[^.\n]{0,40}\b(?:positive|present|yes)\b"),
+        (True, r"\b(?:positive|present)\b[^.\n]{0,20}\bbronchus\s+sign\b"),
+    ]
+
+    for value, pat in patterns:
+        match = re.search(pat, text, re.IGNORECASE)
+        if match:
+            candidates.append((match.start(), value))
+
+    if not candidates:
+        return None
+
+    # Prefer earliest mention; if ties, earlier patterns win (stable sort).
+    candidates.sort(key=lambda x: x[0])
+    return candidates[0][1]
+
+
+def extract_ecog(note_text: str) -> Dict[str, Any]:
+    """Extract ECOG/Zubrod performance status when explicitly documented.
+
+    Returns:
+        Dict with `ecog_score` (int 0-4) OR `ecog_text` (e.g., "0-1") when a range is documented.
+    """
+    text = _maybe_unescape_newlines(note_text or "")
+    if not text.strip():
+        return {}
+
+    pattern = re.compile(
+        r"(?i)\b(?:ECOG|Zubrod)\b(?:\s*performance\s*status|\s*PS)?\s*[:=]?\s*"
+        r"(?P<val>[0-4](?:\s*(?:-|–|/|to)\s*[0-4])?)\b"
+    )
+    match = pattern.search(text)
+    if not match:
+        return {}
+
+    raw_val = (match.group("val") or "").strip()
+    if not raw_val:
+        return {}
+
+    val_norm = raw_val.replace("–", "-")
+    val_norm = re.sub(r"\s+", " ", val_norm).strip()
+    val_norm = re.sub(r"\s*(?:to|/)\s*", "-", val_norm, flags=re.IGNORECASE)
+    val_norm = re.sub(r"\s*-\s*", "-", val_norm)
+
+    if "-" in val_norm:
+        return {"ecog_text": val_norm}
+
+    if val_norm.isdigit():
+        score = int(val_norm)
+        if 0 <= score <= 4:
+            return {"ecog_score": score}
+
+    return {}
+
+
 def extract_disposition(note_text: str) -> Optional[str]:
     """Extract patient disposition from note.
 
@@ -966,6 +1048,9 @@ _PROCEDURE_DETAIL_SECTION_PATTERN = re.compile(
 _SECTION_HEADING_INLINE_RE = re.compile(
     r"(?im)^\s*(?P<header>[A-Za-z][A-Za-z /()_-]{0,80})\s*:\s*(?P<rest>.*)$"
 )
+_SECTION_HEADING_STANDALONE_RE = re.compile(
+    r"(?im)^\s*(?P<header>[A-Z][A-Z0-9 /()_-]{1,80})\s*$"
+)
 _NON_PROCEDURAL_HEADINGS: tuple[str, ...] = (
     "PLAN",
     "IMPRESSION/PLAN",
@@ -1075,6 +1160,19 @@ def _preferred_procedure_detail_text(note_text: str) -> tuple[str, bool]:
         if _is_non_procedural_heading(header):
             stop_at = heading_match.start()
             break
+
+    # Some templates use standalone headings without ":" (e.g., "IMPRESSION / PLAN").
+    for heading_match in _SECTION_HEADING_STANDALONE_RE.finditer(tail):
+        header = _normalize_heading(heading_match.group("header") or "")
+        if not header:
+            continue
+        if not _is_non_procedural_heading(header):
+            continue
+        heading_start = heading_match.start()
+        if stop_at is None or heading_start < stop_at:
+            stop_at = heading_start
+            break
+
     if stop_at is not None and stop_at >= 0:
         tail = tail[:stop_at]
 
@@ -1107,6 +1205,9 @@ def _extract_ln_stations_from_text(note_text: str) -> list[str]:
         r"|site\s+was\s+not\s+sampled"
         r"|without\s+biops"
         r"|no\s+biops(?:y|ies)"
+        r"|did\s+not\s+have\s+any\s+biops(?:y|ies)\s+target"
+        r"|did\s+not\s+have\s+any\s+sampling\s+target"
+        r"|no\s+(?:biops(?:y|ies)|sampling)\s+target"
         r"|biops(?:y|ies)\s+were\s+not\s+taken"
         r"|not\b[^.\n]{0,40}\bperform\b[^.\n]{0,80}\b(?:transbronchial\s+)?(?:sampling|sample|tbna|fna|aspirat|biops)\w*"
         r"|decision\b[^.\n]{0,80}\bnot\b[^.\n]{0,40}\bperform\b[^.\n]{0,80}\b(?:transbronchial\s+)?(?:sampling|sample|tbna|fna|aspirat|biops)\w*"
@@ -1247,50 +1348,72 @@ def extract_therapeutic_aspiration(note_text: str) -> Dict[str, Any]:
         Dict with 'therapeutic_aspiration': {'performed': True, 'material': <str>}
         if therapeutic aspiration detected, empty dict otherwise
     """
-    text_lower = note_text.lower()
+    note_text = _maybe_unescape_newlines(note_text or "")
+    preferred_text, _used_detail = _preferred_procedure_detail_text(note_text)
+    preferred_text = _strip_cpt_definition_lines(preferred_text or note_text)
+    text = preferred_text or ""
+    text_lower = text.lower()
 
     # Check for routine suction first (exclude these)
     for pattern in ROUTINE_SUCTION_PATTERNS:
         if re.search(pattern, text_lower):
             return {}
 
-    for pattern in THERAPEUTIC_ASPIRATION_PATTERNS:
-        match = re.search(pattern, text_lower, re.IGNORECASE)
-        if match:
+    search_texts = [text]
+    if note_text != text:
+        search_texts.append(note_text)
+
+    detail_hint_text = text_lower
+    for candidate_text in search_texts:
+        candidate_lower = candidate_text.lower()
+        for pattern in THERAPEUTIC_ASPIRATION_PATTERNS:
+            match = re.search(pattern, candidate_lower, re.IGNORECASE)
+            if not match:
+                continue
+
             # Check for negation
             negation_check = r"\b(?:no|not|without)\b[^.\n]{0,40}" + pattern
-            if not re.search(negation_check, text_lower, re.IGNORECASE):
-                # Determine material type from a local window around the match
-                window = 250
-                window_start = max(0, match.start() - window)
-                window_end = min(len(text_lower), match.end() + window)
-                local_window = text_lower[window_start:window_end]
+            if re.search(negation_check, candidate_lower, re.IGNORECASE):
+                continue
 
-                material = "Other"
-                if "purulent" in local_window or "pus" in local_window:
+            # Determine material type from a local window around the match
+            window = 250
+            window_start = max(0, match.start() - window)
+            window_end = min(len(candidate_lower), match.end() + window)
+            local_window = candidate_lower[window_start:window_end]
+
+            material = "Other"
+            if "purulent" in local_window or "pus" in local_window:
+                material = "Purulent secretions"
+            elif any(token in local_window for token in ("mucus", "mucous", "plug")):
+                material = "Mucus plug"
+            elif any(token in local_window for token in ("blood", "clot", "bloody", "blood-tinged")):
+                material = "Blood/clot"
+            elif "secretions" in local_window:
+                material = "Mucus plug"
+
+            # If the local window is sparse/header-only, prefer detail-section cues.
+            if material in {"Other", "Blood/clot"}:
+                if "purulent" in detail_hint_text or "pus" in detail_hint_text:
                     material = "Purulent secretions"
-                elif any(token in local_window for token in ("mucus", "mucous", "plug")):
-                    material = "Mucus plug"
-                elif any(token in local_window for token in ("blood", "clot", "bloody", "blood-tinged")):
-                    material = "Blood/clot"
-                elif "secretions" in local_window:
+                elif any(token in detail_hint_text for token in ("mucus", "mucous", "plug", "secretions")):
                     material = "Mucus plug"
 
-                location: str | None = None
-                loc_match = re.search(
-                    r"(?i)\btherapeutic\s+aspiration\b[^.\n]{0,140}\bclean\s+out\b\s+(?:the\s+)?(?P<loc>[^.\n]{3,400}?)\s+\bfrom\b",
-                    note_text,
-                )
-                if loc_match:
-                    candidate = (loc_match.group("loc") or "").strip().strip(" ,;:-")
-                    if candidate:
-                        location = candidate
+            location: str | None = None
+            loc_match = re.search(
+                r"(?i)\btherapeutic\s+aspiration\b[^.\n]{0,140}\bclean\s+out\b\s+(?:the\s+)?(?P<loc>[^.\n]{3,400}?)\s+\bfrom\b",
+                candidate_text,
+            )
+            if loc_match:
+                candidate = (loc_match.group("loc") or "").strip().strip(" ,;:-")
+                if candidate:
+                    location = candidate
 
-                result = {"therapeutic_aspiration": {"performed": True}}
-                result["therapeutic_aspiration"]["material"] = material
-                if location:
-                    result["therapeutic_aspiration"]["location"] = location
-                return result
+            result = {"therapeutic_aspiration": {"performed": True}}
+            result["therapeutic_aspiration"]["material"] = material
+            if location:
+                result["therapeutic_aspiration"]["location"] = location
+            return result
     return {}
 
 
@@ -1918,7 +2041,26 @@ def extract_radial_ebus(note_text: str) -> Dict[str, Any]:
             negation_check = r"\b(?:no|not|without|declined|deferred)\b[^.\n]{0,60}" + pattern
             if re.search(negation_check, text_lower, re.IGNORECASE):
                 continue
-            return {"radial_ebus": {"performed": True}}
+            proc: dict[str, Any] = {"performed": True}
+
+            # Probe position/view (explicit-only; do not infer from tool lists).
+            view_match = re.search(
+                r"(?i)\b(?:radial\s+ebus|r-?ebus|rebus)\b[^.\n]{0,240}\b"
+                r"(concentric|eccentric|adjacent|not\s+visualized|no\s+view|absent|aerated\s+lung)\b",
+                note_text or "",
+            )
+            if view_match:
+                raw_view = (view_match.group(1) or "").strip().lower()
+                if "concentric" in raw_view:
+                    proc["probe_position"] = "Concentric"
+                elif "eccentric" in raw_view:
+                    proc["probe_position"] = "Eccentric"
+                elif "adjacent" in raw_view:
+                    proc["probe_position"] = "Adjacent"
+                elif raw_view:
+                    proc["probe_position"] = "Not visualized"
+
+            return {"radial_ebus": proc}
     return {}
 
 
@@ -1943,9 +2085,21 @@ def extract_cryotherapy(note_text: str) -> Dict[str, Any]:
         preferred_text = _strip_cpt_definition_lines(preferred_text)
     text_lower = preferred_text.lower()
     for pattern in CRYOTHERAPY_PATTERNS:
-        if re.search(pattern, text_lower, re.IGNORECASE):
+        for match in re.finditer(pattern, text_lower, re.IGNORECASE):
             negation_check = r"\b(?:no|not|without|declined|deferred)\b[^.\n]{0,60}" + pattern
             if re.search(negation_check, text_lower, re.IGNORECASE):
+                continue
+            # Guardrail: avoid future/planned recommendation language.
+            prefix = text_lower[max(0, match.start() - 100) : match.start()]
+            suffix = text_lower[match.end() : min(len(text_lower), match.end() + 100)]
+            planning_context = bool(
+                re.search(
+                    r"(?i)\b(?:consider(?:ed|ation)?|recommend(?:ed|ation)?|plan(?:ned)?|future|next)\b",
+                    prefix,
+                )
+                or re.search(r"(?i)\b(?:at\s+next\s+intervention|if\s+needed)\b", suffix)
+            )
+            if planning_context:
                 continue
             return {"cryotherapy": {"performed": True}}
 
@@ -2321,7 +2475,62 @@ def extract_transbronchial_biopsy(note_text: str) -> Dict[str, Any]:
                 if re.search(r"(?i)\bendobronchial\s+ultrasound\b[^.\n]{0,120}\bbiops", local):
                     continue
 
-            return {"transbronchial_biopsy": {"performed": True}}
+            proc: dict[str, Any] = {"performed": True}
+
+            detail_window = raw_text[max(0, match.start() - 260) : min(len(raw_text), match.end() + 420)]
+
+            # Best-effort location list extraction for TBBx blocks.
+            locations: list[str] = []
+            loc_match = re.search(
+                r"(?i)\btransbronchial\s+(?:lung\s+)?biops(?:y|ies)\b[^.\n]{0,320}\bat\s+(?P<locs>[^.\n]{4,500})",
+                raw_text,
+            )
+            if loc_match:
+                locs_text = (loc_match.group("locs") or "").strip()
+                locs_text = re.sub(r"(?i)\btotal\s+\d{1,3}\s+samples?\b.*$", "", locs_text).strip(" ,;:-")
+                for part in re.split(r"(?i)\s*,\s*|\s+\band\b\s+", locs_text):
+                    candidate = re.sub(r"\s+", " ", part.strip(" ,;:-"))
+                    if not candidate:
+                        continue
+                    if re.search(
+                        r"(?i)\b(?:segment|subsegment|rb\d{1,2}|lb\d{1,2}|lobe|bronch(?:us|i|ial)|mainstem|trachea|carina|lingula)\b",
+                        candidate,
+                    ):
+                        if candidate not in locations:
+                            locations.append(candidate)
+
+            if not locations:
+                for lobe in _extract_lung_locations_from_text(detail_window):
+                    if lobe and lobe not in locations:
+                        locations.append(lobe)
+
+            if locations:
+                proc["locations"] = locations
+
+            # Explicit sample count (when documented).
+            sample_match = re.search(
+                r"(?i)\btotal\s+(?P<n>\d{1,3})\s+samples?\s+(?:were\s+)?collected\b",
+                raw_text,
+            )
+            if not sample_match:
+                sample_match = re.search(
+                    r"(?i)\b(?P<n>\d{1,3})\s+samples?\s+(?:were\s+)?collected\b",
+                    raw_text,
+                )
+            if sample_match:
+                try:
+                    proc["number_of_samples"] = int(sample_match.group("n"))
+                except Exception:
+                    pass
+
+            # Forceps family (cryo handled separately by cryobiopsy extractor).
+            if not cryo_context_re.search(detail_window):
+                if re.search(r"(?i)\balligator\s+forceps\b", detail_window):
+                    proc["forceps_type"] = "Standard"
+                elif re.search(r"(?i)\bforceps\b", detail_window):
+                    proc["forceps_type"] = "Standard"
+
+            return {"transbronchial_biopsy": proc}
 
     return {}
 
@@ -2984,6 +3193,15 @@ def run_deterministic_extractors(note_text: str) -> Dict[str, Any]:
     if indication:
         seed_data["primary_indication"] = indication
 
+    # Clinical context (explicit-only fields)
+    bronchus_sign = extract_bronchus_sign(note_text)
+    if bronchus_sign is not None:
+        seed_data["bronchus_sign"] = bronchus_sign
+
+    ecog = extract_ecog(note_text)
+    if ecog:
+        seed_data.update(ecog)
+
     # Disposition
     disposition = extract_disposition(note_text)
     if disposition:
@@ -3280,6 +3498,8 @@ __all__ = [
     "extract_sedation_airway",
     "extract_institution_name",
     "extract_primary_indication",
+    "extract_bronchus_sign",
+    "extract_ecog",
     "extract_disposition",
     "extract_follow_up_plan_text",
     "extract_procedure_completed",

@@ -469,6 +469,37 @@ def _dilation_in_distinct_lobe_from_destruction(record: RegistryRecord) -> bool:
     return bool(dilation_lobes - destruction_lobes)
 
 
+def _eus_b_has_sampling(record: RegistryRecord, eus_proc: Any) -> bool:
+    """Return True when EUS-B sampling/FNA is supported by structured fields or evidence."""
+    sites = _get(eus_proc, "sites_sampled")
+    if isinstance(sites, (list, tuple)):
+        if any(str(site).strip() for site in sites):
+            return True
+
+    passes = _get(eus_proc, "passes")
+    if isinstance(passes, (int, float)) and int(passes) > 0:
+        return True
+
+    evidence_text = _evidence_text_for_prefixes(record, ("procedures_performed.eus_b",))
+    if not evidence_text:
+        return False
+
+    has_sampling = bool(
+        re.search(
+            r"(?i)\b(?:fna|tbna|sampled|sampling|needle\s+aspirat(?:ion|ed)?|aspirat(?:ed|ion)|biops(?:y|ies|ied)|passes?)\b",
+            evidence_text,
+        )
+    )
+    has_inspection_only = bool(
+        re.search(
+            r"(?i)\b(?:inspection\s+only|identified|visualized|evaluated|inspected)\b",
+            evidence_text,
+        )
+        and not re.search(r"(?i)\b(?:sampled|sampling|fna|tbna|biops|aspirat)\b", evidence_text)
+    )
+    return has_sampling and not has_inspection_only
+
+
 def derive_all_codes_with_meta(
     record: RegistryRecord,
 ) -> tuple[list[str], dict[str, str], list[str]]:
@@ -1136,9 +1167,14 @@ def derive_all_codes_with_meta(
         rationales["76604"] = "chest_ultrasound.performed=true"
 
     # EUS-B (endoscopic ultrasound via bronchoscope)
-    if _performed(_proc(record, "eus_b")):
-        codes.append("43238")
-        rationales["43238"] = "eus_b.performed=true"
+    eus_b = _proc(record, "eus_b")
+    if _performed(eus_b):
+        if _eus_b_has_sampling(record, eus_b):
+            codes.append("43238")
+            rationales["43238"] = "eus_b.performed=true with sampling/FNA evidence"
+        else:
+            codes.append("43237")
+            rationales["43237"] = "eus_b.performed=true without sampling/FNA evidence (inspection only)"
 
     # --- Pleural family ---
     ipc = _pleural(record, "ipc")

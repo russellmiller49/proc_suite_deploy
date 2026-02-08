@@ -1013,7 +1013,16 @@ class RegistryService:
                     )
                     seed_has_context = False
                     if isinstance(seed, dict):
-                        for key in ("primary_indication", "sedation_type", "patient_age", "gender", "airway_type"):
+                        for key in (
+                            "primary_indication",
+                            "sedation_type",
+                            "patient_age",
+                            "gender",
+                            "airway_type",
+                            "bronchus_sign",
+                            "ecog_score",
+                            "ecog_text",
+                        ):
                             val = seed.get(key)
                             if val not in (None, "", [], {}):
                                 seed_has_context = True
@@ -1081,7 +1090,10 @@ class RegistryService:
                         def _add_first_span_skip_cpt_headers(field: str, patterns: list[str]) -> None:
                             cpt_line = re.compile(r"^\s*\d{5}\b")
                             offset = 0
-                            for raw_line in (masked_note_text or "").splitlines(keepends=True):
+                            # Use the offset-preserving seed text so we can attach evidence from
+                            # non-procedural sections (e.g., INDICATION) while still skipping
+                            # obvious CPT-definition lines.
+                            for raw_line in (seed_text or masked_note_text or "").splitlines(keepends=True):
                                 line = raw_line.rstrip("\r\n")
                                 if cpt_line.match(line):
                                     offset += len(raw_line)
@@ -1189,13 +1201,52 @@ class RegistryService:
                             # ASA class: avoid applying default=3 when ASA not explicitly documented.
                             asa_val = seed_data.get("asa_class")
                             if asa_val is not None and clinical.get("asa_class") is None:
-                                if re.search(r"(?i)\bASA\b", masked_note_text or ""):
+                                if re.search(r"(?i)\bASA\b", seed_text or ""):
                                     clinical["asa_class"] = asa_val
                                     clinical_changed = True
                                     _add_first_span_skip_cpt_headers(
                                         "clinical_context.asa_class",
                                         [r"\bASA(?:\s+Classification)?[\s:]+[IViv123456]+(?:-E)?\b"],
                                     )
+
+                            # Bronchus sign: explicit-only (do not infer).
+                            bronchus_sign = seed_data.get("bronchus_sign")
+                            existing_bronchus_sign = clinical.get("bronchus_sign")
+                            if bronchus_sign is not None and existing_bronchus_sign in (None, "", "Not assessed"):
+                                if re.search(r"(?i)\bbronchus\s+sign\b", seed_text or ""):
+                                    clinical["bronchus_sign"] = bronchus_sign
+                                    clinical_changed = True
+                                    _add_first_span_skip_cpt_headers(
+                                        "clinical_context.bronchus_sign",
+                                        [
+                                            r"\bbronchus\s+sign\b[^.\n]{0,40}\b(?:positive|negative|present|absent|no|yes|not\s+present)\b",
+                                            r"\b(?:positive|negative)\b[^.\n]{0,20}\bbronchus\s+sign\b",
+                                        ],
+                                    )
+
+                            # ECOG/Zubrod performance status: explicit-only.
+                            ecog_score = seed_data.get("ecog_score")
+                            ecog_text = seed_data.get("ecog_text")
+                            if (
+                                (ecog_score is not None or ecog_text)
+                                and clinical.get("ecog_score") is None
+                                and not clinical.get("ecog_text")
+                            ):
+                                if re.search(r"(?i)\b(?:ECOG|Zubrod)\b", seed_text or ""):
+                                    if ecog_score is not None:
+                                        clinical["ecog_score"] = ecog_score
+                                        clinical_changed = True
+                                        _add_first_span_skip_cpt_headers(
+                                            "clinical_context.ecog_score",
+                                            [r"\b(?:ECOG|Zubrod)\b[^.\n]{0,40}\b[0-4]\b"],
+                                        )
+                                    elif isinstance(ecog_text, str) and ecog_text.strip():
+                                        clinical["ecog_text"] = ecog_text.strip()
+                                        clinical_changed = True
+                                        _add_first_span_skip_cpt_headers(
+                                            "clinical_context.ecog_text",
+                                            [r"\b(?:ECOG|Zubrod)\b[^.\n]{0,80}\b[0-4]\s*(?:-|–|/|to)\s*[0-4]\b"],
+                                        )
 
                             if clinical_changed:
                                 record_data["clinical_context"] = clinical
@@ -1586,6 +1637,21 @@ class RegistryService:
                                                     existing["action_type"] = normalized_action_type
                                                 proc_changed = True
                                                 continue
+
+                                    if proc_name == "radial_ebus" and key == "probe_position":
+                                        if existing.get(key) in (None, "", [], {}):
+                                            existing[key] = value
+                                            proc_changed = True
+                                            _add_first_span_skip_cpt_headers(
+                                                "procedures_performed.radial_ebus.probe_position",
+                                                [
+                                                    r"\b(?:radial\s+ebus|r-?ebus|rebus)\b[^.\n]{0,240}\bconcentric\b",
+                                                    r"\b(?:radial\s+ebus|r-?ebus|rebus)\b[^.\n]{0,240}\beccentric\b",
+                                                    r"\b(?:radial\s+ebus|r-?ebus|rebus)\b[^.\n]{0,240}\badjacent\b",
+                                                    r"\b(?:radial\s+ebus|r-?ebus|rebus)\b[^.\n]{0,240}\b(?:not\s+visualized|no\s+view|absent|aerated\s+lung)\b",
+                                                ],
+                                            )
+                                        continue
 
                                     if existing.get(key) in (None, "", [], {}):
                                         existing[key] = value
@@ -2019,11 +2085,49 @@ class RegistryService:
             if granular is None or not isinstance(granular, dict):
                 granular = {}
 
+            evidence = record_data.get("evidence")
+            if not isinstance(evidence, dict):
+                evidence = {}
+                record_data["evidence"] = evidence
+
             targets_raw = granular.get("navigation_targets")
             if isinstance(targets_raw, list):
                 targets = [dict(t) for t in targets_raw if isinstance(t, dict)]
             else:
                 targets = []
+
+            def _add_nav_evidence(idx: int, field: str, ev: object) -> None:
+                nonlocal updated
+                if not isinstance(idx, int) or idx < 0:
+                    return
+                if not isinstance(field, str) or not field:
+                    return
+                if not isinstance(ev, dict):
+                    return
+                start = ev.get("start")
+                end = ev.get("end")
+                text_snippet = ev.get("text")
+                if start is None or end is None or not text_snippet:
+                    return
+                try:
+                    start_i = int(start)
+                    end_i = int(end)
+                except Exception:
+                    return
+                if start_i < 0 or end_i <= start_i:
+                    return
+                key = f"granular_data.navigation_targets.{idx}.{field}"
+                if evidence.get(key):
+                    return
+                try:
+                    from app.common.spans import Span
+
+                    evidence.setdefault(key, []).append(
+                        Span(text=str(text_snippet), start=start_i, end=end_i, confidence=0.9)
+                    )
+                    updated = True
+                except Exception:
+                    return
 
             def _is_placeholder_location(value: object) -> bool:
                 if value is None:
@@ -2101,12 +2205,19 @@ class RegistryService:
                     base = targets[idx] if idx < len(targets) else {}
                     parsed = parsed_targets[idx] if idx < len(parsed_targets) else {}
                     out = dict(base)
+                    parsed_evidence = (
+                        parsed.get("_evidence")
+                        if isinstance(parsed, dict) and isinstance(parsed.get("_evidence"), dict)
+                        else None
+                    )
 
                     # Always normalize target_number to 1..N for consistency.
                     out["target_number"] = idx + 1
 
                     for key, value in parsed.items():
                         if value in (None, "", [], {}):
+                            continue
+                        if key == "_evidence":
                             continue
                         if key == "target_location_text":
                             if _is_placeholder_location(out.get(key)) or _is_more_specific_location(
@@ -2123,6 +2234,8 @@ class RegistryService:
                         if out.get(key) in (None, "", [], {}):
                             out[key] = value
                             updated = True
+                            if parsed_evidence and key in parsed_evidence:
+                                _add_nav_evidence(idx, key, parsed_evidence.get(key))
 
                     merged.append(out)
 
@@ -2149,6 +2262,100 @@ class RegistryService:
                 updated = True
 
             granular["navigation_targets"] = targets
+
+            # Tier 2 roll-up: tool-in-lesion confirmation summary (procedure-level).
+            # Prefer explicit per-target evidence; do not infer from equipment lists.
+            try:
+                procedures = record_data.get("procedures_performed")
+                if not isinstance(procedures, dict):
+                    procedures = {}
+                    record_data["procedures_performed"] = procedures
+
+                nav_proc = procedures.get("navigational_bronchoscopy")
+                if nav_proc is None or not isinstance(nav_proc, dict):
+                    nav_proc = {}
+                    procedures["navigational_bronchoscopy"] = nav_proc
+
+                def _copy_first_span(src_key: str, dest_key: str) -> bool:
+                    if evidence.get(dest_key):
+                        return False
+                    spans = evidence.get(src_key)
+                    if not isinstance(spans, list) or not spans:
+                        return False
+                    evidence[dest_key] = [spans[0]]
+                    return True
+
+                # tool_in_lesion_confirmed: set only when explicitly extracted per-target.
+                if nav_proc.get("tool_in_lesion_confirmed") not in (True, False):
+                    chosen_idx: int | None = None
+                    chosen_value: bool | None = None
+
+                    for idx, item in enumerate(targets):
+                        if not isinstance(item, dict):
+                            continue
+                        if item.get("tool_in_lesion_confirmed") is True and evidence.get(
+                            f"granular_data.navigation_targets.{idx}.tool_in_lesion_confirmed"
+                        ):
+                            chosen_idx = idx
+                            chosen_value = True
+                            break
+
+                    if chosen_value is None:
+                        false_indices: list[int] = []
+                        for idx, item in enumerate(targets):
+                            if not isinstance(item, dict):
+                                continue
+                            if item.get("tool_in_lesion_confirmed") is False and evidence.get(
+                                f"granular_data.navigation_targets.{idx}.tool_in_lesion_confirmed"
+                            ):
+                                false_indices.append(idx)
+
+                        if false_indices:
+                            any_true = any(
+                                isinstance(item, dict) and item.get("tool_in_lesion_confirmed") is True for item in targets
+                            )
+                            if not any_true:
+                                chosen_idx = false_indices[0]
+                                chosen_value = False
+
+                    if chosen_idx is not None and chosen_value is not None:
+                        nav_proc["tool_in_lesion_confirmed"] = chosen_value
+                        if _copy_first_span(
+                            f"granular_data.navigation_targets.{chosen_idx}.tool_in_lesion_confirmed",
+                            "procedures_performed.navigational_bronchoscopy.tool_in_lesion_confirmed",
+                        ):
+                            updated = True
+                        updated = True
+
+                # confirmation_method: only when tool-in-lesion is confirmed true.
+                if (
+                    nav_proc.get("tool_in_lesion_confirmed") is True
+                    and nav_proc.get("confirmation_method") in (None, "", [], {})
+                ):
+                    for idx, item in enumerate(targets):
+                        if not isinstance(item, dict):
+                            continue
+                        method = item.get("confirmation_method")
+                        if not method:
+                            continue
+                        if not evidence.get(f"granular_data.navigation_targets.{idx}.confirmation_method"):
+                            continue
+
+                        method_norm = str(method)
+                        # Enum mismatch between granular per-target vs procedure-level schema.
+                        if method_norm == "Augmented fluoroscopy":
+                            method_norm = "Augmented Fluoroscopy"
+
+                        nav_proc["confirmation_method"] = method_norm
+                        if _copy_first_span(
+                            f"granular_data.navigation_targets.{idx}.confirmation_method",
+                            "procedures_performed.navigational_bronchoscopy.confirmation_method",
+                        ):
+                            updated = True
+                        updated = True
+                        break
+            except Exception:
+                pass
 
             # Cryobiopsy sites: populate granular per-site detail when target sections include cryobiopsy.
             existing_sites = granular.get("cryobiopsy_sites")
@@ -2183,10 +2390,47 @@ class RegistryService:
             if not parsed:
                 return record_in, []
 
+            evidence_by_station: dict[str, dict[str, dict[str, Any]]] = {}
+            for item in parsed:
+                if not isinstance(item, dict):
+                    continue
+                station = str(item.get("station") or "").strip()
+                if not station:
+                    continue
+
+                for field, meta_key in (
+                    ("lymphocytes_present", "_lymphocytes_present_evidence"),
+                    ("needle_gauge", "_needle_gauge_evidence"),
+                    ("number_of_passes", "_number_of_passes_evidence"),
+                    ("short_axis_mm", "_short_axis_mm_evidence"),
+                    ("long_axis_mm", "_long_axis_mm_evidence"),
+                ):
+                    ev = item.get(meta_key)
+                    if not isinstance(ev, dict):
+                        continue
+                    start = ev.get("start")
+                    end = ev.get("end")
+                    snippet = ev.get("text")
+                    if start is None or end is None or not snippet:
+                        continue
+                    try:
+                        evidence_by_station.setdefault(station, {})[field] = {
+                            "start": int(start),
+                            "end": int(end),
+                            "text": str(snippet),
+                        }
+                    except Exception:
+                        continue
+
             record_data = record_in.model_dump()
             granular = record_data.get("granular_data")
             if granular is None or not isinstance(granular, dict):
                 granular = {}
+
+            evidence = record_data.get("evidence")
+            if not isinstance(evidence, dict):
+                evidence = {}
+                record_data["evidence"] = evidence
 
             existing_raw = granular.get("linear_ebus_stations_detail")
             existing: list[dict[str, Any]] = []
@@ -2229,6 +2473,59 @@ class RegistryService:
                     by_station[station] = existing_item
 
             merged = [by_station[s] for s in order if s in by_station]
+
+            # Evidence spans: ensure UI-highlightable support for EBUS station detail values.
+            try:
+                from app.common.spans import Span
+
+                for idx, item in enumerate(merged):
+                    if not isinstance(item, dict):
+                        continue
+                    station = str(item.get("station") or "").strip()
+                    if not station:
+                        continue
+
+                    station_evidence = evidence_by_station.get(station) or {}
+
+                    def _add_field_evidence(field: str) -> None:
+                        ev = station_evidence.get(field)
+                        if not ev:
+                            return
+                        key = f"granular_data.linear_ebus_stations_detail.{idx}.{field}"
+                        if evidence.get(key):
+                            return
+                        evidence.setdefault(key, []).append(
+                            Span(
+                                text=str(ev.get("text") or ""),
+                                start=int(ev.get("start") or 0),
+                                end=int(ev.get("end") or 0),
+                                confidence=0.9,
+                            )
+                        )
+
+                    lymph = item.get("lymphocytes_present")
+                    if lymph in (True, False):
+                        _add_field_evidence("lymphocytes_present")
+
+                    gauge = item.get("needle_gauge")
+                    if isinstance(gauge, int):
+                        _add_field_evidence("needle_gauge")
+
+                    passes = item.get("number_of_passes")
+                    if isinstance(passes, int):
+                        _add_field_evidence("number_of_passes")
+
+                    short_axis = item.get("short_axis_mm")
+                    if isinstance(short_axis, (int, float)):
+                        _add_field_evidence("short_axis_mm")
+
+                    long_axis = item.get("long_axis_mm")
+                    if isinstance(long_axis, (int, float)):
+                        _add_field_evidence("long_axis_mm")
+            except Exception:
+                # Evidence is best-effort; do not fail extraction.
+                pass
+
             granular["linear_ebus_stations_detail"] = merged
 
             record_data["granular_data"] = granular

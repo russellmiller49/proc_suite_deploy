@@ -33,6 +33,10 @@ const phiConfirmModalEl = document.getElementById("phiConfirmModal");
 const registryGridRootEl = document.getElementById("registryGridRoot");
 const registryLegacyRootEl = document.getElementById("registryLegacyRoot");
 const registryLegacyRightRootEl = document.getElementById("registryLegacyRightRoot");
+const completenessPromptsCardEl = document.getElementById("completenessPromptsCard");
+const completenessPromptsBodyEl = document.getElementById("completenessPromptsBody");
+const completenessCopyBtn = document.getElementById("completenessCopyBtn");
+const completenessOpenReporterBtn = document.getElementById("completenessOpenReporterBtn");
 const focusClinicalBtn = document.getElementById("focusClinicalBtn");
 const focusBillingBtn = document.getElementById("focusBillingBtn");
 const splitReviewBtn = document.getElementById("splitReviewBtn");
@@ -53,6 +57,10 @@ let activeFieldFeedbackContext = null;
 let registryGridMonacoGetter = () => null;
 let registryGridMounted = false;
 let registryGridLoadPromise = null;
+let lastCompletenessPrompts = [];
+let completenessEdits = null; // {edited_patch, edited_fields} generated from completeness inputs
+let completenessRawValueByPath = new Map(); // key: effective dotted path (with indices), value: raw string
+let completenessSelectedIndexByPromptPath = new Map(); // key: prompt.path (with [*]), value: selected index (number)
 
 const TESTER_MODE = new URLSearchParams(location.search).get("tester") === "1";
 if (TESTER_MODE && feedbackPanelEl) feedbackPanelEl.open = true;
@@ -138,6 +146,7 @@ const UI_REVIEW_FOCUS_LS_KEY = "ui.reviewFocus";
 const UI_REVIEW_SPLIT_LS_KEY = "ui.reviewSplit";
 const UI_DETECTIONS_COLLAPSED_LS_KEY = "ui.detectionsCollapsed";
 const REPORTER_DASHBOARD_TRANSFER_KEY = "ps.reporter_to_dashboard_note_v1";
+const DASHBOARD_REPORTER_TRANSFER_KEY = "ps.dashboard_to_reporter_note_v1";
 
 function safeGetLocalStorageItem(key) {
   try {
@@ -160,6 +169,16 @@ function safeGetSessionStorageItem(key) {
     return sessionStorage.getItem(key);
   } catch {
     return null;
+  }
+}
+
+function safeSetStorageItem(storage, key, value) {
+  if (!storage || typeof storage.setItem !== "function") return false;
+  try {
+    storage.setItem(key, value);
+    return true;
+  } catch {
+    return false;
   }
 }
 
@@ -1200,6 +1219,9 @@ function resetEditedState() {
   editedPayload = null;
   editedDirty = false;
   registryGridEdits = null;
+  completenessEdits = null;
+  completenessRawValueByPath = new Map();
+  completenessSelectedIndexByPromptPath = new Map();
   fieldFeedbackStore = new Map();
   activeFieldFeedbackContext = null;
   if (editedResponseEl) editedResponseEl.textContent = "(no edits yet)";
@@ -1269,6 +1291,7 @@ function renderDashboard(data) {
   renderFinancialSummary(data);
   renderAuditFlags(data);
   renderPipelineMetadata(data);
+  renderCompletenessPrompts(data);
 
   renderClinicalContextTable(data);
   renderProceduresSummaryTable(data);
@@ -1279,6 +1302,586 @@ function renderDashboard(data) {
   renderEvidenceTraceability(data);
 
   renderDebugLogs(data);
+}
+
+function severityRank(severity) {
+  const s = String(severity || "").toLowerCase();
+  if (s === "required") return 0;
+  return 1;
+}
+
+function buildCompletenessChecklistText(prompts) {
+  const list = Array.isArray(prompts) ? prompts : [];
+  if (list.length === 0) return "";
+
+  const grouped = new Map();
+  list.forEach((p) => {
+    const group = String(p?.group || "Other").trim() || "Other";
+    if (!grouped.has(group)) grouped.set(group, []);
+    grouped.get(group).push(p);
+  });
+
+  const order = [];
+  if (grouped.has("Global")) order.push(["Global", grouped.get("Global")]);
+  grouped.forEach((items, group) => {
+    if (group === "Global") return;
+    order.push([group, items]);
+  });
+
+  const lines = [];
+  order.forEach(([group, items]) => {
+    lines.push(`${group}:`);
+    const sorted = items
+      .map((p, idx) => ({ p, idx }))
+      .sort((a, b) => {
+        const rank = severityRank(a.p?.severity) - severityRank(b.p?.severity);
+        return rank !== 0 ? rank : a.idx - b.idx;
+      })
+      .map(({ p }) => p);
+    sorted.forEach((p) => {
+      const sev = String(p?.severity || "recommended").toLowerCase() === "required" ? "Required" : "Recommended";
+      const label = String(p?.label || "").trim() || String(p?.path || "").trim() || "Missing field";
+      const msg = String(p?.message || "").trim();
+      const suffix = msg ? `: ${msg}` : "";
+      lines.push(`- [${sev}] ${label}${suffix}`);
+    });
+    lines.push("");
+  });
+
+  return lines.join("\n").trim();
+}
+
+async function copyToClipboard(text) {
+  const payload = String(text || "");
+  if (!payload.trim()) return false;
+
+  if (navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
+    try {
+      await navigator.clipboard.writeText(payload);
+      return true;
+    } catch {
+      // fall back
+    }
+  }
+
+  try {
+    const ta = document.createElement("textarea");
+    ta.value = payload;
+    ta.setAttribute("readonly", "");
+    ta.style.position = "fixed";
+    ta.style.top = "-1000px";
+    ta.style.left = "-1000px";
+    document.body.appendChild(ta);
+    ta.select();
+    const ok = document.execCommand("copy");
+    document.body.removeChild(ta);
+    return ok;
+  } catch {
+    return false;
+  }
+}
+
+function encodeJsonPointerSegment(seg) {
+  return String(seg || "").replace(/~/g, "~0").replace(/\//g, "~1");
+}
+
+function registryDottedPathToPointer(path) {
+  const dotted = String(path || "").trim();
+  if (!dotted) return "";
+  const parts = dotted.split(".").filter(Boolean);
+  const segments = [];
+
+  parts.forEach((part) => {
+    const token = String(part || "");
+    // Match "foo[0]" -> ["foo", "0"]
+    const match = token.match(/^([^\[]+?)(?:\[(\d+)\])?$/);
+    if (!match) {
+      segments.push(token);
+      return;
+    }
+    const key = match[1];
+    const idx = match[2];
+    if (key) segments.push(key);
+    if (idx !== undefined) segments.push(idx);
+  });
+
+  return `/registry/${segments.map(encodeJsonPointerSegment).join("/")}`;
+}
+
+function getWildcardItemsForPrompt(registry, promptPath) {
+  const path = String(promptPath || "");
+  if (path.startsWith("granular_data.navigation_targets[*].")) {
+    const list = registry?.granular_data?.navigation_targets;
+    return Array.isArray(list) ? list : [];
+  }
+  if (path.startsWith("granular_data.linear_ebus_stations_detail[*].")) {
+    const list = registry?.granular_data?.linear_ebus_stations_detail;
+    return Array.isArray(list) ? list : [];
+  }
+  return [];
+}
+
+function describeWildcardItemForPrompt(promptPath, item, idx) {
+  const path = String(promptPath || "");
+  if (path.startsWith("granular_data.navigation_targets[*].")) {
+    const number = Number.isFinite(item?.target_number) ? item.target_number : idx + 1;
+    const loc = String(item?.target_location_text || "").trim();
+    return loc ? `Target ${number} — ${loc}` : `Target ${number}`;
+  }
+  if (path.startsWith("granular_data.linear_ebus_stations_detail[*].")) {
+    const station = String(item?.station || "").trim();
+    return station ? `Station ${station}` : `Station #${idx + 1}`;
+  }
+  return `Item #${idx + 1}`;
+}
+
+function resolvePromptPath(registry, promptPath) {
+  const base = String(promptPath || "").trim();
+  if (!base.includes("[*]")) return { effectivePath: base, hasWildcard: false, wildcardCount: 0 };
+
+  const items = getWildcardItemsForPrompt(registry, base);
+  const count = items.length;
+  if (count <= 1) {
+    completenessSelectedIndexByPromptPath.set(base, 0);
+    return { effectivePath: base.replaceAll("[*]", "[0]"), hasWildcard: true, wildcardCount: count };
+  }
+
+  const existing = completenessSelectedIndexByPromptPath.get(base);
+  const idx = Number.isInteger(existing) && existing >= 0 && existing < count ? existing : 0;
+  completenessSelectedIndexByPromptPath.set(base, idx);
+  return { effectivePath: base.replaceAll("[*]", `[${idx}]`), hasWildcard: true, wildcardCount: count };
+}
+
+function getCompletenessInputSpec(promptPath) {
+  const map = {
+    "patient_demographics.age_years": { type: "integer", placeholder: "e.g., 67" },
+    "clinical_context.asa_class": { type: "integer", placeholder: "1–6" },
+    "clinical_context.ecog_score": { type: "ecog", placeholder: "0–4 or 0–1" },
+    "clinical_context.bronchus_sign": {
+      type: "enum",
+      options: ["Positive", "Negative", "Not assessed"],
+    },
+    "complications.bleeding.bleeding_grade_nashville": { type: "integer", placeholder: "0–4" },
+    "complications.pneumothorax.intervention": {
+      type: "multiselect",
+      options: ["Observation", "Aspiration", "Pigtail catheter", "Chest tube", "Heimlich valve", "Surgery"],
+    },
+    "procedures_performed.radial_ebus.probe_position": {
+      type: "enum",
+      options: ["Concentric", "Eccentric", "Adjacent", "Not visualized"],
+    },
+    "procedures_performed.navigational_bronchoscopy.tool_in_lesion_confirmed": { type: "boolean" },
+    "procedures_performed.navigational_bronchoscopy.confirmation_method": {
+      type: "enum",
+      options: ["Radial EBUS", "CBCT", "Fluoroscopy", "Augmented Fluoroscopy", "None"],
+    },
+    "procedures_performed.navigational_bronchoscopy.divergence_mm": { type: "number", placeholder: "mm" },
+    "granular_data.navigation_targets[*].target_location_text": { type: "string", placeholder: "e.g., RUL apical" },
+    "granular_data.navigation_targets[*].lesion_size_mm": { type: "number", placeholder: "mm" },
+    "granular_data.navigation_targets[*].ct_characteristics": {
+      type: "enum",
+      options: ["Solid", "Part-solid", "Ground-glass", "Cavitary", "Calcified"],
+    },
+    "granular_data.navigation_targets[*].distance_from_pleura_mm": { type: "number", placeholder: "mm" },
+    "granular_data.navigation_targets[*].air_bronchogram_present": { type: "boolean" },
+    "granular_data.navigation_targets[*].pet_suv_max": { type: "number", placeholder: "e.g., 4.2" },
+    "granular_data.navigation_targets[*].registration_error_mm": { type: "number", placeholder: "mm" },
+    "granular_data.navigation_targets[*].tool_in_lesion_confirmed": { type: "boolean" },
+    "granular_data.navigation_targets[*].confirmation_method": {
+      type: "enum",
+      options: ["CBCT", "Augmented fluoroscopy", "Fluoroscopy", "Radial EBUS", "None"],
+    },
+    "granular_data.linear_ebus_stations_detail[*].needle_gauge": {
+      type: "enum",
+      options: [19, 21, 22, 25],
+    },
+    "granular_data.linear_ebus_stations_detail[*].number_of_passes": { type: "integer", placeholder: "passes" },
+    "granular_data.linear_ebus_stations_detail[*].short_axis_mm": { type: "number", placeholder: "mm" },
+    "granular_data.linear_ebus_stations_detail[*].lymphocytes_present": { type: "boolean" },
+
+    // Pleural / chest ultrasound
+    "pleural_procedures.chest_ultrasound.hemithorax": {
+      type: "enum",
+      options: ["Right", "Left", "Bilateral"],
+    },
+    "pleural_procedures.chest_ultrasound.image_documentation": { type: "boolean" },
+    "pleural_procedures.chest_ultrasound.effusion_volume": {
+      type: "enum",
+      options: ["None", "Minimal", "Small", "Moderate", "Large"],
+    },
+    "pleural_procedures.chest_ultrasound.effusion_echogenicity": {
+      type: "enum",
+      options: ["Anechoic", "Hypoechoic", "Isoechoic", "Hyperechoic"],
+    },
+    "pleural_procedures.chest_ultrasound.effusion_loculations": {
+      type: "enum",
+      options: ["None", "Thin", "Thick"],
+    },
+    "pleural_procedures.chest_ultrasound.diaphragmatic_motion": {
+      type: "enum",
+      options: ["Normal", "Diminished", "Absent"],
+    },
+    "pleural_procedures.chest_ultrasound.lung_sliding_pre": {
+      type: "enum",
+      options: ["Present", "Absent"],
+    },
+    "pleural_procedures.chest_ultrasound.lung_sliding_post": {
+      type: "enum",
+      options: ["Present", "Absent"],
+    },
+    "pleural_procedures.chest_ultrasound.lung_consolidation_present": { type: "boolean" },
+    "pleural_procedures.chest_ultrasound.pleura_characteristics": {
+      type: "enum",
+      options: ["Normal", "Thick", "Nodular"],
+    },
+
+    // Pleural fibrinolytic therapy
+    "pleural_procedures.fibrinolytic_therapy.agents": {
+      type: "multiselect",
+      options: ["tPA", "DNase", "Streptokinase", "Urokinase"],
+    },
+    "pleural_procedures.fibrinolytic_therapy.tpa_dose_mg": { type: "number", placeholder: "mg" },
+    "pleural_procedures.fibrinolytic_therapy.dnase_dose_mg": { type: "number", placeholder: "mg" },
+    "pleural_procedures.fibrinolytic_therapy.number_of_doses": { type: "integer", placeholder: "e.g., 2" },
+    "pleural_procedures.fibrinolytic_therapy.indication": {
+      type: "enum",
+      options: ["Complex parapneumonic", "Empyema", "Hemothorax", "Malignant effusion"],
+    },
+  };
+
+  return map[String(promptPath || "")] || { type: "string", placeholder: "Enter value" };
+}
+
+function coerceCompletenessValue(spec, rawValue) {
+  if (!spec || !spec.type) return null;
+
+  if (spec.type === "multiselect") {
+    if (Array.isArray(rawValue)) {
+      const clean = rawValue.map((v) => String(v || "").trim()).filter((v) => v !== "");
+      return clean.length ? clean : null;
+    }
+    return null;
+  }
+
+  const raw = String(rawValue ?? "").trim();
+  if (!raw) return null;
+
+  if (spec.type === "boolean") {
+    const lower = raw.toLowerCase();
+    if (lower === "true" || lower === "yes") return true;
+    if (lower === "false" || lower === "no") return false;
+    return null;
+  }
+
+  if (spec.type === "integer") {
+    const n = Number.parseInt(raw, 10);
+    return Number.isFinite(n) ? n : null;
+  }
+
+  if (spec.type === "number") {
+    const n = Number.parseFloat(raw);
+    return Number.isFinite(n) ? n : null;
+  }
+
+  // enum/string/ecog are handled elsewhere or can return raw string
+  return raw;
+}
+
+function buildCompletenessEdits(registry, prompts) {
+  const list = Array.isArray(prompts) ? prompts : [];
+  const ops = [];
+  const fields = [];
+
+  list.forEach((prompt) => {
+    const promptPath = String(prompt?.path || "").trim();
+    if (!promptPath) return;
+
+    const resolved = resolvePromptPath(registry, promptPath);
+    if (resolved.hasWildcard && resolved.wildcardCount === 0) return;
+    const effectivePath = resolved.effectivePath;
+    const rawValue = completenessRawValueByPath.get(effectivePath);
+    if (
+      rawValue === undefined ||
+      rawValue === null ||
+      (typeof rawValue === "string" && rawValue.trim() === "") ||
+      (Array.isArray(rawValue) && rawValue.length === 0)
+    ) {
+      return;
+    }
+
+    const spec = getCompletenessInputSpec(promptPath);
+
+    if (spec.type === "ecog") {
+      const raw = String(rawValue || "").trim();
+      if (!raw) return;
+      const match = raw.match(/^\s*([0-4])\s*$/);
+      const isSingle = Boolean(match);
+      const targetPath = isSingle ? "clinical_context.ecog_score" : "clinical_context.ecog_text";
+      const value = isSingle ? Number.parseInt(match[1], 10) : raw;
+      const ptr = registryDottedPathToPointer(targetPath);
+      if (!ptr) return;
+      ops.push({ op: "add", path: ptr, value });
+      fields.push(targetPath);
+      return;
+    }
+
+    const coerced = coerceCompletenessValue(spec, rawValue);
+    if (coerced === null) return;
+
+    const ptr = registryDottedPathToPointer(effectivePath);
+    if (!ptr) return;
+    ops.push({ op: "add", path: ptr, value: coerced });
+    fields.push(effectivePath);
+  });
+
+  return { edited_patch: ops, edited_fields: fields };
+}
+
+function recomputeCompletenessEdits(registry, prompts) {
+  const next = buildCompletenessEdits(registry, prompts);
+  completenessEdits = next.edited_patch.length || next.edited_fields.length ? next : null;
+  updateEditedPayload();
+}
+
+function renderCompletenessPrompts(data) {
+  if (!completenessPromptsCardEl || !completenessPromptsBodyEl) return;
+  clearEl(completenessPromptsBodyEl);
+
+  const prompts = Array.isArray(data?.missing_field_prompts) ? data.missing_field_prompts : [];
+  lastCompletenessPrompts = prompts;
+  const registry = getRegistry(data) || {};
+
+  if (!prompts.length || data?.error) {
+    completenessPromptsCardEl.classList.add("hidden");
+    if (completenessCopyBtn) completenessCopyBtn.disabled = true;
+    return;
+  }
+
+  completenessPromptsCardEl.classList.remove("hidden");
+  if (completenessCopyBtn) completenessCopyBtn.disabled = false;
+
+  const counts = { required: 0, recommended: 0 };
+  prompts.forEach((p) => {
+    if (String(p?.severity || "").toLowerCase() === "required") counts.required += 1;
+    else counts.recommended += 1;
+  });
+
+  const summary = document.createElement("div");
+  summary.className = "completeness-summary";
+  const summaryText = document.createElement("div");
+  summaryText.className = "qa-line";
+  summaryText.textContent = `${counts.required} required, ${counts.recommended} recommended`;
+  summary.appendChild(summaryText);
+
+  const hint = document.createElement("div");
+  hint.className = "subtle";
+  hint.textContent = "Entries here stage corrections in “Edited JSON (Training)”. For evidence-backed extraction, add to the note and re-run.";
+  summary.appendChild(hint);
+
+  completenessPromptsBodyEl.appendChild(summary);
+
+  const grouped = new Map();
+  prompts.forEach((p) => {
+    const group = String(p?.group || "Other").trim() || "Other";
+    if (!grouped.has(group)) grouped.set(group, []);
+    grouped.get(group).push(p);
+  });
+
+  const groupEntries = [];
+  if (grouped.has("Global")) groupEntries.push(["Global", grouped.get("Global")]);
+  grouped.forEach((items, group) => {
+    if (group === "Global") return;
+    groupEntries.push([group, items]);
+  });
+
+  groupEntries.forEach(([group, items]) => {
+    const groupWrap = document.createElement("div");
+    groupWrap.className = "completeness-group";
+
+    const title = document.createElement("div");
+    title.className = "completeness-group-title";
+    title.textContent = group;
+    groupWrap.appendChild(title);
+
+    const list = document.createElement("ul");
+    list.className = "completeness-list";
+
+    const sorted = items
+      .map((p, idx) => ({ p, idx }))
+      .sort((a, b) => {
+        const rank = severityRank(a.p?.severity) - severityRank(b.p?.severity);
+        return rank !== 0 ? rank : a.idx - b.idx;
+      })
+      .map(({ p }) => p);
+
+    sorted.forEach((p) => {
+      const li = document.createElement("li");
+      li.className = "completeness-item";
+
+      const sevRaw = String(p?.severity || "recommended").toLowerCase();
+      const sev = sevRaw === "required" ? "required" : "recommended";
+      const badge = document.createElement("span");
+      badge.className = `status-badge severity-${sev}`;
+      badge.textContent = sev === "required" ? "Required" : "Recommended";
+      li.appendChild(badge);
+
+      const main = document.createElement("div");
+      main.className = "completeness-item-main";
+
+      const label = document.createElement("div");
+      label.className = "completeness-item-label";
+      label.textContent = String(p?.label || "Missing field");
+      main.appendChild(label);
+
+      const message = document.createElement("div");
+      message.className = "completeness-item-message";
+      message.textContent = String(p?.message || "");
+      main.appendChild(message);
+
+      const path = String(p?.path || "").trim();
+      if (path) {
+        const meta = document.createElement("div");
+        meta.className = "completeness-item-path";
+        meta.textContent = path;
+        main.appendChild(meta);
+      }
+
+      const controls = document.createElement("div");
+      controls.className = "completeness-item-controls";
+
+      const promptPath = String(p?.path || "").trim();
+      const resolved = resolvePromptPath(registry, promptPath);
+
+      if (resolved.hasWildcard) {
+        const itemsForSelect = getWildcardItemsForPrompt(registry, promptPath);
+        if (itemsForSelect.length > 1) {
+          const select = document.createElement("select");
+          select.className = "flat-select";
+          const current = completenessSelectedIndexByPromptPath.get(promptPath) || 0;
+          select.value = String(current);
+          itemsForSelect.forEach((item, idx) => {
+            const opt = document.createElement("option");
+            opt.value = String(idx);
+            opt.textContent = describeWildcardItemForPrompt(promptPath, item, idx);
+            select.appendChild(opt);
+          });
+          select.addEventListener("change", () => {
+            const nextIdx = Number.parseInt(String(select.value || "0"), 10);
+            const safeIdx = Number.isFinite(nextIdx) && nextIdx >= 0 ? nextIdx : 0;
+            completenessSelectedIndexByPromptPath.set(promptPath, safeIdx);
+            renderCompletenessPrompts(lastServerResponse || data);
+            recomputeCompletenessEdits(registry, prompts);
+          });
+          controls.appendChild(select);
+        } else if (itemsForSelect.length === 0) {
+          const msg = document.createElement("div");
+          msg.className = "subtle";
+          msg.textContent = "No list items detected to attach this value. Add detail to note and re-run extraction.";
+          controls.appendChild(msg);
+        }
+      }
+
+      const spec = getCompletenessInputSpec(promptPath);
+      const effectivePath = resolved.effectivePath;
+      const stored = completenessRawValueByPath.get(effectivePath);
+
+      let input = null;
+      if (spec.type === "enum" && Array.isArray(spec.options)) {
+        const select = document.createElement("select");
+        select.className = "flat-select";
+        const blank = document.createElement("option");
+        blank.value = "";
+        blank.textContent = "—";
+        select.appendChild(blank);
+        spec.options.forEach((opt) => {
+          const option = document.createElement("option");
+          option.value = String(opt);
+          option.textContent = String(opt);
+          select.appendChild(option);
+        });
+        select.value = stored === undefined || stored === null ? "" : String(stored);
+        select.addEventListener("change", () => {
+          completenessRawValueByPath.set(effectivePath, String(select.value || ""));
+          recomputeCompletenessEdits(registry, prompts);
+        });
+        input = select;
+      } else if (spec.type === "boolean") {
+        const select = document.createElement("select");
+        select.className = "flat-select";
+        [
+          ["", "—"],
+          ["true", "Yes"],
+          ["false", "No"],
+        ].forEach(([value, label]) => {
+          const option = document.createElement("option");
+          option.value = value;
+          option.textContent = label;
+          select.appendChild(option);
+        });
+        select.value = stored === undefined || stored === null ? "" : String(stored);
+        select.addEventListener("change", () => {
+          completenessRawValueByPath.set(effectivePath, String(select.value || ""));
+          recomputeCompletenessEdits(registry, prompts);
+        });
+        input = select;
+      } else if (spec.type === "multiselect" && Array.isArray(spec.options)) {
+        const select = document.createElement("select");
+        select.className = "flat-select";
+        select.multiple = true;
+        select.size = Math.min(Math.max(spec.options.length, 3), 6);
+        spec.options.forEach((opt) => {
+          const option = document.createElement("option");
+          option.value = String(opt);
+          option.textContent = String(opt);
+          select.appendChild(option);
+        });
+        const selected = Array.isArray(stored)
+          ? stored.map((v) => String(v))
+          : typeof stored === "string"
+            ? stored.split(",").map((v) => v.trim()).filter(Boolean)
+            : [];
+        Array.from(select.options).forEach((opt) => {
+          opt.selected = selected.includes(String(opt.value));
+        });
+        select.addEventListener("change", () => {
+          const vals = Array.from(select.selectedOptions || [])
+            .map((o) => String(o.value || "").trim())
+            .filter((v) => v !== "");
+          completenessRawValueByPath.set(effectivePath, vals);
+          recomputeCompletenessEdits(registry, prompts);
+        });
+        input = select;
+      } else {
+        const el = document.createElement("input");
+        el.className = "flat-input";
+        el.type = spec.type === "integer" || spec.type === "number" ? "number" : "text";
+        if (spec.type === "integer") el.step = "1";
+        if (spec.type === "number") el.step = "any";
+        el.placeholder = spec.placeholder || "Enter value";
+        el.value = stored === undefined || stored === null ? "" : String(stored);
+        el.addEventListener("input", () => {
+          completenessRawValueByPath.set(effectivePath, String(el.value || ""));
+          recomputeCompletenessEdits(registry, prompts);
+        });
+        input = el;
+      }
+
+      if (input) {
+        const isWildcardWithoutItems = resolved.hasWildcard && resolved.wildcardCount === 0;
+        if (isWildcardWithoutItems) input.disabled = true;
+        controls.appendChild(input);
+      }
+
+      li.appendChild(main);
+      li.appendChild(controls);
+      list.appendChild(li);
+    });
+
+    groupWrap.appendChild(list);
+    completenessPromptsBodyEl.appendChild(groupWrap);
+  });
+
+  recomputeCompletenessEdits(registry, prompts);
 }
 
 /**
@@ -3766,7 +4369,10 @@ function updateEditedPayload() {
   const hasRegistryGridEdits = Boolean(
     registryGridEdits?.edited_patch?.length || registryGridEdits?.edited_fields?.length
   );
-  if ((!editedDirty && !hasFieldFeedback && !hasRegistryGridEdits) || !lastServerResponse) {
+  const hasCompletenessEdits = Boolean(
+    completenessEdits?.edited_patch?.length || completenessEdits?.edited_fields?.length
+  );
+  if ((!editedDirty && !hasFieldFeedback && !hasRegistryGridEdits && !hasCompletenessEdits) || !lastServerResponse) {
     editedResponseEl.textContent = "(no edits yet)";
     editedPayload = null;
     if (exportEditedBtn) exportEditedBtn.disabled = true;
@@ -3777,6 +4383,15 @@ function updateEditedPayload() {
 
   const payload = deepClone(lastServerResponse);
   if (editedDirty && flatTablesState) applyEditsToPayload(payload, flatTablesState);
+  if (hasCompletenessEdits) {
+    payload.edited_completeness_patch = completenessEdits.edited_patch;
+    payload.edited_completeness_fields = completenessEdits.edited_fields;
+    try {
+      applyJsonPatchOps(payload, completenessEdits.edited_patch);
+    } catch (e) {
+      console.warn("Failed to apply completeness JSON Patch (ignored).", e);
+    }
+  }
   if (hasRegistryGridEdits) {
     payload.edited_patch = registryGridEdits.edited_patch;
     payload.edited_fields = registryGridEdits.edited_fields;
@@ -3791,6 +4406,7 @@ function updateEditedPayload() {
   payload.edited_at = new Date().toISOString();
   const sources = [];
   if (editedDirty || hasFieldFeedback) sources.push("ui_flattened_tables");
+  if (hasCompletenessEdits) sources.push("ui_completeness_prompts");
   if (hasRegistryGridEdits) sources.push("ui_registry_grid");
   payload.edited_sources = sources;
   payload.edited_source = sources.includes("ui_flattened_tables") ? "ui_flattened_tables" : sources[0] || "ui";
@@ -4540,6 +5156,10 @@ function clearResultsUi() {
   showRegistryLegacyUi();
   if (registryGridRootEl) registryGridRootEl.innerHTML = "";
   lastServerResponse = null;
+  lastCompletenessPrompts = [];
+  if (completenessPromptsCardEl) completenessPromptsCardEl.classList.add("hidden");
+  if (completenessPromptsBodyEl) clearEl(completenessPromptsBodyEl);
+  if (completenessCopyBtn) completenessCopyBtn.disabled = true;
   resetRunState();
   if (serverResponseEl) serverResponseEl.textContent = "(none)";
   if (flattenedTablesHost) {
@@ -5261,6 +5881,46 @@ async function main() {
 	  let scrubbedConfirmed = false;
 	  let suppressDirtyFlag = false;
 
+  if (completenessCopyBtn) {
+    completenessCopyBtn.disabled = true;
+    completenessCopyBtn.addEventListener("click", () => {
+      const text = buildCompletenessChecklistText(lastCompletenessPrompts);
+      copyToClipboard(text).then((ok) => {
+        setStatus(ok ? "Completeness checklist copied to clipboard." : "Copy failed (clipboard unavailable).");
+      });
+    });
+  }
+
+  if (completenessOpenReporterBtn) {
+    completenessOpenReporterBtn.disabled = true;
+    completenessOpenReporterBtn.addEventListener("click", () => {
+      if (!scrubbedConfirmed) {
+        setStatus("Apply redactions before sending note to Reporter Builder.");
+        return;
+      }
+      const note = String(model.getValue() || "").trim();
+      if (!note) {
+        setStatus("No scrubbed note text available to send.");
+        return;
+      }
+
+      const payload = JSON.stringify({
+        note,
+        source: "dashboard",
+        note_type: "scrubbed_note",
+        transferred_at: new Date().toISOString(),
+      });
+
+      const wroteSession = safeSetStorageItem(globalThis.sessionStorage, DASHBOARD_REPORTER_TRANSFER_KEY, payload);
+      const wroteLocal = safeSetStorageItem(globalThis.localStorage, DASHBOARD_REPORTER_TRANSFER_KEY, payload);
+      if (!wroteSession && !wroteLocal) {
+        setStatus("Browser storage unavailable. Transfer to Reporter Builder failed.");
+        return;
+      }
+      window.location.href = "./reporter_builder.html";
+    });
+  }
+
   let detections = [];
   let detectionsById = new Map();
   let excluded = new Set();
@@ -5304,6 +5964,7 @@ async function main() {
   function setScrubbedConfirmed(value) {
     scrubbedConfirmed = value;
     submitBtn.disabled = !scrubbedConfirmed || running;
+    if (completenessOpenReporterBtn) completenessOpenReporterBtn.disabled = !scrubbedConfirmed || running;
     // Update button title for better UX
     if (submitBtn.disabled) {
       if (running) {

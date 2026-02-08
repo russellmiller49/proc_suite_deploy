@@ -60,6 +60,16 @@ class PatientInfo(BaseModel):
     sex: Optional[Literal["M", "F", "O"]] = None
     bmi: Optional[float] = None
     smoking_status: Optional[str] = None
+    ecog_score: Optional[int] = Field(
+        default=None,
+        ge=0,
+        le=4,
+        description="ECOG performance status score (0-4) when explicitly documented.",
+    )
+    ecog_text: Optional[str] = Field(
+        default=None,
+        description="Raw ECOG/Zubrod performance status text when not a single integer (e.g., '0-1').",
+    )
 
 
 class ProcedureInfo(BaseModel):
@@ -104,6 +114,10 @@ class BiopsySite(BaseModel):
     passes: Optional[int] = None
     specimens_obtained: Optional[int] = None
     rose_result: Optional[str] = None
+    lymphocytes_present: Optional[bool] = Field(
+        default=None,
+        description="Lymphocytes/lymphoid tissue present when explicitly documented (ROSE/pathology). None when not assessable.",
+    )
     pathology_result: Optional[str] = None
     adequacy: Optional[Literal["adequate", "inadequate", "pending"]] = None
 
@@ -149,6 +163,12 @@ class Complication(BaseModel):
 
     type: str  # "bleeding", "pneumothorax", "hypoxia"
     severity: Literal["mild", "moderate", "severe"] = "mild"
+    nashville_bleeding_grade: Optional[int] = Field(
+        default=None,
+        ge=0,
+        le=4,
+        description="Nashville bleeding grade (0-4) when applicable (typically for bleeding events).",
+    )
     onset: Literal["immediate", "delayed", "post-procedure"] = "immediate"
     onset_time: Optional[datetime] = None
     related_to: Optional[str] = None  # Which procedure step caused it
@@ -225,6 +245,24 @@ class LesionCharacteristics(BaseModel):
     location_text: str | None = Field(
         default=None,
         description="Free-text anatomic lesion location (e.g., 'RLL posterior segment').",
+    )
+    bronchus_sign: Optional[Literal["Positive", "Negative", "Not assessed"]] = Field(
+        default=None,
+        description="CT bronchus sign for peripheral lesions when documented.",
+    )
+    distance_from_pleura_mm: float | None = Field(
+        default=None,
+        ge=0,
+        description="Distance to pleura in mm when explicitly documented (0 if abutting).",
+    )
+    air_bronchogram_present: Optional[bool] = Field(
+        default=None,
+        description="Air bronchogram documented on CT when explicitly stated.",
+    )
+    pet_suv_max: float | None = Field(
+        default=None,
+        ge=0,
+        description="Maximum PET SUV when explicitly documented.",
     )
 
 
@@ -316,6 +354,12 @@ class IPRegistryV3(BaseModel):
 
     # Radial EBUS
     radial_ebus_performed: bool = False
+    radial_ebus_probe_position: Optional[
+        Literal["Concentric", "Eccentric", "Adjacent", "Not visualized"]
+    ] = Field(
+        default=None,
+        description="Radial EBUS view/probe position classification when documented.",
+    )
     radial_ebus_findings: List[str] = Field(default_factory=list)
 
     # BAL

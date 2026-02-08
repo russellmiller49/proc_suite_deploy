@@ -34,6 +34,14 @@ _HEADING_INLINE_RE = re.compile(
     r"^\s*(?P<header>[A-Za-z][A-Za-z /_-]{0,80})\s*:\s*(?P<rest>.*)$",
     re.MULTILINE,
 )
+_HEADING_STANDALONE_RE = re.compile(
+    r"^\s*(?P<header>[A-Z][A-Z0-9 /()_-]{1,80})\s*$",
+    re.MULTILINE,
+)
+
+_EXTERNAL_REPORT_HEADER_RE = re.compile(
+    r"(?im)^\s*(?:🩺\s*)?(?:extraction\s+quality\s+report|external(?:\s+extraction)?\s+report)\b"
+)
 
 _PROCEDURE_HEADER_LINE_RE = re.compile(
     r"(?im)^(?P<header>\s*(?:PROCEDURES?\s+PERFORMED|PROCEDURE\s+PERFORMED|PROCEDURES|PROCEDURE))\s*:\s*(?P<rest>.*)$"
@@ -89,6 +97,8 @@ def mask_offset_preserving(text: str, patterns: Iterable[str] = PATTERNS) -> str
     # Prevent deterministic extractors from "reading" blank modality template rows
     # (e.g., APC/Cryoprobe listed but empty columns).
     masked = _mask_spans(masked, find_empty_table_row_spans(masked, keywords=DEFAULT_TABLE_TOOL_KEYWORDS))
+    report_spans = [(start, end) for start, end, _ in _find_external_report_spans(raw)]
+    masked = _mask_spans(masked, report_spans)
     checkbox_spans, _count = _find_template_checkbox_spans(raw)
     masked = _mask_spans(masked, checkbox_spans)
     return masked
@@ -98,14 +108,18 @@ def mask_extraction_noise(text: str) -> tuple[str, dict[str, object]]:
     """Mask template noise and non-procedural sections for extraction."""
     base = mask_offset_preserving(text or "")
     checkbox_spans, checkbox_line_count = _find_template_checkbox_spans(text or "")
+    external_reports = _find_external_report_spans(text or "")
+    external_report_spans = [(start, end) for start, end, _ in external_reports]
     sections = _find_non_procedural_section_spans(text or "")
     section_spans = [(start, end) for start, end, _ in sections]
     table_spans = find_empty_table_row_spans(text or "", keywords=DEFAULT_TABLE_TOOL_KEYWORDS)
     procedure_header_spans, procedure_header_line_count = _find_procedure_header_cpt_spans(text or "")
-    spans = section_spans + table_spans + procedure_header_spans
+    spans = external_report_spans + section_spans + table_spans + procedure_header_spans
 
     masked = _mask_spans(base, spans)
     meta = {
+        "masked_external_report_count": len(external_reports),
+        "masked_external_report_markers": [title for _, _, title in external_reports],
         "masked_non_procedural_sections": sorted({title for _, _, title in sections}),
         "masked_non_procedural_section_count": len(sections),
         "masked_empty_table_rows": len(table_spans),
@@ -277,20 +291,53 @@ def _is_non_procedural_heading(header: str) -> bool:
 
 def _find_non_procedural_section_spans(text: str) -> list[tuple[int, int, str]]:
     matches = list(_HEADING_INLINE_RE.finditer(text or ""))
+    standalone_matches = list(_HEADING_STANDALONE_RE.finditer(text or ""))
     spans: list[tuple[int, int, str]] = []
-    if not matches:
+    if not matches and not standalone_matches:
         return spans
 
-    for idx, match in enumerate(matches):
+    boundaries = sorted({m.start() for m in matches} | {m.start() for m in standalone_matches})
+
+    def _next_boundary(current_start: int) -> int:
+        for boundary in boundaries:
+            if boundary > current_start:
+                return boundary
+        return len(text or "")
+
+    for match in matches:
         header = _normalize_heading(match.group("header"))
         if not _is_non_procedural_heading(header):
             continue
         body_start = match.start("rest")
-        body_end = matches[idx + 1].start() if idx + 1 < len(matches) else len(text)
+        body_end = _next_boundary(match.start())
         if body_end <= body_start:
             continue
         spans.append((body_start, body_end, header))
+
+    for match in standalone_matches:
+        header = _normalize_heading(match.group("header"))
+        if not _is_non_procedural_heading(header):
+            continue
+        line_end = text.find("\n", match.start())
+        body_start = len(text) if line_end == -1 else line_end + 1
+        body_end = _next_boundary(match.start())
+        if body_end <= body_start:
+            continue
+        spans.append((body_start, body_end, header))
+
     return spans
+
+
+def _find_external_report_spans(text: str) -> list[tuple[int, int, str]]:
+    """Mask appended reviewer/QA reports that are not part of the clinical note."""
+    raw = text or ""
+    if not raw:
+        return []
+
+    match = _EXTERNAL_REPORT_HEADER_RE.search(raw)
+    if match is None:
+        return []
+    return [(match.start(), len(raw), (match.group(0) or "").strip())]
 
 
 def _find_procedure_header_cpt_spans(text: str) -> tuple[list[tuple[int, int]], int]:

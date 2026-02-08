@@ -912,8 +912,15 @@ Your goal is to extract structured data from the procedure note below with 100% 
 
 ### 🏥 SPECIFIC EXTRACTION RULES
 - **EBUS:** If a node is described as \"sized\", \"viewed\", or \"benign ultrasound/sonographic characteristics\" but NOT biopsied/sampled, set `action: \"inspected_only\"` for that station.
+- **EBUS Adequacy:** For each `granular_data.linear_ebus_stations_detail[]`, set `lymphocytes_present` only when explicitly stated (e.g., \"adequate lymphocytes\", \"no/scant lymphocytes\", \"blood only\" in ROSE context). Otherwise leave null.
 - **Tracheostomy:** If the patient already has a trach and the scope goes through it, set `established_tracheostomy_route: true`. Only set `procedures_performed.percutaneous_tracheostomy.performed: true` if a NEW tracheostomy is created.
 - **Rigid/Thermal:** For rigid bronchoscopy, look for \"rigid scope/rigid bronchoscope/rigid barrel\". For thermal ablation, look for \"electrocautery\", \"laser\", \"APC/argon plasma\".
+- **ECOG:** Only populate `clinical_context.ecog_score` when explicitly documented (\"ECOG 2\", \"Zubrod 1\"). If a range is documented (\"ECOG 0-1\"), set `clinical_context.ecog_text` and leave `ecog_score` null.
+- **Bronchus sign:** Only populate `clinical_context.bronchus_sign` when explicitly documented. Use ONLY \"Positive\", \"Negative\", or \"Not assessed\" (do NOT use True/False).
+- **Bleeding grade:** Only populate `complications.bleeding.bleeding_grade_nashville` when explicitly documented (\"Nashville grade 2\"). Do not infer grade from equipment lists; require bleeding/hemostasis language.
+- **Navigation targets (Tier 2):** When navigation/robotic bronchoscopy is performed, populate `granular_data.navigation_targets[]` per target when explicitly documented: `ct_characteristics` (Solid/Part-solid/Ground-glass/Cavitary/Calcified), `distance_from_pleura_mm` (mm; use 0 only when explicitly \"abutting\" pleura), `pet_suv_max` (numeric SUV only when explicitly documented), and `air_bronchogram_present` (only when explicitly stated).
+- **Tool-in-lesion (Tier 2):** Only set `procedures_performed.navigational_bronchoscopy.tool_in_lesion_confirmed` and `confirmation_method` when the note explicitly confirms tool-in-lesion (Radial EBUS/CBCT/Fluoroscopy/Augmented Fluoroscopy/None). Do not infer from equipment lists.
+- **Pneumothorax intervention (Tier 2):** If pneumothorax occurred, populate `complications.pneumothorax.intervention[]` only when explicitly documented (Observation/Aspiration/Pigtail catheter/Chest tube/Heimlich valve/Surgery).
 {verified_section}
 
 ### TARGET JSON SCHEMA:

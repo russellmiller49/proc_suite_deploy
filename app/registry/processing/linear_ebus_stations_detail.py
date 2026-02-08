@@ -56,7 +56,17 @@ _PASSES_RE = re.compile(r"(?i)\b(\d{1,2})\s+passes?\b")
 _PASSES_WORD_RE = re.compile(r"(?i)\b(one|two|three|four|five|six|seven|eight|nine|ten)\s+passes?\b")
 _NEEDLE_GAUGE_RE = re.compile(r"(?i)\b(19|21|22|25)\s*[- ]?(?:g|gauge)\b")
 
-_SAMPLED_FALSE_RE = re.compile(r"(?i)\b(?:not\s+biopsied|not\s+sampled|not\s+aspirated|not\s+biopsied\s+due)\b")
+_SAMPLED_FALSE_RE = re.compile(
+    r"(?i)\b(?:"
+    r"not\s+biopsied"
+    r"|not\s+sampled"
+    r"|not\s+aspirated"
+    r"|not\s+biopsied\s+due"
+    r"|did\s+not\s+have\s+any\s+biops(?:y|ies)\s+target"
+    r"|did\s+not\s+have\s+any\s+sampling\s+target"
+    r"|no\s+(?:biops(?:y|ies)|sampling)\s+target"
+    r")\b"
+)
 _SAMPLED_TRUE_RE = re.compile(r"(?i)\b(?:biopsied|sampled|aspirated)\b")
 
 _ECHOGENICITY_RE = re.compile(r"(?i)\b(?:heterogeneous|homogeneous)\b")
@@ -73,6 +83,14 @@ _CALC_PRESENT_RE = re.compile(r"(?i)\bcalcif(?:ied|ication)\b")
 _CALC_NEG_RE = re.compile(r"(?i)\bno\s+calcif(?:ied|ication)\b")
 
 _ROSE_RE = re.compile(r"(?i)\brose\b")
+
+_LYMPH_POS_RE = re.compile(
+    r"(?i)\b(?:adequate|present|identified|seen)\b[^.\n]{0,60}\b(?:lymphocytes?|lymphoid\s+tissue)\b"
+    r"|\b(?:lymphocytes?|lymphoid\s+tissue)\b[^.\n]{0,60}\b(?:present|identified|seen|adequate)\b"
+)
+_LYMPH_NEG_RE = re.compile(r"(?i)\b(?:no|without|scant|rare)\s+(?:lymphocytes?|lymphoid\s+tissue)\b")
+_BLOOD_ONLY_RE = re.compile(r"(?i)\b(?:blood\s+only|acellular)\b")
+_NONDIAGNOSTIC_RE = re.compile(r"(?i)\b(?:nondiagnostic|non-diagnostic|insufficient)\b")
 
 
 def _maybe_unescape_newlines(text: str) -> str:
@@ -151,7 +169,9 @@ def _apply_section_to_entry(
     entry: dict[str, Any],
     section: str,
     *,
+    section_offset: int = 0,
     global_gauge: int | None,
+    global_gauge_evidence: dict[str, Any] | None = None,
     default_sampled: bool | None = None,
 ) -> None:
     sampled: bool | None = default_sampled
@@ -168,14 +188,34 @@ def _apply_section_to_entry(
         a = _to_float(axes_match.group("a"))
         b = _to_float(axes_match.group("b"))
         if a is not None and b is not None:
-            entry.setdefault("short_axis_mm", min(a, b))
-            entry.setdefault("long_axis_mm", max(a, b))
+            short_val = min(a, b)
+            long_val = max(a, b)
+            if entry.get("short_axis_mm") is None:
+                entry["short_axis_mm"] = short_val
+                entry["_short_axis_mm_evidence"] = {
+                    "text": (axes_match.group(0) or "").strip(),
+                    "start": section_offset + int(axes_match.start()),
+                    "end": section_offset + int(axes_match.end()),
+                }
+            if entry.get("long_axis_mm") is None:
+                entry["long_axis_mm"] = long_val
+                entry["_long_axis_mm_evidence"] = {
+                    "text": (axes_match.group(0) or "").strip(),
+                    "start": section_offset + int(axes_match.start()),
+                    "end": section_offset + int(axes_match.end()),
+                }
     else:
         size_match = _EBUS_MM_RE.search(section)
         if size_match:
             mm = _to_float(size_match.group("mm"))
             if mm is not None:
-                entry.setdefault("short_axis_mm", mm)
+                if entry.get("short_axis_mm") is None:
+                    entry["short_axis_mm"] = mm
+                    entry["_short_axis_mm_evidence"] = {
+                        "text": (size_match.group(0) or "").strip(),
+                        "start": section_offset + int(size_match.start()),
+                        "end": section_offset + int(size_match.end()),
+                    }
         else:
             # Fallback: some templates omit "by EBUS" but still provide axes.
             axes2 = _AXES_FALLBACK_RE.search(section)
@@ -183,8 +223,22 @@ def _apply_section_to_entry(
                 a = _to_float(axes2.group("a"))
                 b = _to_float(axes2.group("b"))
                 if a is not None and b is not None:
-                    entry.setdefault("short_axis_mm", min(a, b))
-                    entry.setdefault("long_axis_mm", max(a, b))
+                    short_val = min(a, b)
+                    long_val = max(a, b)
+                    if entry.get("short_axis_mm") is None:
+                        entry["short_axis_mm"] = short_val
+                        entry["_short_axis_mm_evidence"] = {
+                            "text": (axes2.group(0) or "").strip(),
+                            "start": section_offset + int(axes2.start()),
+                            "end": section_offset + int(axes2.end()),
+                        }
+                    if entry.get("long_axis_mm") is None:
+                        entry["long_axis_mm"] = long_val
+                        entry["_long_axis_mm_evidence"] = {
+                            "text": (axes2.group(0) or "").strip(),
+                            "start": section_offset + int(axes2.start()),
+                            "end": section_offset + int(axes2.end()),
+                        }
 
     # Morphology
     shape_raw = None
@@ -236,19 +290,40 @@ def _apply_section_to_entry(
     elif global_gauge is not None:
         gauge = global_gauge
     if gauge is not None:
-        entry.setdefault("needle_gauge", gauge)
+        if entry.get("needle_gauge") is None:
+            entry["needle_gauge"] = gauge
+            if gauge_local:
+                entry["_needle_gauge_evidence"] = {
+                    "text": (gauge_local.group(0) or "").strip(),
+                    "start": section_offset + int(gauge_local.start()),
+                    "end": section_offset + int(gauge_local.end()),
+                }
+            elif global_gauge_evidence:
+                entry["_needle_gauge_evidence"] = global_gauge_evidence
 
     passes_match = _PASSES_RE.search(section)
     if passes_match:
         passes = _to_int(passes_match.group(1))
         if passes is not None:
-            entry.setdefault("number_of_passes", passes)
+            if entry.get("number_of_passes") is None:
+                entry["number_of_passes"] = passes
+                entry["_number_of_passes_evidence"] = {
+                    "text": (passes_match.group(0) or "").strip(),
+                    "start": section_offset + int(passes_match.start()),
+                    "end": section_offset + int(passes_match.end()),
+                }
     else:
         word_match = _PASSES_WORD_RE.search(section)
         if word_match:
             passes = _WORD_NUMBERS.get(word_match.group(1).lower())
             if passes is not None:
-                entry.setdefault("number_of_passes", passes)
+                if entry.get("number_of_passes") is None:
+                    entry["number_of_passes"] = passes
+                    entry["_number_of_passes_evidence"] = {
+                        "text": (word_match.group(0) or "").strip(),
+                        "start": section_offset + int(word_match.start()),
+                        "end": section_offset + int(word_match.end()),
+                    }
 
     # ROSE
     if _ROSE_RE.search(section):
@@ -270,6 +345,28 @@ def _apply_section_to_entry(
             # Many LN templates say "adequate tissue"; map to the canonical LN adequacy label.
             entry.setdefault("rose_result", "Adequate lymphocytes")
 
+    # Lymphocyte adequacy (explicit-only; station-level boolean).
+    if "lymphocytes_present" not in entry:
+        lymph_match: re.Match[str] | None = None
+        if _LYMPH_NEG_RE.search(section):
+            lymph_match = _LYMPH_NEG_RE.search(section)
+            entry.setdefault("lymphocytes_present", False)
+        elif _LYMPH_POS_RE.search(section):
+            lymph_match = _LYMPH_POS_RE.search(section)
+            entry.setdefault("lymphocytes_present", True)
+        elif _ROSE_RE.search(section) and (_BLOOD_ONLY_RE.search(section) or _NONDIAGNOSTIC_RE.search(section)):
+            lymph_match = _BLOOD_ONLY_RE.search(section) or _NONDIAGNOSTIC_RE.search(section)
+            entry.setdefault("lymphocytes_present", False)
+
+        if lymph_match:
+            snippet = (lymph_match.group(0) or "").strip()
+            if snippet:
+                entry["_lymphocytes_present_evidence"] = {
+                    "text": snippet,
+                    "start": section_offset + int(lymph_match.start()),
+                    "end": section_offset + int(lymph_match.end()),
+                }
+
     # Morphologic impression
     lower = section.lower()
     if "benign" in lower:
@@ -289,9 +386,16 @@ def extract_linear_ebus_stations_detail(note_text: str) -> list[dict[str, Any]]:
         return []
 
     global_gauge: int | None = None
+    global_gauge_evidence: dict[str, Any] | None = None
     gauge_match = _GLOBAL_NEEDLE_GAUGE_RE.search(text)
     if gauge_match:
         global_gauge = _to_int(gauge_match.group(1))
+        if global_gauge is not None:
+            global_gauge_evidence = {
+                "text": (gauge_match.group(0) or "").strip(),
+                "start": int(gauge_match.start()),
+                "end": int(gauge_match.end()),
+            }
 
     matches = list(_STATION_HEADER_RE.finditer(text))
 
@@ -301,7 +405,10 @@ def extract_linear_ebus_stations_detail(note_text: str) -> list[dict[str, Any]]:
     for idx, match in enumerate(matches):
         start = match.start()
         end = matches[idx + 1].start() if idx + 1 < len(matches) else len(text)
-        section = text[start:end].strip()
+        raw_section = text[start:end]
+        leading_trim = len(raw_section) - len(raw_section.lstrip())
+        section_offset = start + leading_trim
+        section = raw_section.strip()
         if section:
             stop_match = _NON_STATION_STOP_RE.search(section)
             if stop_match:
@@ -319,7 +426,13 @@ def extract_linear_ebus_stations_detail(note_text: str) -> list[dict[str, Any]]:
             by_station[station] = entry
             order.append(station)
 
-        _apply_section_to_entry(entry, section, global_gauge=global_gauge)
+        _apply_section_to_entry(
+            entry,
+            section,
+            section_offset=section_offset,
+            global_gauge=global_gauge,
+            global_gauge_evidence=global_gauge_evidence,
+        )
 
     # Numbered-list station formats (common in templated "Sites Sampled" sections), e.g.:
     #   1. 11Rs ... 4 passes ... ROSE: ...
@@ -328,7 +441,10 @@ def extract_linear_ebus_stations_detail(note_text: str) -> list[dict[str, Any]]:
     for idx, match in enumerate(numbered_matches):
         start = match.start()
         end = numbered_matches[idx + 1].start() if idx + 1 < len(numbered_matches) else len(text)
-        section = text[start:end].strip()
+        raw_section = text[start:end]
+        leading_trim = len(raw_section) - len(raw_section.lstrip())
+        section_offset = start + leading_trim
+        section = raw_section.strip()
         if section:
             stop_match = _NON_STATION_STOP_RE.search(section)
             if stop_match:
@@ -347,7 +463,13 @@ def extract_linear_ebus_stations_detail(note_text: str) -> list[dict[str, Any]]:
             order.append(station)
 
         # In numbered station lists, assume sampling unless an explicit negation exists.
-        _apply_section_to_entry(entry, section, global_gauge=global_gauge, default_sampled=True)
+        _apply_section_to_entry(
+            entry,
+            section,
+            section_offset=section_offset,
+            global_gauge=global_gauge,
+            default_sampled=True,
+        )
 
     # Non-station targets (masses/lesions/nodules) are often documented in the same
     # templated section as stations. Capture them as additional entries so CPT

@@ -2592,6 +2592,9 @@ _EBUS_EXPLICIT_NEGATION_PHRASES_RE = re.compile(
     r"|not\s+sampled\b"
     r"|not\s+perform(?:ed|ing)?\b"
     r"|no\s+biops(?:y|ies)\b"
+    r"|did\s+not\s+have\s+any\s+biops(?:y|ies)\s+target"
+    r"|did\s+not\s+have\s+any\s+sampling\s+target"
+    r"|no\s+(?:biops(?:y|ies)|sampling)\s+target"
     r"|no\s+sampling\b"
     r"|no\s+needle\b"
     r"|decision\s+to\s+not\b"
@@ -4000,32 +4003,46 @@ def enrich_linear_ebus_needle_gauge(record: RegistryRecord, full_text: str) -> l
         return warnings
 
     existing = getattr(linear, "needle_gauge", None)
-    expected_gauge: int | None = None
+    gauge_matches = list(
+        re.finditer(
+            r"\b(19|21|22|25)\s*[-]?\s*(?:G|gauge)\b|\b(19|21|22|25)\s+gauge\s+needle\b",
+            full_text,
+            re.IGNORECASE,
+        )
+    )
+    if not gauge_matches:
+        return warnings
+
+    detected: list[int] = []
+    for match in gauge_matches:
+        raw = match.group(1) or match.group(2)
+        try:
+            gauge = int(raw) if raw else None
+        except Exception:
+            gauge = None
+        if gauge in (19, 21, 22, 25) and gauge not in detected:
+            detected.append(gauge)
+
+    if not detected:
+        return warnings
+
+    existing_detected: list[int] = []
     if isinstance(existing, str) and existing.strip():
-        m = re.search(r"(?i)\b(19|21|22|25)\b", existing)
-        if m:
+        for m in re.finditer(r"(?i)\b(19|21|22|25)\b", existing):
             try:
-                expected_gauge = int(m.group(1))
+                g = int(m.group(1))
             except Exception:
-                expected_gauge = None
+                g = None
+            if g in (19, 21, 22, 25) and g not in existing_detected:
+                existing_detected.append(g)
 
-    match = re.search(r"\b(19|21|22|25)\s*[-]?\s*(?:G|gauge)\b", full_text, re.IGNORECASE)
-    if not match:
-        match = re.search(r"\b(19|21|22|25)\s+gauge\s+needle\b", full_text, re.IGNORECASE)
-    if not match:
-        return warnings
+    merged = list(existing_detected)
+    for gauge in detected:
+        if gauge not in merged:
+            merged.append(gauge)
 
-    try:
-        gauge = int(match.group(1))
-    except Exception:
-        gauge = None
-
-    # If the field is already populated, only add evidence spans (do not overwrite).
-    if existing and expected_gauge is not None and gauge is not None and gauge != expected_gauge:
-        return warnings
-
-    if not existing and gauge is not None:
-        setattr(linear, "needle_gauge", f"{gauge}G")
+    if merged and (not existing_detected or merged != existing_detected):
+        setattr(linear, "needle_gauge", ", ".join(f"{g}G" for g in merged))
         warnings.append("AUTO_EBUS_NEEDLE_GAUGE: parsed from note text")
 
     try:
@@ -4036,9 +4053,10 @@ def enrich_linear_ebus_needle_gauge(record: RegistryRecord, full_text: str) -> l
             evidence = {}
         key = "procedures_performed.linear_ebus.needle_gauge"
         if key not in evidence:
-            evidence.setdefault(key, []).append(
-                Span(text=match.group(0).strip(), start=match.start(), end=match.end(), confidence=0.9)
-            )
+            for match in gauge_matches:
+                evidence.setdefault(key, []).append(
+                    Span(text=match.group(0).strip(), start=match.start(), end=match.end(), confidence=0.9)
+                )
             record.evidence = evidence
     except Exception:
         pass
@@ -4050,6 +4068,14 @@ _EUS_B_MARKER_RE = re.compile(r"(?i)\bEUS-?B\b")
 _EUS_B_FINDINGS_HEADER_RE = re.compile(r"(?im)^\s*EUS-?B\s+Findings\b")
 _EUS_B_SITES_HEADER_RE = re.compile(r"(?im)^\s*EUS-?B\s+Sites\s+Sampled\s*:\s*$")
 _EUS_B_SITE_LINE_RE = re.compile(r"(?im)^\s*Site\s+\d{1,2}\s*:\s*(?P<rest>.+?)\s*$")
+_EUS_B_SAMPLING_ACTION_RE = re.compile(
+    r"\b(?:sampled|sampling|needle\s+aspirat(?:ion|ed)?|aspirat(?:ed|ion)|fna|tbna|biops(?:y|ies|ied)|passes?)\b",
+    re.IGNORECASE,
+)
+_EUS_B_SAMPLING_NEGATION_RE = re.compile(
+    r"\b(?:not\s+sampled|not\s+biops(?:ied|y)|no\s+biops(?:y|ies)|without\s+fna|inspection\s+only)\b",
+    re.IGNORECASE,
+)
 _EUS_B_NEEDLE_GAUGE_RE = re.compile(r"(?i)\b(19|21|22|25)\s*[- ]?(?:g|gauge)\b")
 _EUS_B_PASSES_RE = re.compile(
     r"\b(?P<count>\d{1,2})\b[^.\n]{0,80}\b(?:needle\s+passes?|passes?|endoscopic\s+ultrasound\s+guided\s+transbronchial\s+biops(?:y|ies))\b",
@@ -4085,10 +4111,22 @@ def enrich_eus_b_sampling_details(record: RegistryRecord, full_text: str) -> lis
         header = _EUS_B_SITES_HEADER_RE.search(section)
         if header:
             tail = section[header.end() :]
-            for match in _EUS_B_SITE_LINE_RE.finditer(tail):
+            site_lines = list(_EUS_B_SITE_LINE_RE.finditer(tail))
+            for idx, match in enumerate(site_lines):
                 rest = (match.group("rest") or "").strip()
                 if not rest:
                     continue
+
+                block_end = site_lines[idx + 1].start() if idx + 1 < len(site_lines) else min(
+                    len(tail), match.end() + 300
+                )
+                site_block = tail[match.start() : block_end]
+                sampled_here = bool(_EUS_B_SAMPLING_ACTION_RE.search(site_block)) and not bool(
+                    _EUS_B_SAMPLING_NEGATION_RE.search(site_block)
+                )
+                if not sampled_here:
+                    continue
+
                 site = None
                 m_site = re.search(
                     r"(?i)\bthe\s+(?P<site>[^.\n]{3,80}?)(?:\s+was|\s+is|\s+were|\s+on\b|\s+in\b|[.,])",
@@ -4105,8 +4143,14 @@ def enrich_eus_b_sampling_details(record: RegistryRecord, full_text: str) -> lis
                 if len(sites) >= 6:
                     break
 
-        if not sites and re.search(r"(?i)\bleft\s+adrenal\b", section):
-            sites = ["Left adrenal mass"]
+        if not sites:
+            adrenal_sampled = re.search(
+                r"(?i)\bleft\s+adrenal\b[^.\n]{0,140}\b(?:sampled|sampling|fna|aspirat(?:ed|ion)?|biops(?:y|ied|ies))\b"
+                r"|\b(?:sampled|sampling|fna|aspirat(?:ed|ion)?|biops(?:y|ied|ies))\b[^.\n]{0,140}\bleft\s+adrenal\b",
+                section,
+            )
+            if adrenal_sampled and not _EUS_B_SAMPLING_NEGATION_RE.search(adrenal_sampled.group(0) or ""):
+                sites = ["Left adrenal mass"]
 
         if sites:
             setattr(eus_b, "sites_sampled", sites)
@@ -4334,16 +4378,32 @@ def enrich_procedure_success_status(record: RegistryRecord, full_text: str) -> l
     else:
         fail_match = _OUTCOMES_FAIL_RE.search(text)
         if fail_match:
-            status = "Failed"
             s, e = _sentence_span(fail_match.start(), fail_match.end())
             snippet = text[s:e].strip()
-            if snippet:
-                reason = snippet[:240]
-                ev_start, ev_end = s, e
-            # If the note documents a failed sub-step but the overall procedure
-            # is completed, classify as partial success instead of full failure.
-            if procedure_completed_flag or completion_language_present:
-                status = "Partial success"
+            traverse_baseline = bool(
+                re.search(r"(?i)\b(?:could\s+not|cannot|unable\s+to)\s+traverse\b", snippet or "")
+            )
+            progressed_after = bool(
+                re.search(
+                    r"(?i)\b(?:dilat(?:e|ed|ion)|incision|improv(?:ed|ement)|patent|patency|recanaliz|result|completed)\b",
+                    text[fail_match.end() : min(len(text), fail_match.end() + 420)],
+                )
+            )
+
+            # Guardrail: baseline traversability limitations in severe stenosis should
+            # not be treated as procedural failure when successful therapeutic work is
+            # subsequently documented.
+            if traverse_baseline and progressed_after and (procedure_completed_flag or completion_language_present):
+                fail_match = None
+            else:
+                status = "Failed"
+                if snippet:
+                    reason = snippet[:240]
+                    ev_start, ev_end = s, e
+                # If the note documents a failed sub-step but the overall procedure
+                # is completed, classify as partial success instead of full failure.
+                if procedure_completed_flag or completion_language_present:
+                    status = "Partial success"
         else:
             # Prefer the most specific "radial/probe view ... suboptimal" evidence when present.
             radial_suboptimal = re.search(

@@ -1144,6 +1144,29 @@ async def report_seed_from_text(
         bundle = ProcedureBundle.model_validate(bundle_payload)
 
     bundle, issues, warnings, suggestions, notes = _verify_bundle(bundle)
+    missing_field_prompts: list[dict[str, object]] = []
+    try:
+        from app.registry.completeness import generate_missing_field_prompts
+
+        completeness_prompts = generate_missing_field_prompts(extraction_result.record)
+        if completeness_prompts:
+            missing_field_prompts = [
+                {
+                    "group": prompt.group,
+                    "path": prompt.path,
+                    "label": prompt.label,
+                    "severity": prompt.severity,
+                    "message": prompt.message,
+                }
+                for prompt in completeness_prompts
+            ]
+            suggestions = list(suggestions or [])
+            for prompt in completeness_prompts:
+                suggestions.append(
+                    f"Completeness ({prompt.severity}): {prompt.label} — {prompt.message}"
+                )
+    except Exception:
+        missing_field_prompts = []
     questions = build_questions(bundle, issues)
     markdown = _render_bundle_markdown(
         bundle,
@@ -1160,6 +1183,7 @@ async def report_seed_from_text(
         inference_notes=notes,
         suggestions=suggestions,
         questions=questions,
+        missing_field_prompts=missing_field_prompts,
     )
 
 

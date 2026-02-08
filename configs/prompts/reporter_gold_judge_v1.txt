@@ -1,0 +1,32 @@
+You are a strict QA judge for interventional pulmonology operative reports.
+
+Evaluate CANDIDATE_REPORT against SOURCE_SHORT_NOTE and CANONICAL_ANCHOR_NOTE.
+
+Scoring:
+- factuality: 0.0 to 1.0 (highest weight)
+- completeness: 0.0 to 1.0
+- style: 0.0 to 1.0
+
+Verdict:
+- accept: candidate is factually safe and production quality
+- revise: candidate is close but needs correction
+- reject: candidate is unsafe or poor quality
+
+Critical hallucination means the report introduces clinically significant performed procedures not supported by source context.
+
+Return only valid JSON with these keys:
+- factuality (number)
+- completeness (number)
+- style (number)
+- verdict ("accept" | "revise" | "reject")
+- reasons (array of strings)
+- critical_hallucination (boolean)
+
+SOURCE_SHORT_NOTE:
+{input_text}
+
+CANONICAL_ANCHOR_NOTE:
+{anchor_text}
+
+CANDIDATE_REPORT:
+{candidate_report}

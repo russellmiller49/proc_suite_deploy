@@ -136,6 +136,106 @@
   color: var(--text-secondary);
 }
 
+/* --- Completeness Prompts --- */
+.completeness-summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+
+.completeness-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.completeness-group {
+  margin-top: 12px;
+}
+
+.completeness-group:first-child {
+  margin-top: 0;
+}
+
+.completeness-group-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 6px;
+}
+
+.completeness-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--bg-input);
+}
+
+.completeness-item-controls {
+  min-width: 220px;
+  max-width: 280px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.completeness-item-controls .flat-input,
+.completeness-item-controls .flat-select {
+  font-size: 12px;
+}
+
+.completeness-item-controls .subtle {
+  font-size: 11px;
+}
+
+.completeness-item-main {
+  min-width: 0;
+  flex: 1;
+}
+
+.completeness-item-label {
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 2px;
+}
+
+.completeness-item-message {
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.completeness-item-path {
+  margin-top: 6px;
+  color: var(--text-secondary);
+  font-size: 11px;
+  opacity: 0.75;
+  font-family: "SF Mono", Monaco, Consolas, monospace;
+  word-break: break-word;
+}
+
+.severity-required {
+  background-color: #fee2e2;
+  color: #991b1b;
+  border: 1px solid rgba(153, 27, 27, 0.15);
+}
+
+.severity-recommended {
+  background-color: #e0f2fe;
+  color: #075985;
+  border: 1px solid rgba(7, 89, 133, 0.15);
+}
+
 /* --- Audit Warning Levels --- */
 .audit-row-critical td { border-left: 4px solid #ef4444; }
 .audit-row-warning td { border-left: 4px solid #f59e0b; }
@@ -515,6 +615,10 @@ body.ps-focus-billing .dash-grid > .dash-col:last-child {
 }
 
 .dash-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
   padding: 10px 14px;
   background: #f8fafc;
   border-bottom: 1px solid var(--border-color);
@@ -524,6 +628,9 @@ body.ps-focus-billing .dash-grid > .dash-col:last-child {
   font-size: 13px;
   font-weight: 700;
   letter-spacing: 0.02em;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .dash-card-header .section-number {
@@ -537,6 +644,22 @@ body.ps-focus-billing .dash-grid > .dash-col:last-child {
 
 .dash-card-body {
   padding: 0;
+}
+
+.dash-card-body.padded {
+  padding: 12px 14px;
+}
+
+.dash-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.small-btn {
+  padding: 6px 10px;
+  font-size: 12px;
 }
 
 .dash-table {

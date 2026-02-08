@@ -128,6 +128,10 @@ class SeedFromTextResponse(BaseModel):
     inference_notes: list[str] = Field(default_factory=list)
     suggestions: list[str] = Field(default_factory=list)
     questions: list[QuestionSpec] = Field(default_factory=list)
+    missing_field_prompts: list[MissingFieldPrompt] = Field(
+        default_factory=list,
+        description="Suggested missing fields to document (completeness nudges).",
+    )
 
 
 class KnowledgeMeta(BaseModel):
@@ -176,6 +180,25 @@ class CodeSuggestionSummary(BaseModel):
     review_flag: str = "optional"
 
 
+class MissingFieldPrompt(BaseModel):
+    """Suggested missing field to improve note completeness."""
+
+    group: str = Field(
+        default="",
+        description="UI grouping label (e.g., Global, Navigation, EBUS).",
+    )
+    path: str = Field(
+        ...,
+        description="Dotted path relative to the registry root (supports [*] wildcards for arrays).",
+    )
+    label: str = Field(..., description="Short human label for the missing field.")
+    severity: Literal["required", "recommended"] = Field(
+        default="recommended",
+        description="Required = high-priority completeness; Recommended = helpful but optional.",
+    )
+    message: str = Field(..., description="Actionable guidance for the user.")
+
+
 class ReviewStatus(str, Enum):
     UNVERIFIED = "unverified"
     PENDING_PHI_REVIEW = "pending_phi_review"
@@ -195,6 +218,11 @@ class UnifiedProcessResponse(BaseModel):
         ),
     )
     evidence: dict[str, Any] = Field(default_factory=dict, description="Extraction evidence spans")
+
+    missing_field_prompts: list[MissingFieldPrompt] = Field(
+        default_factory=list,
+        description="Suggested missing fields to document (completeness nudges).",
+    )
 
     # Coder output
     cpt_codes: list[str] = Field(default_factory=list, description="Derived CPT codes")
@@ -228,6 +256,7 @@ __all__ = [
     "CoderRequest",
     "CoderResponse",
     "CodeSuggestionSummary",
+    "MissingFieldPrompt",
     "HybridPipelineMetadata",
     "KnowledgeMeta",
     "QARunRequest",

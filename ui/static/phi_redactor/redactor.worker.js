@@ -167,7 +167,7 @@ const NAME_REGEX_CLINICAL_STOPLIST = new Set([
   "lesion", "nodule", "mass", "tumor", "stenosis", "obstruction",
   "serial", "irrigation", "dilation", "aspiration", "suction",
   // Procedure / modality terms that can look like names
-  "radial", "ebus",
+  "radial", "ebus", "ct", "us", "mri", "pet", "cbct",
   // Specialties/roles often mis-detected as "Last, First"
   "pulmonology", "critical", "medicine", "anesthesia", "radiology", "pathology",
   // Common EHR/vitals labels that can be mis-detected as names
@@ -201,7 +201,7 @@ const SINGLE_NAME_CLINICAL_STOPLIST = new Set([
   // Vitals/labels
   "range", "ending", "pressure", "cuff", "calc", "injection", "once", "vitals", "family", "no",
   // Common clinical adjectives that appear after "for"
-  "progressive", "inflammation",
+  "progressive", "inflammation", "newly", "acquired",
   // Specialties (avoid session name amplification)
   "pulmonology", "critical", "medicine"
 ]);
@@ -309,7 +309,7 @@ const LINE_START_NAME_RE =
 // Fixes: "Daniel Rivera LLL nodule small 14mm." - name at absolute start
 // Fixes: "Ryan Williams procedure note" - name at start of procedure note
 const LINE_START_CLINICAL_NAME_RE =
-  /^([A-Z][a-z]+\s+[A-Z][a-z]+)\s+(?:LLL|RLL|RUL|LUL|RML|RB\d|LB\d|nodule|mass|lesion|lung|lobe|procedure|bronch|ebus|ion|underwent|scheduled|post|status|transplant|bilateral|unilateral)\b/gim;
+  /^([A-Z][a-z]+\s+[A-Z][a-z]+)\s+(?:LLL|RLL|RUL|LUL|RML|RB\d|LB\d|nodule|mass|lesion|lung|lobe|procedure|bronch|ebus|ion|underwent|scheduled|post|status|transplant|bilateral|unilateral)\b/gm;
 
 // Matches informal/lowercase names followed by "here for": "jason phillips here for right lung lavage"
 // Case-insensitive to catch dictation notes where names aren't capitalized
@@ -1451,6 +1451,15 @@ function runRegexDetectors(text) {
   for (const match of text.matchAll(ALLCAPS_LAST_FIRST_RE)) {
     const nameGroup = match[1];
     if (nameGroup && match.index != null) {
+      const words = nameGroup
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, " ")
+        .trim()
+        .split(/\s+/)
+        .filter(Boolean);
+      if (words.some((w) => SINGLE_NAME_CLINICAL_STOPLIST.has(w) || NAME_REGEX_CLINICAL_STOPLIST.has(w))) {
+        continue;
+      }
       spans.push({
         start: match.index,
         end: match.index + nameGroup.length,

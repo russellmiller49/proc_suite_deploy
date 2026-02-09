@@ -1124,44 +1124,125 @@ class RegistryService:
 
                             # Sedation: map seed sedation_type→sedation.type (schema v3)
                             sed_type = seed_data.get("sedation_type")
-                            if isinstance(sed_type, str) and sed_type.strip():
-                                sedation = record_data.get("sedation") or {}
-                                if not isinstance(sedation, dict):
-                                    sedation = {}
-                                if not sedation.get("type"):
-                                    sedation["type"] = sed_type.strip()
+                            sedation = record_data.get("sedation") or {}
+                            if not isinstance(sedation, dict):
+                                sedation = {}
+                            if isinstance(sed_type, str) and sed_type.strip() and not sedation.get("type"):
+                                sedation["type"] = sed_type.strip()
+                                record_data["sedation"] = sedation
+                                other_modified = True
+                                sed_patterns: list[str] = []
+                                if sed_type.strip().lower() == "general":
+                                    sed_patterns = [r"\bgeneral\s+anesthesia\b", r"\banesthesia\b"]
+                                elif sed_type.strip().lower() == "mac":
+                                    sed_patterns = [
+                                        r"\bmonitored\s+anesthesia\s+care\b",
+                                        r"\bmac\b",
+                                    ]
+                                elif sed_type.strip().lower() == "moderate":
+                                    sed_patterns = [r"\bmoderate\s+sedation\b", r"\bconscious\s+sedation\b"]
+                                elif sed_type.strip().lower() == "local only":
+                                    sed_patterns = [r"\blocal\s+anesthesia\b", r"\blidocaine\b"]
+                                if sed_patterns:
+                                    _add_first_span_skip_cpt_headers("sedation.type", sed_patterns)
+
+                            # Provider inference only when explicitly stated. Run even when
+                            # sedation.type was extracted upstream (common miss in NER).
+                            sed_type_norm = str(sedation.get("type") or "").strip().lower()
+                            if sed_type_norm and not sedation.get("anesthesia_provider"):
+                                provider_patterns: list[str] = []
+                                if re.search(r"(?i)\bCRNA\b", masked_note_text or ""):
+                                    sedation["anesthesia_provider"] = "CRNA"
+                                    provider_patterns = [r"\bCRNA\b"]
+                                elif re.search(r"(?i)\banesthesiolog(?:ist|y)\b", masked_note_text or ""):
+                                    sedation["anesthesia_provider"] = "Anesthesiologist"
+                                    provider_patterns = [r"\banesthesiolog(?:ist|y)\b"]
+                                elif sed_type_norm.startswith("moderate") and (
+                                    re.search(
+                                        r"(?i)\b(?:administer(?:ed|ing)?|provide(?:d|r)?)\b[^.\n]{0,80}\bby\b[^.\n]{0,60}\b(?:the\s+)?(?:attending(?:\s+physician)?|proceduralist|operator|physician)\b",
+                                        masked_note_text or "",
+                                    )
+                                    or re.search(
+                                        r"(?i)\bmonitored\b[^\n]{0,200}\bby\b[^\n]{0,80}\b(?:the\s+)?attending(?:\s+physician)?\b[^\n]{0,200}\b(?:while|as)\b[^\n]{0,60}\b(?:anesthesia|sedation)\b",
+                                        masked_note_text or "",
+                                    )
+                                ):
+                                    sedation["anesthesia_provider"] = "Proceduralist"
+                                    provider_patterns = [
+                                        r"(?i)\badminister(?:ed|ing)?\b[^.\n]{0,80}\bby\b[^.\n]{0,60}\b(?:the\s+)?attending(?:\s+physician)?\b",
+                                        r"(?i)\badminister(?:ed|ing)?\b[^.\n]{0,80}\bby\b[^.\n]{0,60}\b(?:the\s+)?proceduralist\b",
+                                        r"(?i)\badminister(?:ed|ing)?\b[^.\n]{0,80}\bby\b[^.\n]{0,60}\b(?:the\s+)?operator\b",
+                                        r"(?i)\badminister(?:ed|ing)?\b[^.\n]{0,80}\bby\b[^.\n]{0,60}\b(?:the\s+)?physician\b",
+                                        r"(?i)\bprovide(?:d|r)?\b[^.\n]{0,80}\bby\b[^.\n]{0,60}\b(?:the\s+)?attending(?:\s+physician)?\b",
+                                        r"(?i)\bmonitored\b[^\n]{0,200}\bby\b[^\n]{0,80}\b(?:the\s+)?attending(?:\s+physician)?\b[^\n]{0,200}\b(?:while|as)\b[^\n]{0,60}\b(?:anesthesia|sedation)\b",
+                                    ]
+
+                                if sedation.get("anesthesia_provider"):
                                     record_data["sedation"] = sedation
                                     other_modified = True
-                                    sed_patterns: list[str] = []
-                                    if sed_type.strip().lower() == "general":
-                                        sed_patterns = [r"\bgeneral\s+anesthesia\b", r"\banesthesia\b"]
-                                    elif sed_type.strip().lower() == "mac":
-                                        sed_patterns = [
-                                            r"\bmonitored\s+anesthesia\s+care\b",
-                                            r"\bmac\b",
-                                        ]
-                                    elif sed_type.strip().lower() == "moderate":
-                                        sed_patterns = [r"\bmoderate\s+sedation\b", r"\bconscious\s+sedation\b"]
-                                    elif sed_type.strip().lower() == "local only":
-                                        sed_patterns = [r"\blocal\s+anesthesia\b", r"\blidocaine\b"]
-                                    if sed_patterns:
-                                        _add_first_span_skip_cpt_headers("sedation.type", sed_patterns)
+                                    _add_first_span_skip_cpt_headers(
+                                        "sedation.anesthesia_provider",
+                                        provider_patterns
+                                        or [
+                                            r"\bCRNA\b",
+                                            r"\banesthesiolog(?:ist|y)\b",
+                                        ],
+                                    )
 
-                                    # Provider inference only when explicitly stated
-                                    if not sedation.get("anesthesia_provider"):
-                                        if re.search(r"(?i)\bCRNA\b", masked_note_text or ""):
-                                            sedation["anesthesia_provider"] = "CRNA"
-                                        elif re.search(r"(?i)\banesthesiolog(?:ist|y)\b", masked_note_text or ""):
-                                            sedation["anesthesia_provider"] = "Anesthesiologist"
-                                        if sedation.get("anesthesia_provider"):
+                            # Backstop moderate sedation intraservice time when explicitly stated.
+                            if sed_type_norm.startswith("moderate"):
+                                if sedation.get("intraservice_minutes") in (None, "", 0):
+                                    match = re.search(
+                                        r"(?i)\btotal\s+(?:moderate\s+)?sedation\s+time\b[^0-9]{0,20}(\d{1,3})\s*(?:minutes?|mins?)\b",
+                                        raw_note_text or "",
+                                    )
+                                    if match:
+                                        try:
+                                            minutes_val = int(match.group(1))
+                                        except ValueError:
+                                            minutes_val = None
+                                        if minutes_val is not None and 1 <= minutes_val <= 600:
+                                            sedation["intraservice_minutes"] = minutes_val
                                             record_data["sedation"] = sedation
+                                            other_modified = True
                                             _add_first_span_skip_cpt_headers(
-                                                "sedation.anesthesia_provider",
+                                                "sedation.intraservice_minutes",
                                                 [
-                                                    r"\bCRNA\b",
-                                                    r"\banesthesiolog(?:ist|y)\b",
+                                                    r"\btotal\s+(?:moderate\s+)?sedation\s+time\b[^\n]{0,60}\b\d{1,3}\s*(?:minutes?|mins?)\b"
                                                 ],
                                             )
+
+                                if not sedation.get("start_time"):
+                                    match = re.search(
+                                        r"(?i)\b(?:anesthesia|sedation)\s+start\s+time\b[^0-9]{0,40}(\d{1,2}:\d{2})\b",
+                                        raw_note_text or "",
+                                    )
+                                    if match:
+                                        sedation["start_time"] = match.group(1)
+                                        record_data["sedation"] = sedation
+                                        other_modified = True
+                                        _add_first_span_skip_cpt_headers(
+                                            "sedation.start_time",
+                                            [
+                                                r"\b(?:anesthesia|sedation)\s+start\s+time\b[^\n]{0,60}\b\d{1,2}:\d{2}\b"
+                                            ],
+                                        )
+
+                                if not sedation.get("end_time"):
+                                    match = re.search(
+                                        r"(?i)\b(?:anesthesia|sedation)\s+(?:stop|end)\s+time\b[^0-9]{0,40}(\d{1,2}:\d{2})\b",
+                                        raw_note_text or "",
+                                    )
+                                    if match:
+                                        sedation["end_time"] = match.group(1)
+                                        record_data["sedation"] = sedation
+                                        other_modified = True
+                                        _add_first_span_skip_cpt_headers(
+                                            "sedation.end_time",
+                                            [
+                                                r"\b(?:anesthesia|sedation)\s+(?:stop|end)\s+time\b[^\n]{0,60}\b\d{1,2}:\d{2}\b"
+                                            ],
+                                        )
 
                             # Procedure setting: apply airway_type only if explicitly evidenced.
                             airway_type = seed_data.get("airway_type")
@@ -1494,6 +1575,28 @@ class RegistryService:
                                                 and existing_action == "Removal"
                                             ):
                                                 can_override_action = True
+                                            # If deterministic extraction sees a true placement, allow it
+                                            # to override an erroneous removal-only action (common when the
+                                            # note says "bronchoscope was removed" near a stent placement).
+                                            if incoming_action == "Placement" and existing_action == "Removal":
+                                                stent_text = masked_note_text or ""
+                                                has_strong_placement = bool(
+                                                    re.search(
+                                                        r"(?i)\bstent\b[^.\n]{0,120}\b(?:insert|deploy|deliver|implant|placed|placement|seat(?:ed)?)\w*\b"
+                                                        r"|\b(?:insert|deploy|deliver|implant|placed|placement|seat(?:ed)?)\w*\b[^.\n]{0,120}\bstent\b",
+                                                        stent_text,
+                                                    )
+                                                )
+                                                has_strong_removal = bool(
+                                                    re.search(
+                                                        r"(?i)\bstent\s+removal\b"
+                                                        r"|\bstent\b[^.\n]{0,120}\b(?:remov|retriev|extract|pull|grasp|peel|explant|exchang)\w*\b"
+                                                        r"|\b(?:remov|retriev|extract|pull|grasp|peel|explant|exchang)\w*\b[^.\n]{0,120}\bstent\b",
+                                                        stent_text,
+                                                    )
+                                                )
+                                                if has_strong_placement and not has_strong_removal:
+                                                    can_override_action = True
                                             if can_override_action and existing_action != incoming_action:
                                                 existing[key] = incoming_action
                                                 action_type_by_action = {
@@ -1505,6 +1608,8 @@ class RegistryService:
                                                 normalized_action_type = action_type_by_action.get(incoming_action)
                                                 if normalized_action_type:
                                                     existing["action_type"] = normalized_action_type
+                                                if incoming_action == "Placement" and existing.get("airway_stent_removal") is True:
+                                                    existing["airway_stent_removal"] = False
                                                 proc_changed = True
                                                 continue
 
@@ -1624,6 +1729,24 @@ class RegistryService:
                                             field_key,
                                             list(CHEST_ULTRASOUND_PATTERNS),
                                         )
+
+                        # Procedure setting: backfill rigid barrel size from rigid bronchoscopy scope size.
+                        rigid_proc = record_procs.get("rigid_bronchoscopy") or {}
+                        rigid_size = rigid_proc.get("rigid_scope_size")
+                        if isinstance(rigid_size, (int, float)) and rigid_size:
+                            setting = record_data.get("procedure_setting") or {}
+                            if not isinstance(setting, dict):
+                                setting = {}
+                            if setting.get("rigid_barrel_size_mm") in (None, "", 0):
+                                setting["rigid_barrel_size_mm"] = float(rigid_size)
+                                record_data["procedure_setting"] = setting
+                                other_modified = True
+                                _add_first_span_skip_cpt_headers(
+                                    "procedure_setting.rigid_barrel_size_mm",
+                                    [
+                                        r"\b\d+(?:\.\d+)?\s*-?\s*mm\b[^.\n]{0,40}\b(?:non[-\s]?ventilating\s+)?(?:rigid\s+)?(?:tracheoscope|bronch(?:oscope|oscop)?|scope|barrel)\b",
+                                    ],
+                                )
 
                         if isinstance(seed_pleural, dict):
                             for proc_name, proc_data in seed_pleural.items():
@@ -1967,6 +2090,7 @@ class RegistryService:
             populate_ebus_node_events_fallback,
             reconcile_ebus_sampling_from_narrative,
             reconcile_ebus_sampling_from_specimen_log,
+            reconcile_peripheral_tbna_against_nodal_context,
             sanitize_ebus_events,
         )
 
@@ -1982,6 +2106,15 @@ class RegistryService:
         ebus_specimen_warnings = reconcile_ebus_sampling_from_specimen_log(record, masked_note_text)
         if ebus_specimen_warnings:
             extraction_warnings.extend(ebus_specimen_warnings)
+        # Re-sanitize after reconciliation steps that may add/merge stations_sampled.
+        ebus_resanitize_warnings = sanitize_ebus_events(record, masked_note_text)
+        if ebus_resanitize_warnings:
+            extraction_warnings.extend(ebus_resanitize_warnings)
+        peripheral_tbna_reconcile_warnings = reconcile_peripheral_tbna_against_nodal_context(
+            record, masked_note_text
+        )
+        if peripheral_tbna_reconcile_warnings:
+            extraction_warnings.extend(peripheral_tbna_reconcile_warnings)
         ebus_sampling_detail_warnings = enrich_ebus_node_event_sampling_details(record, masked_note_text)
         if ebus_sampling_detail_warnings:
             extraction_warnings.extend(ebus_sampling_detail_warnings)

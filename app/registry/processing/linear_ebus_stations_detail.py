@@ -52,6 +52,11 @@ _AXES_FALLBACK_RE = re.compile(
     r"(?i)\b(?P<a>\d+(?:\.\d+)?)\s*(?:x|by)\s*(?P<b>\d+(?:\.\d+)?)\s*mm\b"
 )
 
+_STATION_SIZE_LIST_LINE_RE = re.compile(
+    r"(?im)^\s*(?P<station>2R|2L|3P|4R|4L|5|7|8|9|10R|10L|11R(?:s|i)?|11L(?:s|i)?|12R|12L)\s*"
+    r"[-:]\s*(?P<mm>\d+(?:\.\d+)?)\s*mm\b"
+)
+
 _PASSES_RE = re.compile(r"(?i)\b(\d{1,2})\s+passes?\b")
 _PASSES_WORD_RE = re.compile(r"(?i)\b(one|two|three|four|five|six|seven|eight|nine|ten)\s+passes?\b")
 _NEEDLE_GAUGE_RE = re.compile(r"(?i)\b(19|21|22|25)\s*[- ]?(?:g|gauge)\b")
@@ -68,6 +73,7 @@ _SAMPLED_FALSE_RE = re.compile(
     r")\b"
 )
 _SAMPLED_TRUE_RE = re.compile(r"(?i)\b(?:biopsied|sampled|aspirated)\b")
+_SAMPLED_ACTION_RE = re.compile(r"(?i)\b(?:tbna|fna|needle\s+aspirat|passes?)\b")
 
 _ECHOGENICITY_RE = re.compile(r"(?i)\b(?:heterogeneous|homogeneous)\b")
 _SHAPE_RE = re.compile(r"(?i)\b(?:oval|round|irregular)\s+shape\b|\b(?:oval|round|irregular)\b")
@@ -163,6 +169,24 @@ def _normalize_mass_label(match: re.Match[str]) -> str:
     label = " ".join(label_parts).strip()
     label = re.sub(r"\s+", " ", label).strip()
     return label.title() if label else typ.title()
+
+
+def _infer_station_sampled_from_text(text: str, station: str) -> bool | None:
+    """Best-effort inference of sampled vs measured-only for a station token."""
+    if not text or not station:
+        return None
+    pat = re.compile(rf"(?i)\\b{re.escape(station)}\\b")
+    for raw_line in (text or "").splitlines():
+        line = (raw_line or "").strip()
+        if not line:
+            continue
+        if not pat.search(line):
+            continue
+        if _SAMPLED_FALSE_RE.search(line):
+            return False
+        if _SAMPLED_TRUE_RE.search(line) or _SAMPLED_ACTION_RE.search(line):
+            return True
+    return None
 
 
 def _apply_section_to_entry(
@@ -470,6 +494,34 @@ def extract_linear_ebus_stations_detail(note_text: str) -> list[dict[str, Any]]:
             global_gauge=global_gauge,
             default_sampled=True,
         )
+
+    # Size-only station list lines (common in free-text narratives), e.g.:
+    #   11L - 7.8mm
+    #   4L - 2.7mm
+    for match in _STATION_SIZE_LIST_LINE_RE.finditer(text):
+        station = _normalize_station_token(match.group("station") or "")
+        if not station:
+            continue
+
+        entry = by_station.get(station)
+        if entry is None:
+            entry = {"station": station}
+            by_station[station] = entry
+            order.append(station)
+
+        mm = _to_float(match.group("mm"))
+        if mm is not None and entry.get("short_axis_mm") is None:
+            entry["short_axis_mm"] = mm
+            entry["_short_axis_mm_evidence"] = {
+                "text": (match.group(0) or "").strip(),
+                "start": int(match.start()),
+                "end": int(match.end()),
+            }
+
+        # Treat bare size lists as measurement-only unless sampling is explicitly stated elsewhere.
+        if entry.get("sampled") is None:
+            inferred = _infer_station_sampled_from_text(text, station)
+            entry["sampled"] = False if inferred is None else bool(inferred)
 
     # Non-station targets (masses/lesions/nodules) are often documented in the same
     # templated section as stations. Capture them as additional entries so CPT

@@ -8,6 +8,7 @@ This is used by:
 from __future__ import annotations
 
 import logging
+import re
 import time
 from typing import Any
 
@@ -128,6 +129,33 @@ async def run_unified_pipeline_logic(
                 review_flag=review_flag,
             )
         )
+
+    # Surface header-explicit codes that deterministic derivation missed as low-confidence
+    # "review candidates" (avoid silently dropping documented header codes).
+    header_missing: set[str] = set()
+    for w in (getattr(result, "audit_warnings", None) or []):
+        text = str(w or "")
+        if not text.startswith("HEADER_EXPLICIT:"):
+            continue
+        for m in re.finditer(r"\b(\d{5})\b", text):
+            header_missing.add(m.group(1))
+
+    if header_missing:
+        seen_codes = {s.code for s in suggestions}
+        for code in sorted(header_missing):
+            if code in seen_codes:
+                continue
+            proc_info = coding_service.kb_repo.get_procedure_info(code)
+            description = proc_info.description if proc_info else ""
+            suggestions.append(
+                CodeSuggestionSummary(
+                    code=code,
+                    description=description,
+                    confidence=0.40,
+                    rationale="Header explicitly documents this code; deterministic derivation did not support it.",
+                    review_flag="required",
+                )
+            )
 
     total_work_rvu: float | None = None
     estimated_payment: float | None = None

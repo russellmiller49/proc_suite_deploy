@@ -2592,6 +2592,8 @@ _EBUS_EXPLICIT_NEGATION_PHRASES_RE = re.compile(
     r"|not\s+sampled\b"
     r"|not\s+perform(?:ed|ing)?\b"
     r"|no\s+biops(?:y|ies)\b"
+    r"|(?:biops(?:y|ies)|samples?|specimens?)\s+(?:were\s+)?not\s+taken\b"
+    r"|no\s+(?:biops(?:y|ies)|samples?|specimens?)\s+(?:were\s+)?taken\b"
     r"|did\s+not\s+have\s+any\s+biops(?:y|ies)\s+target"
     r"|did\s+not\s+have\s+any\s+sampling\s+target"
     r"|no\s+(?:biops(?:y|ies)|sampling)\s+target"
@@ -2629,7 +2631,9 @@ def _ebus_station_pattern(station: str) -> re.Pattern[str] | None:
         return None
     if token.isdigit():
         # Station "7" is highly collision-prone; require "station 7" or a station-style line prefix.
-        return re.compile(rf"(?i)(?:\bstation\s*{re.escape(token)}\b|\b{re.escape(token)}\b\s*[:\-])")
+        return re.compile(
+            rf"(?i)(?:\bstation\s*{re.escape(token)}\b|\b{re.escape(token)}\b\s*(?:[:\-]|\(|,))"
+        )
     # Substations are frequently documented as 11Rs/11Ri and should match canonical
     # event station keys (11R/11L) during reconciliation.
     token_pat = re.escape(token)
@@ -2697,6 +2701,21 @@ def _station_has_strong_sampling_evidence(full_text: str, station: str) -> bool:
         if not pattern.search(line):
             continue
         if _EBUS_SAMPLING_INDICATORS_RE.search(line) and not _EBUS_SAMPLING_CRITERIA_RE.search(line):
+            return True
+
+    # Cross-line backstop for site-block templates, e.g.:
+    #   "Site 1: station 11L - 8mm node"
+    #   "The site was sampled with TBNA."
+    # Only apply when the local window is NOT a criteria-only line.
+    site_block_sampling_re = re.compile(
+        r"(?i)\b(?:this|the)\s+(?:site|node)\b[^.\n]{0,120}\b(?:was\s+)?(?:sampled|aspirated|biopsied)\b"
+        r"|\bsite\b[^.\n]{0,120}\b(?:sampled|aspirated|biopsied)\b",
+    )
+    for match in pattern.finditer(text):
+        window = text[match.start() : min(len(text), match.start() + 420)]
+        if _EBUS_SAMPLING_CRITERIA_RE.search(window):
+            continue
+        if site_block_sampling_re.search(window) and _EBUS_SAMPLING_INDICATORS_RE.search(window):
             return True
     return False
 
@@ -2802,6 +2821,46 @@ def sanitize_ebus_events(record: RegistryRecord, full_text: str) -> list[str]:
                 warnings.append(f"AUTO_CORRECTED_EBUS_NEGATION: {station_token}")
             else:
                 warnings.append(f"AUTO_CORRECTED_EBUS_CRITERIA_ONLY: {station_token}")
+
+    # Guardrail: cull hallucinated stations that do not appear in the note text at all.
+    if full_text:
+        alias_patterns: dict[str, list[re.Pattern[str]]] = {
+            "7": [re.compile(r"(?i)\bsubcarinal\b")],
+            "4R": [re.compile(r"(?i)\bright\s+paratracheal\b")],
+            "4L": [re.compile(r"(?i)\bleft\s+paratracheal\b")],
+            "2R": [re.compile(r"(?i)\bright\s+upper\s+paratracheal\b")],
+            "2L": [re.compile(r"(?i)\bleft\s+upper\s+paratracheal\b")],
+            "5": [re.compile(r"(?i)\b(?:aorto-?pulmonary|ap\s+window|aortopulmonary)\b")],
+            "10R": [re.compile(r"(?i)\bright\s+hilar\b")],
+            "10L": [re.compile(r"(?i)\bleft\s+hilar\b")],
+            "11R": [re.compile(r"(?i)\bright\s+(?:interlobar|hilar)\b")],
+            "11L": [re.compile(r"(?i)\bleft\s+(?:interlobar|hilar)\b")],
+        }
+
+        kept_events = []
+        for event in node_events:
+            station = getattr(event, "station", None)
+            if not isinstance(station, str) or not station.strip():
+                kept_events.append(event)
+                continue
+            station_token = station.strip().upper()
+            pat = _ebus_station_pattern(station_token)
+            if pat is None:
+                kept_events.append(event)
+                continue
+            if pat.search(full_text):
+                kept_events.append(event)
+                continue
+            # Allow common anatomic aliases when templates omit the numeric station token.
+            aliases = alias_patterns.get(station_token)
+            if aliases and any(alias.search(full_text) for alias in aliases):
+                kept_events.append(event)
+                continue
+            warnings.append(f"AUTO_DROPPED_EBUS_STATION_NOT_IN_TEXT: {station_token}")
+
+        if len(kept_events) != len(node_events):
+            setattr(linear, "node_events", kept_events)
+            node_events = kept_events
 
     # Keep legacy aggregate station lists consistent when present.
     sampled: list[str] = []
@@ -2909,6 +2968,11 @@ def reconcile_ebus_sampling_from_narrative(record: RegistryRecord, full_text: st
 
         lines = [ln.strip() for ln in block.splitlines() if ln.strip()]
         if not lines:
+            continue
+
+        # Block-level negation: if any line in the site block explicitly negates sampling,
+        # do not upgrade/assume sampling for that station (prevents false 31652/31653).
+        if any(_EBUS_EXPLICIT_NEGATION_PHRASES_RE.search(ln) for ln in lines):
             continue
 
         # Station token may be in the header line or elsewhere in the block.
@@ -3060,16 +3124,29 @@ def cull_hollow_ebus_claims(record: RegistryRecord, full_text: str) -> list[str]
     if isinstance(stations_sampled, list) and stations_sampled:
         return warnings
 
-    # If the note doesn't have a clear procedure-detail section, do not cull;
-    # the record may still be correct but the narrative is formatted differently.
     text = full_text or ""
     match = _PROCEDURE_DETAIL_SECTION_PATTERN.search(text)
-    if not match:
-        return warnings
-
-    procedure_detail = text[match.end() :].lstrip("\r\n ")
-    if _LINEAR_EBUS_MARKER_RE.search(procedure_detail):
-        return warnings
+    if match:
+        procedure_detail = text[match.end() :].lstrip("\r\n ")
+        if _LINEAR_EBUS_MARKER_RE.search(procedure_detail):
+            # Guardrail: avoid treating radial-only EBUS mentions as evidence for linear EBUS.
+            radial_markers = re.compile(
+                r"(?i)\b(?:radial\s+ebus|radial\s+probe|miniprobe|r-?ebus|rebus)\b"
+            )
+            nodal_markers = re.compile(
+                r"(?i)\b(?:station|level|lymph\s+node|mediastin(?:al|um)|hilar|tbna|fna|needle\s+aspirat)\b"
+            )
+            if radial_markers.search(procedure_detail) and not nodal_markers.search(procedure_detail):
+                # Continue to cull: this is radial-only language with no nodal/staging evidence.
+                pass
+            else:
+                return warnings
+    else:
+        # Fallback: if we can't locate a procedure-detail section, only cull when
+        # the note contains no EBUS markers anywhere (prevents false culls in
+        # nonstandard templates while still removing true hallucinations).
+        if _LINEAR_EBUS_MARKER_RE.search(text):
+            return warnings
 
     # No stations/events and no EBUS marker in the narrative body => treat as hallucination.
     setattr(linear, "performed", False)
@@ -3097,6 +3174,57 @@ def cull_hollow_ebus_claims(record: RegistryRecord, full_text: str) -> list[str]
     warnings.append(
         "AUTO_CORRECTED: Culled hollow linear_ebus claim (no stations/text evidence)."
     )
+    return warnings
+
+
+def reconcile_peripheral_tbna_against_nodal_context(record: RegistryRecord, full_text: str) -> list[str]:
+    """Cull peripheral TBNA false positives when the note only supports nodal (EBUS) sampling.
+
+    Motivation: Some extraction paths over-trigger peripheral_tbna when the note describes
+    TBNA of lymph node stations (e.g., "station 11L") without any peripheral lesion target.
+    """
+    warnings: list[str] = []
+    procedures = getattr(record, "procedures_performed", None)
+    peripheral_tbna = getattr(procedures, "peripheral_tbna", None) if procedures is not None else None
+    if peripheral_tbna is None or getattr(peripheral_tbna, "performed", None) is not True:
+        return warnings
+
+    text = full_text or ""
+    if not text.strip():
+        return warnings
+
+    # Evidence for nodal sampling context.
+    nodal_context = bool(
+        re.search(r"(?i)\b(?:lymph\s+node|stations?|mediastin(?:al|um)|hilar)\b", text)
+        or _EBUS_STATION_TOKEN_RE.search(text)
+        or re.search(r"(?i)\b(?:station|level)\s*\d{1,2}\b", text)
+    )
+
+    # Evidence for a distinct peripheral lesion target sampled by TBNA.
+    peripheral_target_context = bool(
+        re.search(
+            r"(?i)\b(?:lesion|mass|nodule|peripheral)\b[^.\n]{0,220}\b(?:tbna|fna|needle\s+aspirat|aspirat(?:ion|ed))\b"
+            r"|\b(?:tbna|fna|needle\s+aspirat|aspirat(?:ion|ed))\b[^.\n]{0,220}\b(?:lesion|mass|nodule|peripheral)\b",
+            text,
+        )
+        or re.search(r"(?i)\b(?:RB|LB)\d{1,2}\b", text)
+    )
+
+    targets = getattr(peripheral_tbna, "targets_sampled", None)
+    target_values: list[str] = []
+    if isinstance(targets, (list, tuple)):
+        target_values = [str(t).strip() for t in targets if t and str(t).strip()]
+
+    generic_target_re = re.compile(r"(?i)^\s*(?:lung|pulmonary)\s+(?:nodule|mass|lesion)s?\s*$")
+    only_generic_targets = bool(target_values) and all(generic_target_re.search(t) for t in target_values)
+
+    if nodal_context and not peripheral_target_context and (not target_values or only_generic_targets):
+        setattr(peripheral_tbna, "performed", False)
+        if hasattr(peripheral_tbna, "targets_sampled"):
+            setattr(peripheral_tbna, "targets_sampled", None)
+        warnings.append(
+            "AUTO_CORRECTED: Culled peripheral_tbna (nodal-only TBNA evidence; no distinct peripheral target)."
+        )
     return warnings
 
 
@@ -3902,6 +4030,10 @@ _EBUS_ROSE_MALIGNANT_RE = re.compile(
     re.IGNORECASE,
 )
 _EBUS_ROSE_SUSPICIOUS_RE = re.compile(r"\bsuspici(?:ous|on)\b", re.IGNORECASE)
+_EBUS_NEGATED_SUSPICIOUS_RE = re.compile(
+    r"\b(?:no|not|without|absence\s+of|lack\s+of|did\s+not\s+identify)\b[^.\n]{0,80}\bsuspici",
+    re.IGNORECASE,
+)
 _EBUS_ROSE_NONDx_RE = re.compile(
     r"\b(?:non[-\s]?diagnostic|nondiagnostic|inadequate|insufficient|scant)\b",
     re.IGNORECASE,
@@ -3935,6 +4067,9 @@ def _infer_ebus_node_outcome_from_rose_window(rose_window: str, station: str) ->
 
         if _EBUS_ROSE_NONDx_RE.search(local):
             return "nondiagnostic"
+        if _EBUS_NEGATED_SUSPICIOUS_RE.search(local):
+            # e.g., "absence of confirmatory/suspicious cells on ROSE"
+            return "benign"
         if _EBUS_ROSE_SUSPICIOUS_RE.search(local):
             return "suspicious"
         if _EBUS_ROSE_MALIGNANT_RE.search(local) and not _EBUS_NEGATED_MALIGNANCY_RE.search(local):
@@ -4295,7 +4430,13 @@ def enrich_medical_thoracoscopy_biopsies_taken(record: RegistryRecord, full_text
 
 
 _OUTCOMES_ABORT_RE = re.compile(
-    r"(?i)\b(?:procedure\s+)?(?:aborted|terminated)\b[^.\n]{0,200}"
+    r"(?i)\b(?:"
+    # Require an explicit procedure/case context so we don't misread phrases like
+    # "lesion terminated about 1cm proximal..." as an aborted procedure.
+    r"(?:procedure|case|operation|bronchoscopy)\b[^.\n]{0,60}\b(?:was\s+)?(?:aborted|terminated)\b"
+    r"|"
+    r"\b(?:aborted|terminated)\b[^.\n]{0,60}\b(?:procedure|case|bronchoscopy)\b"
+    r")\b[^.\n]{0,200}"
 )
 _OUTCOMES_FAIL_RE = re.compile(
     r"(?i)\b(?:unable\s+to|could\s+not|cannot|failed\s+to|unsuccessful|not\s+successful)\b[^.\n]{0,220}"

@@ -789,6 +789,9 @@ ENDOBRONCHIAL_BIOPSY_PATTERNS = [
     # "endobronchial" (e.g., cavity/mycetoma within an airway segment).
     r"\bforceps\s+biops(?:y|ies)\b[^.\n]{0,140}\b(?:cavity|endobronch|airway|bronch(?:us|ial)|trachea|carina|mainstem)\b",
     r"\b(?:cavity|endobronch|airway|bronch(?:us|ial)|trachea|carina|mainstem)\b[^.\n]{0,140}\bforceps\s+biops(?:y|ies)\b",
+    # EBUS intranodal mini-forceps (often documented without the word "biopsy")
+    r"\bmini[-\s]?forceps\b[^.\n]{0,240}\b(?:ebus|endobronchial\s+ultrasound|lymph\s+node|station)\b",
+    r"\b(?:ebus|endobronchial\s+ultrasound|lymph\s+node|station)\b[^.\n]{0,240}\bmini[-\s]?forceps\b",
 ]
 
 # Transbronchial biopsy detection patterns (parenchyma / peripheral lung).
@@ -810,6 +813,8 @@ RADIAL_EBUS_PATTERNS = [
     r"\brp-?ebus\b",
     r"\bminiprobe\b",
     r"\bradial\s+probe\b",
+    # Some notes document rEBUS as "radial ultrasound" without the EBUS token.
+    r"\bradial\s+ultrasound\b",
 ]
 
 # EUS-B detection patterns (endoscopic ultrasound via EBUS bronchoscope)
@@ -874,6 +879,30 @@ BRUSHINGS_PATTERNS = [
     r"\bcytology\s+brush(?:ings?)?\b",
     r"\bbronchial\s+brushing(?:s)?\b",
     r"\bbronchoscopic\s+brush(?:ings?)?\b",
+    # Some templates document "brush" without the plural "brushings".
+    r"\b(?:cytology|bronch(?:ial|oscopic))\s+brush\b",
+    r"\bbrush\b[^.\n]{0,60}\b(?:cytolog|specimen|sample|pass(?:es)?|sent\s+for)\b",
+]
+
+# Mechanical debulking / excision patterns (31640 family)
+MECHANICAL_DEBULKING_PATTERNS = [
+    r"\bmechanical\s+debulk(?:ing)?\b",
+    r"\bdebulk(?:ed|ing)?\b",
+    r"\b(?:tumou?r|lesion|mass)\b[^.\n]{0,160}\b(?:resect|excise|excision|core\s*out|remove(?:d)?|debulk(?:ed|ing)?)\b",
+    r"\b(?:resect|excise|excision|core\s*out|remove(?:d)?)\b[^.\n]{0,160}\b(?:tumou?r|lesion|mass)\b",
+    r"\b(?:snare|microdebrider|microdebrid\w*|rigid\s+coring)\b[^.\n]{0,220}\b(?:en\s+bloc|resect|excise|excision|remove(?:d)?|debulk(?:ed|ing)?)\b",
+    r"\b(?:en\s+bloc)\b[^.\n]{0,220}\b(?:resect|excise|excision|remove(?:d)?|debulk(?:ed|ing)?)\b",
+]
+
+# Bronchopleural fistula (BPF) glue/sealant patterns (therapeutic bronchoscopy).
+BPF_SEALANT_PATTERNS = [
+    r"\b(?:bronchopleural|broncho-pleural|broncho\s*pleural)\s+fistula\b",
+    r"\bbpf\b",
+]
+
+BPF_SEALANT_AGENT_PATTERNS = [
+    r"\b(?:glue|sealant|fibrin\s+glue|cyanoacrylate)\b",
+    r"\bveno-?\s*seal\b",
 ]
 
 # Transbronchial cryobiopsy patterns
@@ -1408,6 +1437,26 @@ def extract_therapeutic_aspiration(note_text: str) -> Dict[str, Any]:
                 candidate = (loc_match.group("loc") or "").strip().strip(" ,;:-")
                 if candidate:
                     location = candidate
+            if not location:
+                seg_match = re.search(
+                    r"(?is)\bsegments?\s+cleared\s*:\s*(?P<locs>[^\n]{8,600})",
+                    candidate_text,
+                )
+                if seg_match:
+                    locs = (seg_match.group("locs") or "").strip()
+                    locs = re.sub(r"\s+", " ", locs).strip(" .;:-")
+                    if locs:
+                        location = locs
+            if not location:
+                secretions_match = re.search(
+                    r"(?is)\bsecretions?\b[^.\n]{0,260}\bthroughout\b[^.\n]{0,20}(?P<locs>[^.\n]{3,220})\.[^.\n]{0,140}\btherapeutic\s+aspiration\b",
+                    candidate_text,
+                )
+                if secretions_match:
+                    locs = (secretions_match.group("locs") or "").strip()
+                    locs = re.sub(r"\s+", " ", locs).strip(" ,;:-")
+                    if locs:
+                        location = locs
 
             result = {"therapeutic_aspiration": {"performed": True}}
             result["therapeutic_aspiration"]["material"] = material
@@ -2037,7 +2086,14 @@ def extract_radial_ebus(note_text: str) -> Dict[str, Any]:
     """Extract radial EBUS indicator (peripheral lesion localization)."""
     text_lower = (note_text or "").lower()
     for pattern in RADIAL_EBUS_PATTERNS:
-        if re.search(pattern, text_lower, re.IGNORECASE):
+        match = re.search(pattern, text_lower, re.IGNORECASE)
+        if match:
+            # Guardrail: "radial ultrasound" can appear outside bronchoscopy; require
+            # bronchoscopy/probe context in a local window for this variant.
+            if "radial\\s+ultrasound" in pattern:
+                local = text_lower[max(0, match.start() - 160) : min(len(text_lower), match.end() + 220)]
+                if not re.search(r"(?i)\b(?:bronchoscop|bronchoscope|probe|miniprobe|r-?ebus|rebus)\b", local):
+                    continue
             negation_check = r"\b(?:no|not|without|declined|deferred)\b[^.\n]{0,60}" + pattern
             if re.search(negation_check, text_lower, re.IGNORECASE):
                 continue
@@ -2140,7 +2196,7 @@ def extract_rigid_bronchoscopy(note_text: str) -> Dict[str, Any]:
 
             # Best-effort rigid scope size (inner diameter, mm)
             size_match = re.search(
-                r"(?i)\b(\d+(?:\.\d+)?)\s*-?\s*mm\s+(?:rigid|ventilating|tracheoscope|barrel)\b",
+                r"(?i)\b(\d+(?:\.\d+)?)\s*-?\s*mm\b[^.\n]{0,40}\b(?:non[-\s]?ventilating\s+)?(?:rigid\s+)?(?:tracheoscope|bronch(?:oscope|oscop)?|scope|barrel)\b",
                 preferred_text or "",
             )
             if not size_match:
@@ -2278,6 +2334,30 @@ def extract_tbna_conventional(note_text: str) -> Dict[str, Any]:
 
             peripheral_hit = True
 
+    # Some peripheral sampling notes document "needle biopsies" without explicitly
+    # naming TBNA; treat these as peripheral TBNA when the workflow context supports it.
+    for match in re.finditer(r"\bneedle\s+biops(?:y|ies)\b", raw_text, re.IGNORECASE):
+        before = raw_text[max(0, match.start() - 120) : match.start()]
+        if re.search(r"\b(?:no|not|without|declined|deferred)\b[^.\n]{0,60}$", before, re.IGNORECASE):
+            continue
+
+        local = _local_context(raw_text, match.start(), match.end(), before_lines=4, after_lines=4)
+        # Avoid nodal EBUS blocks; those are handled under linear_ebus.
+        if nodal_ebus_context_re.search(local) or _extract_ln_stations_from_text(local):
+            continue
+
+        # Require a peripheral workflow signal (radial EBUS, navigation, fluoroscopy, etc).
+        if not (
+            radial_context_re.search(local)
+            or re.search(
+                r"(?i)\b(?:navigat(?:ion|ional)|ion\b|robotic|superdimension|fluoro(?:scop)?y|lesion|nodule|mass)\b",
+                local,
+            )
+        ):
+            continue
+
+        peripheral_hit = True
+
     result: dict[str, Any] = {}
     if nodal_stations:
         result["tbna_conventional"] = {"performed": True, "stations_sampled": sorted(nodal_stations)}
@@ -2404,16 +2484,155 @@ def extract_brushings(note_text: str) -> Dict[str, Any]:
     return {}
 
 
+def extract_mechanical_debulking(note_text: str) -> Dict[str, Any]:
+    """Extract mechanical debulking / excision indicator.
+
+    Conservative guardrail: do not treat mucus/secretions clearance as tissue debulking.
+    """
+    preferred_text, _used_detail = _preferred_procedure_detail_text(note_text)
+    preferred_text = _strip_cpt_definition_lines(preferred_text)
+    text = preferred_text or ""
+    text_lower = text.lower()
+    if not text_lower.strip():
+        return {}
+
+    # Guardrail: "debulking" can be used loosely for mucus/secretions clearance.
+    mucus_only_context = bool(
+        re.search(r"(?i)\b(?:mucus|mucous|secretions?|mucus\s+plug|blood\s+clots?)\b", text_lower)
+        and not re.search(
+            r"(?i)\b(?:tumou?r|lesion|mass|endobronchial|obstruct|stenos|granulation|recanaliz)\w*\b",
+            text_lower,
+        )
+    )
+    if mucus_only_context:
+        return {}
+
+    for pattern in MECHANICAL_DEBULKING_PATTERNS:
+        for match in re.finditer(pattern, text_lower, re.IGNORECASE):
+            prefix = text_lower[max(0, match.start() - 120) : match.start()]
+            suffix = text_lower[match.end() : min(len(text_lower), match.end() + 120)]
+
+            # Negation / future intent guardrail
+            if re.search(r"(?i)\b(?:no|not|without|declined|deferred)\b", prefix):
+                continue
+            if re.search(
+                r"(?i)\b(?:consider(?:ed|ation)?|recommend(?:ed|ation)?|plan(?:ned)?|future|next)\b",
+                prefix,
+            ) or re.search(r"(?i)\b(?:at\s+next\s+intervention|if\s+needed)\b", suffix):
+                continue
+
+            window = text_lower[max(0, match.start() - 220) : min(len(text_lower), match.end() + 220)]
+            if not re.search(
+                r"(?i)\b(?:tumou?r|lesion|mass|endobronchial|obstruct|stenos|granulation|web|fungating|recanaliz)\w*\b",
+                window,
+            ):
+                continue
+
+            proc: dict[str, Any] = {"performed": True}
+            locations = _extract_lung_locations_from_text(window)
+            if locations:
+                proc["locations"] = locations
+
+            return {"mechanical_debulking": proc}
+
+    return {}
+
+
+def extract_bpf_sealant(note_text: str) -> Dict[str, Any]:
+    """Extract bronchopleural fistula (BPF) glue/sealant intervention indicator."""
+    preferred_text, _used_detail = _preferred_procedure_detail_text(note_text)
+    preferred_text = _strip_cpt_definition_lines(preferred_text)
+    text = preferred_text or ""
+    text_lower = text.lower()
+    if not text_lower.strip():
+        return {}
+
+    has_bpf = any(re.search(p, text_lower, re.IGNORECASE) for p in BPF_SEALANT_PATTERNS)
+    if not has_bpf:
+        return {}
+
+    has_agent = any(re.search(p, text_lower, re.IGNORECASE) for p in BPF_SEALANT_AGENT_PATTERNS)
+    has_action = bool(
+        re.search(r"(?i)\b(?:instill(?:ed|ation)?|appl(?:y|ied|ication)|inject(?:ed|ion)?)\b", text_lower)
+    )
+    if not (has_agent and has_action):
+        return {}
+
+    # Negation guardrail
+    if re.search(
+        r"(?i)\b(?:no|not|without|declined|deferred)\b[^.\n]{0,100}\b(?:glue|sealant|veno)\b",
+        text_lower,
+    ):
+        return {}
+
+    proc: dict[str, Any] = {"performed": True}
+    if re.search(r"(?i)\bveno-?\s*seal\b", text):
+        proc["sealant_type"] = "Veno-seal"
+    elif re.search(r"(?i)\bfibrin\s+glue\b", text):
+        proc["sealant_type"] = "Fibrin glue"
+    elif re.search(r"(?i)\bcyanoacrylate\b", text):
+        proc["sealant_type"] = "Cyanoacrylate"
+    elif re.search(r"(?i)\bsealant\b", text):
+        proc["sealant_type"] = "Sealant"
+    elif re.search(r"(?i)\bglue\b", text):
+        proc["sealant_type"] = "Glue"
+
+    return {"bpf_sealant": proc}
+
+
 def extract_transbronchial_cryobiopsy(note_text: str) -> Dict[str, Any]:
     """Extract transbronchial cryobiopsy indicator."""
     preferred_text, _used_detail = _preferred_procedure_detail_text(note_text)
     preferred_text = _strip_cpt_definition_lines(preferred_text)
-    text_lower = (preferred_text or "").lower()
+    raw_text = preferred_text or ""
+    text_lower = raw_text.lower()
+
+    nodal_context_re = re.compile(r"(?i)\b(?:intranodal|lymph\s+node|stations?|mediastin(?:al|um)|hilar)\b")
+    access_tract_re = re.compile(r"(?i)\b(?:tract|tunnel|needle\s*knife|access)\b")
+    pulmonary_context_re = re.compile(
+        r"(?i)\b(?:transbronchial|lung|pulmonary|parenchymal|nodule|mass|lesion|segment|subsegment|rb\d{1,2}|lb\d{1,2})\b"
+    )
+
     for pattern in TRANSBRONCHIAL_CRYOBIOPSY_PATTERNS:
-        if re.search(pattern, text_lower, re.IGNORECASE):
+        for match in re.finditer(pattern, text_lower, re.IGNORECASE):
             negation_check = r"\b(?:no|not|without|declined|deferred)\b[^.\n]{0,60}" + pattern
             if re.search(negation_check, text_lower, re.IGNORECASE):
                 continue
+
+            local = raw_text[max(0, match.start() - 180) : min(len(raw_text), match.end() + 240)]
+
+            if nodal_context_re.search(local) or _extract_ln_stations_from_text(local):
+                # Intranodal cryobiopsy (EBUS-assisted access) should not be treated as
+                # transbronchial lung cryobiopsy (31628 family). Map to endobronchial_biopsy
+                # with Cryoprobe so CPT derivation uses 31625 rather than 31628.
+                biopsy: dict[str, Any] = {"performed": True, "forceps_type": "Cryoprobe"}
+
+                stations = _extract_ln_stations_from_text(raw_text)
+                if stations:
+                    biopsy["locations"] = [stations[0]]
+
+                sample_match = re.search(
+                    r"(?i)\b(?:obtained|taken|performed)\b[^.\n]{0,80}\bx\s*(?P<n>\d{1,2})\b",
+                    raw_text,
+                )
+                if sample_match:
+                    try:
+                        biopsy["number_of_samples"] = int(sample_match.group("n"))
+                    except Exception:
+                        pass
+                elif re.search(r"(?i)\bx\s*3\b", local):
+                    biopsy["number_of_samples"] = 3
+
+                return {"endobronchial_biopsy": biopsy}
+
+            # Generic cryobiopsy tokens require pulmonary context; otherwise they are too ambiguous.
+            if "transbronchial" not in match.group(0).lower() and "tblc" not in match.group(0).lower():
+                if not pulmonary_context_re.search(local):
+                    continue
+                # "tract created" + nodal context suggests intranodal workflow; do not label as lung cryobiopsy.
+                if access_tract_re.search(local) and nodal_context_re.search(raw_text):
+                    continue
+
             return {"transbronchial_cryobiopsy": {"performed": True}}
 
     # Backstop: some notes describe diagnostic cryobiopsy using "cryoprobe biopsies"
@@ -2457,6 +2676,48 @@ def extract_transbronchial_biopsy(note_text: str) -> Dict[str, Any]:
         re.IGNORECASE,
     )
     cryo_context_re = re.compile(r"\b(?:cryo(?:biops(?:y|ies)|probe)|tbbc|tblc)\b", re.IGNORECASE)
+
+    # Heuristic: peripheral workflows often document "tissue biopsies ... using forceps"
+    # without the explicit "transbronchial" keyword (esp. with navigation/radial EBUS).
+    peripheral_workflow = bool(
+        re.search(
+            r"(?i)\b(?:fluoro(?:scop)?y|radial\s+ebus|radial\s+probe|r-?ebus|navigat(?:ion|ional)|ion\b|robotic|superdimension)\b",
+            raw_text,
+        )
+    )
+    if peripheral_workflow:
+        for match in re.finditer(
+            r"\b(?:tissue\s+)?biops(?:y|ies)\b[^.\n]{0,140}\bforceps\b|\bforceps\b[^.\n]{0,140}\bbiops(?:y|ies)\b",
+            raw_text,
+            re.IGNORECASE,
+        ):
+            before = raw_text[max(0, match.start() - 120) : match.start()]
+            if re.search(r"\b(?:no|not|without|declined|deferred)\b[^.\n]{0,60}$", before, re.IGNORECASE):
+                continue
+
+            local = raw_text[max(0, match.start() - 220) : min(len(raw_text), match.end() + 220)]
+            if cryo_context_re.search(local):
+                continue
+            if ebus_context_re.search(local):
+                if _extract_ln_stations_from_text(local):
+                    continue
+                if re.search(r"(?i)\bendobronchial\s+ultrasound\b[^.\n]{0,120}\bbiops", local):
+                    continue
+
+            proc: dict[str, Any] = {"performed": True}
+            detail_window = raw_text[max(0, match.start() - 260) : min(len(raw_text), match.end() + 420)]
+
+            locations: list[str] = []
+            for lobe in _extract_lung_locations_from_text(detail_window):
+                if lobe and lobe not in locations:
+                    locations.append(lobe)
+            if locations:
+                proc["locations"] = locations
+
+            if re.search(r"(?i)\bforceps\b", detail_window) and not cryo_context_re.search(detail_window):
+                proc["forceps_type"] = "Standard"
+
+            return {"transbronchial_biopsy": proc}
 
     for pattern in TRANSBRONCHIAL_BIOPSY_PATTERNS:
         for match in re.finditer(pattern, raw_text, re.IGNORECASE):
@@ -2586,22 +2847,58 @@ def extract_thermal_ablation(note_text: str) -> Dict[str, Any]:
         preferred_text = _strip_cpt_definition_lines(preferred_text)
     else:
         preferred_text = _strip_cpt_definition_lines(preferred_text)
-    text_lower = preferred_text.lower()
+    raw_text = preferred_text or ""
+    text_lower = raw_text.lower()
+
+    pleural_context_re = re.compile(r"(?i)\b(?:thoracoscopy|pleuroscopy|pleural|pleura|pleuroscop)\b")
+    nodal_access_context_re = re.compile(
+        r"(?i)\b(?:needle\s*knife|rx\s+needle\s*knife|tract|tunnel|access)\b.{0,160}\b(?:node|station|intranodal|lymph\s+node)\b"
+        r"|\b(?:node|station|intranodal|lymph\s+node)\b.{0,160}\b(?:tract|tunnel|access)\b"
+    )
+    therapeutic_intent_re = re.compile(
+        r"(?i)\b(?:tumou?r|lesion|mass|obstruct|stenos|web|granulation|recanaliz|debulk|destruct|ablat|hemostas|bleed)\w*\b"
+    )
+    airway_context_re = re.compile(
+        r"(?i)\b(?:bronchoscop|airway|endobronch|trachea|carina|main(?:\s*|-)?stem|bronch(?:us|ial))\b"
+    )
+
     for pattern in THERMAL_ABLATION_PATTERNS:
-        if re.search(pattern, text_lower, re.IGNORECASE):
+        for match in re.finditer(pattern, text_lower, re.IGNORECASE):
             negation_check = r"\b(?:no|not|without|declined|deferred)\b[^.\n]{0,60}" + pattern
             if re.search(negation_check, text_lower, re.IGNORECASE):
                 continue
+
+            local = raw_text[max(0, match.start() - 220) : min(len(raw_text), match.end() + 260)]
+
+            # Pleural/thoracoscopic electrocautery should not map to endobronchial ablation.
+            if pleural_context_re.search(local):
+                continue
+
+            # Needle-knife tract creation for nodal access is not tumor destruction.
+            if nodal_access_context_re.search(local):
+                continue
+
+            is_apc_or_laser = bool(
+                re.search(
+                    r"(?i)\bapc\b|\bargon\s+plasma\b|\blaser\b|nd:?yag|\bco2\b|\bdiode\b",
+                    local,
+                )
+            )
+            if not is_apc_or_laser:
+                # For generic electrocautery mentions, require airway + therapeutic intent.
+                if not (airway_context_re.search(local) and therapeutic_intent_re.search(local)):
+                    continue
+
             proc: dict[str, Any] = {"performed": True}
-            if re.search(r"\bapc\b|\bargon\s+plasma\b", text_lower, re.IGNORECASE):
+            if re.search(r"\bapc\b|\bargon\s+plasma\b", local, re.IGNORECASE):
                 proc["modality"] = "APC"
-            elif re.search(r"\belectrocautery\b|\bcauteriz", text_lower, re.IGNORECASE):
+            elif re.search(r"\belectrocautery\b|\bcauteriz", local, re.IGNORECASE):
                 proc["modality"] = "Electrocautery"
-            elif re.search(r"\bnd:?yag\b", text_lower, re.IGNORECASE):
+            elif re.search(r"\bnd:?yag\b", local, re.IGNORECASE):
                 proc["modality"] = "Laser (Nd:YAG)"
-            elif re.search(r"\bco2\b", text_lower, re.IGNORECASE):
+            elif re.search(r"\bco2\b", local, re.IGNORECASE):
                 proc["modality"] = "Laser (CO2)"
-            elif re.search(r"\bdiode\b", text_lower, re.IGNORECASE):
+            elif re.search(r"\bdiode\b", local, re.IGNORECASE):
                 proc["modality"] = "Laser (Diode)"
             return {"thermal_ablation": proc}
     return {}
@@ -3030,6 +3327,17 @@ def extract_ipc(note_text: str) -> Dict[str, Any]:
 
     device = r"(?:pleurx|aspira|tunne(?:l|ll)ed\s+pleural\s+catheter|tunnel(?:ing)?\s+pleural\s+catheter|tunne(?:l|ll)ed\s+catheter|tunnel(?:ing)?\s+catheter|indwelling\s+pleural\s+catheter|ipc)"
 
+    # Guardrail: do not treat mentions of a pre-existing catheter being left in place
+    # (e.g., during pleuroscopy) as an IPC insertion/removal procedure.
+    if re.search(
+        rf"(?i)\b(?:previously|prior|existing|pre[-\s]?existing|already)\b[^\n]{{0,120}}\b{device}\b[^\n]{{0,180}}\b(?:left|remain(?:ed|s)?|kept)\s+in\s+place\b",
+        text,
+    ) or re.search(
+        rf"(?i)\b{device}\b[^\n]{{0,120}}\b(?:previously|prior|existing|pre[-\s]?existing|already)\b[^\n]{{0,180}}\b(?:left|remain(?:ed|s)?|kept)\s+in\s+place\b",
+        text,
+    ):
+        return {}
+
     def _action_window_hit(*, verbs: list[str]) -> bool:
         verb_union = "|".join(verbs)
         patterns = [
@@ -3293,6 +3601,10 @@ def run_deterministic_extractors(note_text: str) -> Dict[str, Any]:
     if cryotherapy_data:
         seed_data.setdefault("procedures_performed", {}).update(cryotherapy_data)
 
+    mechanical_debulking_data = extract_mechanical_debulking(note_text)
+    if mechanical_debulking_data:
+        seed_data.setdefault("procedures_performed", {}).update(mechanical_debulking_data)
+
     rigid_bronch_data = extract_rigid_bronchoscopy(note_text)
     if rigid_bronch_data:
         seed_data.setdefault("procedures_performed", {}).update(rigid_bronch_data)
@@ -3320,6 +3632,10 @@ def run_deterministic_extractors(note_text: str) -> Dict[str, Any]:
     thermal_ablation_data = extract_thermal_ablation(note_text)
     if thermal_ablation_data:
         seed_data.setdefault("procedures_performed", {}).update(thermal_ablation_data)
+
+    bpf_sealant_data = extract_bpf_sealant(note_text)
+    if bpf_sealant_data:
+        seed_data.setdefault("procedures_performed", {}).update(bpf_sealant_data)
 
     # Percutaneous tracheostomy
     trach_data = extract_percutaneous_tracheostomy(note_text)

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import difflib
 import os
 import re
 from typing import Any
@@ -111,6 +112,41 @@ def _normalize_alnum(text: str) -> str:
     return _WS_RE.sub(" ", no_punct).strip()
 
 
+def _difflib_fuzzy_contains(needle: str, haystack: str, *, threshold: int) -> bool:
+    """Best-effort fuzzy quote containment when rapidfuzz is unavailable.
+
+    Safety: restrict to anchored windows so we don't accept unrelated matches.
+    """
+    if not needle or not haystack:
+        return False
+    tokens = needle.split()
+    if len(tokens) < 6:
+        return False
+
+    anchors = [" ".join(tokens[:3]), " ".join(tokens[-3:])]
+    target_len = len(needle)
+    threshold_ratio = max(0.0, min(1.0, float(threshold) / 100.0))
+
+    for anchor in anchors:
+        start = 0
+        while True:
+            idx = haystack.find(anchor, start)
+            if idx == -1:
+                break
+            # Window around the anchor with a modest margin; keep compute bounded.
+            w_start = max(0, idx - 240)
+            w_end = min(len(haystack), idx + target_len + 240)
+            window = haystack[w_start:w_end]
+            if not window:
+                start = idx + 1
+                continue
+            ratio = difflib.SequenceMatcher(None, needle, window).ratio()
+            if ratio >= threshold_ratio:
+                return True
+            start = idx + 1
+    return False
+
+
 def validate_proposal(
     proposal: Any,
     raw_note_text: str,
@@ -149,6 +185,10 @@ def validate_proposal(
                     and alnum_quote
                     and len(alnum_quote) >= min_len
                     and partial_ratio(alnum_quote, alnum_text) >= threshold
+                ):
+                    pass
+                elif alnum_quote and len(alnum_quote) >= min_len and _difflib_fuzzy_contains(
+                    alnum_quote, alnum_text, threshold=threshold
                 ):
                     pass
                 else:

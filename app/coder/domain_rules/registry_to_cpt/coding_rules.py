@@ -754,6 +754,23 @@ def derive_all_codes_with_meta(
     if _performed(_proc(record, "radial_ebus")):
         codes.append("31654")
         rationales["31654"] = "radial_ebus.performed=true"
+        # Optional documentation QA: radial EBUS is typically used as an adjunct to peripheral sampling/therapy.
+        has_peripheral_sampling = any(
+            _performed(_proc(record, name))
+            for name in (
+                "transbronchial_biopsy",
+                "transbronchial_cryobiopsy",
+                "peripheral_tbna",
+                "brushings",
+                "peripheral_ablation",
+                "bal",
+                "therapeutic_aspiration",
+            )
+        )
+        if not has_peripheral_sampling:
+            warnings.append(
+                "Radial EBUS documented without extracted peripheral sampling/therapy; verify clinical context."
+            )
 
     # Navigation add-on
     if _performed(_proc(record, "navigational_bronchoscopy")):
@@ -894,6 +911,24 @@ def derive_all_codes_with_meta(
     if _performed(_proc(record, "cryotherapy")) and "31641" not in codes:
         codes.append("31641")
         rationales["31641"] = "cryotherapy.performed=true"
+
+    # Peripheral ablation (e.g., bronchoscopic microwave/RFA/cryoablation workflows).
+    # Payer policies vary; map to 31641 as a conservative default when explicitly performed.
+    if _performed(_proc(record, "peripheral_ablation")) and "31641" not in codes:
+        codes.append("31641")
+        rationales["31641"] = "peripheral_ablation.performed=true"
+        warnings.append(
+            "Derived 31641 from peripheral_ablation.performed=true; verify payer policy for peripheral tumor ablation vs unlisted coding."
+        )
+
+    # BPF glue/sealant intervention (unlisted in many fee schedules). Use 31641 as a placeholder primary
+    # therapeutic bronchoscopy code when explicitly documented so outputs are non-empty.
+    if _performed(_proc(record, "bpf_sealant")) and "31641" not in codes:
+        codes.append("31641")
+        rationales["31641"] = "bpf_sealant.performed=true"
+        warnings.append(
+            "Derived 31641 from bpf_sealant.performed=true (BPF sealant/glue intervention); consider unlisted coding per payer policy."
+        )
 
     # Header fallback: some workflows intentionally list 31641 when cryo intervention
     # is charted as cryobiopsy text. Require both explicit header code and cryobiopsy.
@@ -1482,6 +1517,7 @@ def derive_all_codes_with_meta(
     # Add-on codes require a primary bronchoscopy.
     addon_codes = {"31626", "31627", "31632", "31633", "31649", "31651", "31654", "31661", "76983"}
     primary_bronch = {
+        "31615",
         "31622",
         "31623",
         "31624",

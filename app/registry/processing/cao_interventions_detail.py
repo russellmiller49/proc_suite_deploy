@@ -47,6 +47,12 @@ _REFERENCE_MEASUREMENT_PREFIX_RE = re.compile(
     r"(?i)\b(?:distance|dist\.?)\b[^.\n]{0,140}\b(?:to|from|relative\s+to)\s*$"
 )
 
+_FREEZE_TIME_SECONDS_RE = re.compile(
+    r"(?i)\bfreeze(?:\s+(?:times?|time))?\b[^0-9]{0,30}"
+    r"(?P<a>\d{1,3})(?:\s*(?:-|–|to)\s*(?P<b>\d{1,3}))?\s*"
+    r"(?:s|sec|secs|second|seconds)\b"
+)
+
 _LOCATION_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("Tracheostomy tube lumen", re.compile(r"(?i)\btracheostomy\s+tube\b.{0,80}?\blumen\b")),
     ("Trachea", re.compile(r"(?i)\btrachea(?:l)?\b")),
@@ -68,7 +74,7 @@ _MODALITY_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("Electrocautery - snare", re.compile(r"(?i)\b(?:electrocautery|cautery)\s+snare\b|\bhot\s+snare\b")),
     ("Electrocautery - knife", re.compile(r"(?i)\b(?:electrocautery|cautery)\s+(?:knife|needle\s*knife)\b")),
     ("Electrocautery - probe", re.compile(r"(?i)\b(?:electrocautery|cautery)\s+(?:probe|bicap|coag(?:ulation)?\s+probe)\b")),
-    ("Cryoextraction", re.compile(r"(?i)\bcryo\s*extraction\b|\bcryoextraction\b")),
+    ("Cryoextraction", re.compile(r"(?i)\bcryo[-\s]*extraction\b|\bcryoextraction\b")),
     # Avoid misclassifying diagnostic cryoprobe use (cryobiopsy) as CAO cryotherapy.
     # Require explicit cryotherapy language OR therapeutic intent verbs near the cryoprobe mention.
     (
@@ -201,15 +207,27 @@ def _infer_location_last(value: str) -> str | None:
     return best_loc
 
 
-def _append_modality(site: dict[str, Any], modality: str) -> None:
+def _append_modality(site: dict[str, Any], modality: str, *, meta: dict[str, Any] | None = None) -> None:
     apps = site.get("modalities_applied")
     if not isinstance(apps, list):
         apps = []
         site["modalities_applied"] = apps
     for existing in apps:
         if isinstance(existing, dict) and existing.get("modality") == modality:
+            if isinstance(meta, dict):
+                for key, value in meta.items():
+                    if value in (None, "", [], {}):
+                        continue
+                    if existing.get(key) in (None, "", [], {}):
+                        existing[key] = value
             return
-    apps.append({"modality": modality})
+    payload: dict[str, Any] = {"modality": modality}
+    if isinstance(meta, dict):
+        for key, value in meta.items():
+            if value in (None, "", [], {}):
+                continue
+            payload[key] = value
+    apps.append(payload)
 
 
 def _extract_cao_interventions_detail(
@@ -507,10 +525,70 @@ def _extract_cao_interventions_detail(
                             site["lesion_count_text"] = f"{existing}; {count_text}"
 
         if target_locations:
+            hemostasis_context = bool(
+                re.search(r"(?i)\b(?:hemostas|ooz\w*|bleed\w*|hemorrhag\w*|control(?:led)?\s+bleed)\b", sentence)
+            )
+            freeze_seconds: int | None = None
+            freeze_match = _FREEZE_TIME_SECONDS_RE.search(sentence)
+            if freeze_match:
+                try:
+                    a = int(freeze_match.group("a"))
+                except Exception:
+                    a = None
+                try:
+                    b = int(freeze_match.group("b")) if freeze_match.group("b") else None
+                except Exception:
+                    b = None
+                values = [v for v in (a, b) if isinstance(v, int)]
+                if values:
+                    freeze_seconds = max(values)
+
             for modality, pattern in _MODALITY_PATTERNS:
                 if pattern.search(sentence):
                     for loc in target_locations:
-                        _append_modality(_get_site(loc), modality)
+                        site = _get_site(loc)
+
+                        # Separate hemostasis from CAO "modalities applied" when supported by explicit language.
+                        if modality in {
+                            "Tranexamic acid instillation",
+                            "Epinephrine instillation",
+                            "Iced saline lavage",
+                            "Balloon tamponade",
+                        } and hemostasis_context:
+                            site["hemostasis_required"] = True
+                            methods = site.get("hemostasis_methods")
+                            if not isinstance(methods, list):
+                                methods = []
+                                site["hemostasis_methods"] = methods
+                            label = (
+                                "Tranexamic acid"
+                                if modality == "Tranexamic acid instillation"
+                                else "Epinephrine"
+                                if modality == "Epinephrine instillation"
+                                else "Iced saline"
+                                if modality == "Iced saline lavage"
+                                else "Balloon tamponade"
+                            )
+                            if label not in methods:
+                                methods.append(label)
+                            continue
+
+                        meta: dict[str, Any] = {}
+                        if modality in {"Cryoextraction", "Cryotherapy - contact"} and freeze_seconds is not None:
+                            meta["freeze_time_seconds"] = int(freeze_seconds)
+
+                        _append_modality(site, modality, meta=meta or None)
+
+            # Capture medication instillation notes when explicitly documented (schema-safe: notes field).
+            if re.search(r"(?i)\bamphotericin\b", sentence):
+                for loc in target_locations:
+                    site = _get_site(loc)
+                    existing = str(site.get("notes") or "").strip()
+                    addition = "Amphotericin instilled."
+                    if not existing:
+                        site["notes"] = addition
+                    elif addition.lower() not in existing.lower():
+                        site["notes"] = (existing + " " + addition).strip()
 
         if _STENT_PLACED_RE.search(sentence):
             negated = bool(_STENT_NEGATION_CUES_RE.search(sentence))

@@ -42,6 +42,7 @@ from app.reporting.engine import (
     default_schema_registry,
     default_template_registry,
 )
+from app.reporting.macro_registry import MacroRegistry, get_macro_registry as _get_reporting_macro_registry
 from app.reporting.inference import InferenceEngine
 from app.reporting.validation import ValidationEngine
 from config.settings import CoderSettings, KnowledgeSettings
@@ -131,6 +132,12 @@ def get_addon_templates_document() -> dict[str, object]:
     with settings.addon_templates_path.open(encoding="utf-8") as handle:
         data = json.load(handle)
     return dict(data) if isinstance(data, dict) else {}
+
+
+@lru_cache(maxsize=1)
+def get_macro_registry() -> MacroRegistry:
+    """Create a cached MacroRegistry for reporting macros."""
+    return _get_reporting_macro_registry()
 
 
 @lru_cache(maxsize=1)
@@ -438,6 +445,7 @@ def get_qa_pipeline_service(
         templates,
         schemas,
         procedure_order=procedure_order,
+        macro_registry=get_macro_registry(),
     )
     logger.debug("ReporterEngine initialized")
 

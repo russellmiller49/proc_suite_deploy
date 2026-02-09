@@ -5,7 +5,7 @@ from __future__ import annotations
 from enum import Enum
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, model_serializer, model_validator
 
 from app.coder.schema import CoderOutput
 from app.common.spans import Span
@@ -88,6 +88,8 @@ class RenderRequest(BaseModel):
     patch: BundlePatch | list[JsonPatchOperation] | None = None
     embed_metadata: bool = False
     strict: bool = False
+    debug: bool = False
+    include_debug: bool = False
 
     @model_validator(mode="before")
     @classmethod
@@ -141,6 +143,14 @@ class RenderResponse(BaseModel):
     warnings: list[str] = Field(default_factory=list)
     inference_notes: list[str] = Field(default_factory=list)
     suggestions: list[str] = Field(default_factory=list)
+    debug_notes: list[dict[str, Any]] | None = None
+
+    @model_serializer(mode="wrap")
+    def _serialize_optional_debug_notes(self, handler):
+        data = handler(self)
+        if data.get("debug_notes") is None:
+            data.pop("debug_notes", None)
+        return data
 
 
 class QuestionsRequest(BaseModel):
@@ -162,6 +172,8 @@ class SeedFromTextRequest(BaseModel):
     text: str
     metadata: dict[str, Any] = Field(default_factory=dict)
     strict: bool = False
+    debug: bool = False
+    include_debug: bool = False
 
 
 class SeedFromTextResponse(BaseModel):
@@ -176,6 +188,14 @@ class SeedFromTextResponse(BaseModel):
         default_factory=list,
         description="Suggested missing fields to document (completeness nudges).",
     )
+    debug_notes: list[dict[str, Any]] | None = None
+
+    @model_serializer(mode="wrap")
+    def _serialize_optional_debug_notes(self, handler):
+        data = handler(self)
+        if data.get("debug_notes") is None:
+            data.pop("debug_notes", None)
+        return data
 
 
 class KnowledgeMeta(BaseModel):

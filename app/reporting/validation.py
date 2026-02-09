@@ -5,6 +5,7 @@ from typing import Any, Literal, TYPE_CHECKING
 from pydantic import BaseModel, Field
 
 from app.reporting.metadata import MissingFieldIssue
+from app.reporting.util.path_access import get_path
 
 if TYPE_CHECKING:
     from app.reporting.engine import SchemaRegistry, TemplateMeta, TemplateRegistry
@@ -66,37 +67,23 @@ def _normalize_payload(payload: BaseModel | dict[str, Any] | None) -> dict[str, 
         return {}
 
 
-def _get_field_value(payload: Any, path: str) -> Any:
-    current = payload
-    for token in path.split("."):
-        if not isinstance(current, (dict, BaseModel, list)):
-            return None
-        if "[" in token and token.endswith("]"):
-            key, idx_str = token[:-1].split("[", 1)
-            idx = int(idx_str)
-            current = current.get(key) if isinstance(current, dict) else getattr(current, key, None)
-            if not isinstance(current, list) or idx >= len(current):
-                return None
-            current = current[idx]
-        else:
-            current = current.get(token) if isinstance(current, dict) else getattr(current, token, None)
-    return current
-
-
-def _expand_list_paths(payload: dict[str, Any], field_path: str) -> list[str]:
-    if "[]" not in field_path:
-        return [field_path]
-    head, tail = field_path.split("[]", 1)
-    key = head.rstrip(".")
-    remainder = tail.lstrip(".")
-    value = _get_field_value(payload, key)
-    if not isinstance(value, list) or not value:
-        suffix = f".{remainder}" if remainder else ""
-        return [f"{key}[0]{suffix}"]
-    paths: list[str] = []
-    for idx in range(len(value)):
-        suffix = f".{remainder}" if remainder else ""
-        paths.append(f"{key}[{idx}]{suffix}")
+def _expand_list_paths(payload: Any, field_path: str) -> list[str]:
+    paths = [field_path]
+    while any("[]" in p for p in paths):
+        expanded: list[str] = []
+        for path in paths:
+            if "[]" not in path:
+                expanded.append(path)
+                continue
+            head, tail = path.split("[]", 1)
+            key = head.rstrip(".")
+            remainder = tail.lstrip(".")
+            value = get_path(payload, key)
+            indices = range(len(value)) if isinstance(value, list) and value else range(1)
+            suffix = f".{remainder}" if remainder else ""
+            for idx in indices:
+                expanded.append(f"{key}[{idx}]{suffix}")
+        paths = expanded
     return paths
 
 
@@ -155,7 +142,7 @@ class ValidationEngine:
                         for expanded_path in _expand_list_paths(payload, path):
                             if expanded_path in acknowledged_fields:
                                 continue
-                            value = _get_field_value(payload, expanded_path)
+                            value = get_path(payload, expanded_path)
                             if value in (None, "", [], {}):
                                 message = f"Add {expanded_path} for {meta.label or proc.proc_type}"
                                 issues.append(
@@ -181,7 +168,7 @@ class ValidationEngine:
                     for expanded_path in _expand_list_paths(payload, path):
                         if expanded_path in acknowledged_fields:
                             continue
-                        value = _get_field_value(payload, expanded_path)
+                        value = get_path(payload, expanded_path)
                         if value in (None, "", [], {}):
                             suggestions.append(f"Consider adding {expanded_path} for {meta.label or proc.proc_type}")
 
@@ -214,14 +201,14 @@ class ValidationEngine:
                 for path, config in field_configs.items():
                     expanded_paths = _expand_list_paths(payload, path)
                     for expanded_path in expanded_paths:
-                        value = _get_field_value(payload, expanded_path)
+                        value = get_path(payload, expanded_path)
                         if config.warn_if and value not in (None, "", [], {}):
                             if _compare(value, config.warn_if.op, config.warn_if.value):
                                 message = config.warn_if.message or f"{meta.label or proc.proc_type}: {expanded_path} triggered warn_if"
                                 if message not in warnings:
                                     warnings.append(message)
                         if config.consistency_check:
-                            target_val = _get_field_value(payload, config.consistency_check.target)
+                            target_val = get_path(payload, config.consistency_check.target)
                             if target_val not in (None, "", [], {}) and value in (None, "", [], {}):
                                 msg = config.consistency_check.message
                                 if msg not in warnings:

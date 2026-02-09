@@ -41,6 +41,8 @@ from app.reporting.engine import (
     default_template_registry,
 )
 from app.reporting.inference import InferenceEngine
+from app.reporting.macro_registry import get_macro_registry
+from app.reporting.normalization.normalize import normalize_bundle
 from app.reporting.validation import ValidationEngine
 
 router = APIRouter(tags=["reporting"])
@@ -53,6 +55,8 @@ _phi_scrubber_dep = Depends(get_phi_scrubber)
 
 def _verify_bundle(
     bundle: ProcedureBundle,
+    *,
+    debug_notes: list[dict[str, Any]] | None = None,
 ) -> tuple[
     ProcedureBundle,
     list[MissingFieldIssue],
@@ -60,6 +64,23 @@ def _verify_bundle(
     list[str],
     list[str],
 ]:
+    normalized = normalize_bundle(bundle)
+    bundle = normalized.bundle
+    if debug_notes is not None:
+        debug_notes.append(
+            {
+                "type": "normalization",
+                "notes": [
+                    {
+                        "kind": note.kind,
+                        "path": note.path,
+                        "message": note.message,
+                        "source": note.source,
+                    }
+                    for note in normalized.notes
+                ],
+            }
+        )
     templates = default_template_registry()
     schemas = default_schema_registry()
     inference = InferenceEngine()
@@ -79,6 +100,7 @@ def _render_bundle_markdown(
     warnings: list[str],
     strict: bool,
     embed_metadata: bool,
+    debug_notes: list[dict[str, Any]] | None = None,
 ) -> str:
     templates = default_template_registry()
     schemas = default_schema_registry()
@@ -87,6 +109,7 @@ def _render_bundle_markdown(
         schemas,
         procedure_order=_load_procedure_order(),
         render_style="builder",
+        macro_registry=get_macro_registry(),
     )
     try:
         structured = engine.compose_report_with_metadata(
@@ -105,6 +128,14 @@ def _render_bundle_markdown(
             or message.startswith("Missing required fields for")
         ):
             raise
+        if debug_notes is not None:
+            debug_notes.append(
+                {
+                    "type": "strict_fallback",
+                    "error": message,
+                    "action": "fallback_to_non_strict_preview",
+                }
+            )
         _logger.warning(
             "Strict report render failed; falling back to non-strict preview",
             extra={"error": message},
@@ -117,6 +148,24 @@ def _render_bundle_markdown(
             warnings=warnings,
         )
     return structured.text
+
+
+def _debug_template_selection(bundle: ProcedureBundle) -> dict[str, Any]:
+    templates = default_template_registry()
+    macros = get_macro_registry()
+    procedures: list[dict[str, Any]] = []
+    for proc in bundle.procedures:
+        metas = templates.find_for_procedure(proc.proc_type, proc.cpt_candidates)
+        procedures.append(
+            {
+                "proc_id": proc.proc_id or proc.schema_id,
+                "proc_type": proc.proc_type,
+                "cpt_candidates": [str(code) for code in (proc.cpt_candidates or [])],
+                "template_ids": [meta.id for meta in metas],
+                "macro_exists": macros.maybe_get(proc.proc_type) is not None,
+            }
+        )
+    return {"type": "selection", "procedures": procedures}
 
 
 def _apply_render_patch(
@@ -219,6 +268,9 @@ async def report_seed_from_text(
     registry_service: RegistryService = _registry_service_dep,
     phi_scrubber=_phi_scrubber_dep,
 ) -> SeedFromTextResponse:
+    debug_enabled = bool(req.debug or req.include_debug)
+    debug_notes: list[dict[str, Any]] | None = [] if debug_enabled else None
+
     redaction = apply_phi_redaction(req.text, phi_scrubber)
     note_text = redaction.text
 
@@ -230,7 +282,7 @@ async def report_seed_from_text(
         bundle_payload["free_text_hint"] = note_text
         bundle = ProcedureBundle.model_validate(bundle_payload)
 
-    bundle, issues, warnings, suggestions, notes = _verify_bundle(bundle)
+    bundle, issues, warnings, suggestions, notes = _verify_bundle(bundle, debug_notes=debug_notes)
     missing_field_prompts: list[dict[str, object]] = []
     try:
         from app.registry.completeness import generate_missing_field_prompts
@@ -254,6 +306,8 @@ async def report_seed_from_text(
                 )
     except Exception:
         missing_field_prompts = []
+    if debug_notes is not None:
+        debug_notes.append(_debug_template_selection(bundle))
     questions = build_questions(bundle, issues)
     markdown = _render_bundle_markdown(
         bundle,
@@ -261,6 +315,7 @@ async def report_seed_from_text(
         warnings=warnings,
         strict=req.strict,
         embed_metadata=False,
+        debug_notes=debug_notes,
     )
     return SeedFromTextResponse(
         bundle=bundle,
@@ -271,24 +326,31 @@ async def report_seed_from_text(
         suggestions=suggestions,
         questions=questions,
         missing_field_prompts=missing_field_prompts,
+        debug_notes=debug_notes if debug_enabled else None,
     )
 
 
 @router.post("/report/render", response_model=RenderResponse)
 async def report_render(req: RenderRequest) -> RenderResponse:
+    debug_enabled = bool(req.debug or req.include_debug)
+    debug_notes: list[dict[str, Any]] | None = [] if debug_enabled else None
+
     bundle = req.bundle
     try:
         bundle = _apply_render_patch(bundle, req)
     except BundleJsonPatchError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
-    bundle, issues, warnings, suggestions, notes = _verify_bundle(bundle)
+    bundle, issues, warnings, suggestions, notes = _verify_bundle(bundle, debug_notes=debug_notes)
+    if debug_notes is not None:
+        debug_notes.append(_debug_template_selection(bundle))
     markdown = _render_bundle_markdown(
         bundle,
         issues=issues,
         warnings=warnings,
         strict=req.strict,
         embed_metadata=req.embed_metadata,
+        debug_notes=debug_notes,
     )
     return RenderResponse(
         bundle=bundle,
@@ -297,6 +359,7 @@ async def report_render(req: RenderRequest) -> RenderResponse:
         warnings=warnings,
         inference_notes=notes,
         suggestions=suggestions,
+        debug_notes=debug_notes if debug_enabled else None,
     )
 
 

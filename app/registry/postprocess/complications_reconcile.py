@@ -154,7 +154,16 @@ def _infer_nashville_bleeding_grade(text: str) -> tuple[int | None, re.Match[str
     # Grade 1: suction-only hemostasis in bleeding context.
     suction_match = _first_match_with_bleeding_context(_SUCTION_RE, text)
     if suction_match:
-        return 1, suction_match
+        # Common template phrase: "after suctioning blood and secretions there was no evidence of active bleeding".
+        # This often reflects routine clearance rather than a bleeding complication; avoid over-calling Grade 1
+        # unless the note explicitly frames suction as hemostasis (e.g., "bleeding controlled with suction").
+        window = text[max(0, suction_match.start() - 220) : min(len(text), suction_match.end() + 220)]
+        if re.search(r"(?i)\bno\s+(?:evidence\s+of\s+)?active\s+bleeding\b", window) and not re.search(
+            r"(?i)\bcontrolled\b|\bhemostasis\b", window
+        ):
+            suction_match = None
+        else:
+            return 1, suction_match
 
     # Grade 0: explicit no-bleeding statement (only if no higher-grade evidence).
     no_bleed_match = _NO_BLEEDING_RE.search(text)

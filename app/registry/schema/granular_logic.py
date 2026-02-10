@@ -785,6 +785,23 @@ def derive_procedures_from_granular(
     ):
         procedures.pop("tbna_conventional", None)
 
+    # If linear EBUS sampling is present, suppress conventional nodal TBNA to avoid data
+    # double-counting. Conventional TBNA (blind/fluoro) is distinct from EBUS-TBNA.
+    linear_ebus = procedures.get("linear_ebus") or {}
+    linear_sampled = linear_ebus.get("stations_sampled") or []
+    tbna = procedures.get("tbna_conventional") or {}
+    tbna_sites = tbna.get("stations_sampled") or []
+    if (
+        linear_ebus.get("performed") is True
+        and bool(linear_sampled)
+        and tbna.get("performed") is True
+    ):
+        linear_tokens = {str(s).strip().upper() for s in linear_sampled if s}
+        tbna_tokens = {str(s).strip().upper() for s in tbna_sites if s}
+        tbna_is_nodal = bool(tbna_tokens) and all(station_token_re.match(tok) for tok in tbna_tokens)
+        if not tbna_sites or (tbna_is_nodal and tbna_tokens.issubset(linear_tokens)):
+            procedures.pop("tbna_conventional", None)
+
     # ==========================================================================
     # 6. Derive BLVR performed from blvr_valve_placements
     # ==========================================================================

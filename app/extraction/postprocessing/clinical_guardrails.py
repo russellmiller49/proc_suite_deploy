@@ -634,7 +634,7 @@ class ClinicalGuardrails:
             label = (match.group("label") or "").strip().lower()
             if not label:
                 continue
-            if not any(candidate in label for candidate in candidates):
+            if not any(re.search(rf"\b{re.escape(candidate)}\b", label) for candidate in candidates):
                 continue
             if val == "1":
                 selected = True
@@ -790,13 +790,53 @@ class ClinicalGuardrails:
                 changed = True
 
         # Promote procedure_type when valve placement details are present.
+        placed_token = r"(?<!well\s)(?<!previously\s)(?<!prior\s)(?<!already\s)placed\b"
         placement_indicator = bool(
-            re.search(r"(?i)\bvalves?\b[^.\n]{0,80}\bplaced\b", note_text)
+            re.search(
+                r"(?i)\bvalves?\b[^.\n]{0,80}\b(?:deploy|deployed|deployment|insert|inserted|insertion|placement|placing)\w*\b",
+                note_text,
+            )
+            or re.search(rf"(?i)\bvalves?\b[^.\n]{{0,80}}\b{placed_token}", note_text)
             or re.search(r"(?i)\bvalve\s+sizes\s+used\b", note_text)
         )
         if placement_indicator and blvr.get("procedure_type") in (None, "", "Valve assessment"):
             blvr["procedure_type"] = "Valve placement"
             changed = True
+
+        # Guardrail: inspection-only valve wording ("previously placed", "well placed", "visualized")
+        # is common in non-BLVR procedures (e.g., glue installation for fistula) and must not be
+        # interpreted as new valve placement.
+        inspection_only = bool(
+            re.search(r"(?i)\b(?:previously|prior|already)\s+placed\b", note_text)
+            or re.search(r"(?i)\bwell\s+placed\b", note_text)
+            or re.search(r"(?i)\bvalves?\b[^.\n]{0,80}\bvisualiz", note_text)
+        )
+        removal_indicator = bool(re.search(r"(?i)\bvalve\b[^.\n]{0,80}\b(?:remov|retriev|extract|explant)\w*\b", note_text))
+        action_indicator = placement_indicator or removal_indicator or bool(re.search(r"(?i)\bchartis\b", note_text))
+
+        if inspection_only and not action_indicator:
+            if blvr.get("procedure_type") == "Valve placement":
+                blvr["procedure_type"] = "Valve assessment"
+                warnings.append("AUTO_CORRECTED: BLVR inspection-only language; set procedure_type='Valve assessment'.")
+                changed = True
+
+            if blvr.get("valve_type") in ("Spiration (Olympus)", "Zephyr (Pulmonx)") and not re.search(
+                r"(?i)\b(?:zephyr|pulmonx|spiration)\b",
+                note_text,
+            ):
+                blvr["valve_type"] = None
+                changed = True
+
+            if blvr.get("number_of_valves") not in (None, "", 0, "0") and re.search(
+                r"(?i)\bsize\s+\d{1,2}\b[^.\n]{0,24}\bvalves?\b",
+                note_text,
+            ):
+                blvr["number_of_valves"] = 0
+                changed = True
+
+            if blvr.get("valve_sizes"):
+                blvr["valve_sizes"] = None
+                changed = True
 
         # Valve table count heuristic (+ foreign body removal when a valve is removed).
         valve_block = ""

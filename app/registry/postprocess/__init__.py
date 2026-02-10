@@ -2195,7 +2195,6 @@ def normalize_valve_type(raw: Any) -> str | None:
         # Spiration (Olympus)
         "spiration": "Spiration (Olympus)",
         "spiration (olympus)": "Spiration (Olympus)",
-        "olympus": "Spiration (Olympus)",
         "olympus spiration": "Spiration (Olympus)",
         "svs": "Spiration (Olympus)",  # Spiration Valve System
         "spiration valve": "Spiration (Olympus)",
@@ -2208,7 +2207,7 @@ def normalize_valve_type(raw: Any) -> str | None:
     # Fuzzy matching
     if "zephyr" in text or "pulmonx" in text:
         return "Zephyr (Pulmonx)"
-    if "spiration" in text or "olympus" in text:
+    if "spiration" in text or "svs" in text or "ibv" in text:
         return "Spiration (Olympus)"
 
     return None
@@ -2583,6 +2582,11 @@ _EBUS_SAMPLING_INDICATORS_RE = re.compile(
     re.IGNORECASE,
 )
 
+_EBUS_STRONG_SAMPLING_RE = re.compile(
+    r"\b(?:needle|tbna|fna|biops(?:y|ied|ies)|pass(?:es)?|aspirat(?:e|ed|ion)|core|forceps)\b",
+    re.IGNORECASE,
+)
+
 _EBUS_SAMPLING_CRITERIA_RE = re.compile(r"\bsampling\s+criteria\b", re.IGNORECASE)
 _EBUS_SIZE_MM_RE = re.compile(r"\b\d+(?:\.\d+)?\s*mm\b", re.IGNORECASE)
 
@@ -2697,10 +2701,22 @@ def _station_has_strong_sampling_evidence(full_text: str, station: str) -> bool:
         return False
 
     text = full_text or ""
-    for line in text.splitlines():
-        if not pattern.search(line):
+    if not text.strip():
+        return False
+
+    # Clause-level scan: many templates collapse multiple sentences onto one long line,
+    # so a criteria-only phrase earlier in the line should not suppress later sampling
+    # evidence for the same station.
+    clause_split_re = re.compile(r"(?:\n+|(?<=[.!?])\s+)")
+    for clause in clause_split_re.split(text):
+        snippet = (clause or "").strip()
+        if not snippet:
             continue
-        if _EBUS_SAMPLING_INDICATORS_RE.search(line) and not _EBUS_SAMPLING_CRITERIA_RE.search(line):
+        if not pattern.search(snippet):
+            continue
+        if _EBUS_EXPLICIT_NEGATION_PHRASES_RE.search(snippet):
+            continue
+        if _EBUS_STRONG_SAMPLING_RE.search(snippet):
             return True
 
     # Cross-line backstop for site-block templates, e.g.:
@@ -2713,9 +2729,9 @@ def _station_has_strong_sampling_evidence(full_text: str, station: str) -> bool:
     )
     for match in pattern.finditer(text):
         window = text[match.start() : min(len(text), match.start() + 420)]
-        if _EBUS_SAMPLING_CRITERIA_RE.search(window):
+        if _EBUS_EXPLICIT_NEGATION_PHRASES_RE.search(window):
             continue
-        if site_block_sampling_re.search(window) and _EBUS_SAMPLING_INDICATORS_RE.search(window):
+        if site_block_sampling_re.search(window) and _EBUS_STRONG_SAMPLING_RE.search(window):
             return True
     return False
 
@@ -3228,6 +3244,72 @@ def reconcile_peripheral_tbna_against_nodal_context(record: RegistryRecord, full
     return warnings
 
 
+def cull_tbna_conventional_against_ebus_sampling(record: RegistryRecord, full_text: str) -> list[str]:
+    """Cull phantom conventional TBNA when EBUS-TBNA sampling already captures nodal stations.
+
+    Motivation: Some extraction paths over-trigger tbna_conventional alongside linear_ebus
+    even when the narrative only supports EBUS-guided nodal sampling. This can cause
+    double-counting in registry output and confusing UI warnings.
+    """
+    warnings: list[str] = []
+    procedures = getattr(record, "procedures_performed", None)
+    linear = getattr(procedures, "linear_ebus", None) if procedures is not None else None
+    tbna = getattr(procedures, "tbna_conventional", None) if procedures is not None else None
+    if linear is None or getattr(linear, "performed", None) is not True:
+        return warnings
+    if tbna is None or getattr(tbna, "performed", None) is not True:
+        return warnings
+
+    # Keep conventional TBNA when explicitly documented as such (rare).
+    text = full_text or ""
+    if re.search(r"(?i)\b(?:conventional|blind)\s+tbna\b", text):
+        return warnings
+
+    station_token_re = re.compile(
+        r"^(?:2R|2L|3P|4R|4L|5|7|8|9|10R|10L|11R(?:S|I)?|11L(?:S|I)?|12R|12L)$",
+        re.IGNORECASE,
+    )
+
+    linear_tokens: set[str] = set()
+    sampled = getattr(linear, "stations_sampled", None)
+    if isinstance(sampled, list):
+        linear_tokens = {str(s).strip().upper() for s in sampled if s and str(s).strip()}
+    if not linear_tokens:
+        node_events = getattr(linear, "node_events", None)
+        if isinstance(node_events, list):
+            for event in node_events:
+                if getattr(event, "action", None) != "needle_aspiration":
+                    continue
+                station = getattr(event, "station", None)
+                if isinstance(station, str) and station.strip():
+                    linear_tokens.add(station.strip().upper())
+    if not linear_tokens:
+        return warnings
+
+    tbna_sites = getattr(tbna, "stations_sampled", None)
+    tbna_tokens: set[str] = set()
+    if isinstance(tbna_sites, list):
+        tbna_tokens = {str(s).strip().upper() for s in tbna_sites if s and str(s).strip()}
+    tbna_is_nodal = bool(tbna_tokens) and all(station_token_re.match(tok) for tok in tbna_tokens)
+
+    should_cull = not tbna_tokens or (tbna_is_nodal and tbna_tokens.issubset(linear_tokens))
+    if not should_cull:
+        return warnings
+
+    setattr(tbna, "performed", False)
+    if hasattr(tbna, "stations_sampled"):
+        setattr(tbna, "stations_sampled", None)
+    if hasattr(tbna, "needle_gauge"):
+        setattr(tbna, "needle_gauge", None)
+    if hasattr(tbna, "passes_per_station"):
+        setattr(tbna, "passes_per_station", None)
+
+    warnings.append(
+        "AUTO_CORRECTED: Culled tbna_conventional (EBUS sampling present; no distinct conventional TBNA)."
+    )
+    return warnings
+
+
 _EBUS_FALLBACK_STATION_RE = re.compile(
     r"\b(?:station|level)\s*(\d{1,2}[RL]?(?:s|i)?)\b",
     re.IGNORECASE,
@@ -3659,11 +3741,18 @@ def enrich_ebus_node_event_sampling_details(record: RegistryRecord, full_text: s
     return warnings
 
 _EBUS_STATION_LIST_HEADER_RE = re.compile(
-    r"\b(?:following\s+station\(s\)|following\s+stations?|stations?\s+(?:sampled|biopsied|aspirated)|lymph\s+node\s+stations?\s+(?:sampled|biopsied))\b",
+    r"\b(?:"
+    r"following\s+station\(s\)"
+    r"|following\s+stations?"
+    r"|stations?\s+(?:sampled|biopsied|aspirated|inspected)"
+    r"|lymph\s+node\s+stations?\s+(?:sampled|biopsied|aspirated|inspected)"
+    r"|lymph\s+nodes?\s*/\s*sites?\s+(?:sampled|biopsied|aspirated|inspected)"
+    r"|nodes?\s*/\s*sites?\s+(?:sampled|biopsied|aspirated|inspected)"
+    r")\b",
     re.IGNORECASE,
 )
 _EBUS_INSPECTION_HINTS_RE = re.compile(
-    r"\b(?:inspect|inspection|visualiz|view|survey|assess|measure|measurement)\b",
+    r"\b(?:inspect\w*|visualiz\w*|view\w*|survey\w*|assess\w*|measure\w*)\b",
     re.IGNORECASE,
 )
 _EBUS_SAMPLED_SECTION_RE = re.compile(
@@ -3708,17 +3797,16 @@ def populate_ebus_node_events_fallback(record: RegistryRecord, full_text: str) -
         line = raw_line.rstrip("\r\n")
         if _EBUS_SAMPLED_SECTION_RE.search(line):
             in_sampled_section = True
-            continue
-        if _EBUS_STATION_LIST_HEADER_RE.search(line) and re.search(r"(?i)\b(?:tbna|needle|aspirat|sample|biops)\w*\b", line):
-            in_station_list = True
-            station_list_default_sampling = True
-            station_list_seen_station = False
-            continue
-        if _EBUS_STATION_LIST_HEADER_RE.search(line) and _EBUS_INSPECTION_HINTS_RE.search(line):
-            in_station_list = True
-            station_list_default_sampling = False
-            station_list_seen_station = False
-            continue
+
+        if _EBUS_STATION_LIST_HEADER_RE.search(line):
+            if re.search(r"(?i)\b(?:tbna|needle|aspirat|sample|biops)\w*\b", line):
+                in_station_list = True
+                station_list_default_sampling = True
+                station_list_seen_station = False
+            elif _EBUS_INSPECTION_HINTS_RE.search(line):
+                in_station_list = True
+                station_list_default_sampling = False
+                station_list_seen_station = False
         if not line.strip():
             in_sampled_section = False
             if in_station_list:
@@ -3753,6 +3841,11 @@ def populate_ebus_node_events_fallback(record: RegistryRecord, full_text: str) -
             sampling = station_list_default_sampling
         negated = bool(_EBUS_EXPLICIT_NEGATION_PHRASES_RE.search(line))
         inspection = bool(_EBUS_INSPECTION_HINTS_RE.search(line))
+        if in_station_list and not sampling and not inspection and not station_list_default_sampling:
+            # Station-list sections headed by "inspected" often omit inspection verbs on each
+            # station line (e.g., "Lymph Nodes/Sites Inspected: 4R ..."). Treat the list
+            # as inspected-only context so we still capture stations as node_events.
+            inspection = True
         if _EBUS_MEASURE_ONLY_RE.search(line) and not sampling:
             inspection = True
 
@@ -4148,8 +4241,45 @@ def enrich_linear_ebus_needle_gauge(record: RegistryRecord, full_text: str) -> l
     if not gauge_matches:
         return warnings
 
-    detected: list[int] = []
+    # Prefer gauge mentions that occur in linear-EBUS context to avoid leaking
+    # navigation/peripheral-TBNA needle gauges into the EBUS object.
+    ebus_context_re = re.compile(
+        r"(?i)\b(?:ebus|endobronchial\s+ultrasound|convex\s+probe|linear\s+ebus|station|stations|lymph\s+node|mediastin(?:al|um)|hilar)\b"
+    )
+    peripheral_context_re = re.compile(r"(?i)\b(?:lesion|nodule|mass|peripheral|navigat|enb|robotic|radial\s+ebus)\b")
+    ebus_scoped: list[re.Match[str]] = []
     for match in gauge_matches:
+        line_start = full_text.rfind("\n", 0, match.start()) + 1
+        line_end = full_text.find("\n", match.end())
+        if line_end == -1:
+            line_end = len(full_text)
+        line_text = full_text[line_start:line_end]
+
+        if ebus_context_re.search(line_text) or _EBUS_STATION_TOKEN_RE.search(line_text):
+            ebus_scoped.append(match)
+            continue
+
+        # Allow a gauge mention on a continuation line immediately after an EBUS line
+        # (common formatting in procedure notes), but avoid pulling in peripheral-TBNA
+        # gauges that happen to be adjacent.
+        prev_end = line_start - 1
+        prev_nonempty: str | None = None
+        while prev_end > 0:
+            prev_start = full_text.rfind("\n", 0, prev_end) + 1
+            prev_line = full_text[prev_start:prev_end].rstrip("\r")
+            if prev_line.strip():
+                prev_nonempty = prev_line
+                break
+            prev_end = prev_start - 1
+
+        if prev_nonempty and (ebus_context_re.search(prev_nonempty) or _EBUS_STATION_TOKEN_RE.search(prev_nonempty)):
+            if not peripheral_context_re.search(line_text):
+                ebus_scoped.append(match)
+
+    used_matches = ebus_scoped if ebus_scoped else gauge_matches
+
+    detected: list[int] = []
+    for match in used_matches:
         raw = match.group(1) or match.group(2)
         try:
             gauge = int(raw) if raw else None
@@ -4188,7 +4318,7 @@ def enrich_linear_ebus_needle_gauge(record: RegistryRecord, full_text: str) -> l
             evidence = {}
         key = "procedures_performed.linear_ebus.needle_gauge"
         if key not in evidence:
-            for match in gauge_matches:
+            for match in used_matches:
                 evidence.setdefault(key, []).append(
                     Span(text=match.group(0).strip(), start=match.start(), end=match.end(), confidence=0.9)
                 )
@@ -4517,35 +4647,62 @@ def enrich_procedure_success_status(record: RegistryRecord, full_text: str) -> l
         if reason_match:
             reason = (reason_match.group("reason") or "").strip()[:240] or reason
     else:
-        fail_match = _OUTCOMES_FAIL_RE.search(text)
-        if fail_match:
+        fail_match_used: re.Match[str] | None = None
+        for fail_match in _OUTCOMES_FAIL_RE.finditer(text):
             s, e = _sentence_span(fail_match.start(), fail_match.end())
             snippet = text[s:e].strip()
             traverse_baseline = bool(
-                re.search(r"(?i)\b(?:could\s+not|cannot|unable\s+to)\s+traverse\b", snippet or "")
+                re.search(r"(?i)\b(?:could\s+not|cannot|unable\s+to)\s+(?:traverse|bypass|pass)\b", snippet or "")
             )
+            after_text = text[fail_match.end() : min(len(text), fail_match.end() + 800)]
             progressed_after = bool(
                 re.search(
-                    r"(?i)\b(?:dilat(?:e|ed|ion)|incision|improv(?:ed|ement)|patent|patency|recanaliz|result|completed)\b",
-                    text[fail_match.end() : min(len(text), fail_match.end() + 420)],
+                    r"(?i)\b(?:"
+                    r"dilat(?:e|ed|ion)"
+                    r"|incision"
+                    r"|improv(?:ed|ement)"
+                    r"|patent|patency"
+                    r"|recanaliz"
+                    r"|result"
+                    r"|completed"
+                    r"|visualiz(?:e|ed|ation)?"
+                    r"|(?:were\s+able\s+to|able\s+to|successfully)\s+(?:bypass|traverse|pass)"
+                    r")\b",
+                    after_text,
+                )
+            )
+            strong_progressed_after = bool(
+                re.search(
+                    r"(?i)\b(?:"
+                    r"improv(?:ed|ement)"
+                    r"|patent|patency"
+                    r"|recanaliz"
+                    r"|visualiz(?:e|ed|ation)?"
+                    r"|(?:were\s+able\s+to|able\s+to|successfully)\s+(?:bypass|traverse|pass)"
+                    r")\b",
+                    after_text,
                 )
             )
 
             # Guardrail: baseline traversability limitations in severe stenosis should
             # not be treated as procedural failure when successful therapeutic work is
-            # subsequently documented.
-            if traverse_baseline and progressed_after and (procedure_completed_flag or completion_language_present):
-                fail_match = None
-            else:
-                status = "Failed"
-                if snippet:
-                    reason = snippet[:240]
-                    ev_start, ev_end = s, e
-                # If the note documents a failed sub-step but the overall procedure
-                # is completed, classify as partial success instead of full failure.
-                if procedure_completed_flag or completion_language_present:
-                    status = "Partial success"
-        else:
+            # subsequently documented. Skip this match and keep scanning for other
+            # failure evidence.
+            if traverse_baseline and progressed_after:
+                continue
+
+            fail_match_used = fail_match
+            status = "Failed"
+            if snippet:
+                reason = snippet[:240]
+                ev_start, ev_end = s, e
+            # If the note documents a failed sub-step but the overall procedure
+            # is completed, classify as partial success instead of full failure.
+            if procedure_completed_flag or completion_language_present or strong_progressed_after:
+                status = "Partial success"
+            break
+
+        if fail_match_used is None:
             # Prefer the most specific "radial/probe view ... suboptimal" evidence when present.
             radial_suboptimal = re.search(
                 r"(?i)\bradial\b[^.\n]{0,120}\bsuboptimal\b|\bsuboptimal\b[^.\n]{0,120}\bradial\b",

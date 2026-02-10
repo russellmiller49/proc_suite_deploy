@@ -897,7 +897,9 @@ MECHANICAL_DEBULKING_PATTERNS = [
 # Bronchopleural fistula (BPF) glue/sealant patterns (therapeutic bronchoscopy).
 BPF_SEALANT_PATTERNS = [
     r"\b(?:bronchopleural|broncho-pleural|broncho\s*pleural)\s+fistula\b",
+    r"\b(?:alveolar|alveolo)\s*[-\s]?pleural\s+fistula\b",
     r"\bbpf\b",
+    r"\bapf\b",
 ]
 
 BPF_SEALANT_AGENT_PATTERNS = [
@@ -1862,8 +1864,7 @@ def extract_blvr(note_text: str) -> Dict[str, Any]:
         return {}
 
     blvr_hit = any(re.search(pattern, text_lower, re.IGNORECASE) for pattern in BLVR_PATTERNS)
-    balloon_hit = any(re.search(pattern, text_lower, re.IGNORECASE) for pattern in BALLOON_OCCLUSION_PATTERNS)
-    if not (blvr_hit or balloon_hit):
+    if not blvr_hit:
         return {}
 
     proc: dict[str, Any] = {"performed": True}
@@ -1873,14 +1874,27 @@ def extract_blvr(note_text: str) -> Dict[str, Any]:
     elif "spiration" in text_lower:
         proc["valve_type"] = "Spiration (Olympus)"
 
+    # Important: "valves ... well placed"/"previously placed valves" are inspection-only and
+    # must not be treated as a valve placement procedure.
+    placed_token = r"(?<!well\s)(?<!previously\s)(?<!prior\s)(?<!already\s)placed\b"
     placement_present = bool(
         re.search(
-            r"\bvalve\b[^.\n]{0,80}\b(?:place|placed|deploy|deployed|insert|inserted)\w*\b",
+            r"\bvalves?\b[^.\n]{0,80}\b(?:deploy|deployed|deployment|insert|inserted|insertion|placement|placing)\w*\b",
             text_lower,
             re.IGNORECASE,
         )
         or re.search(
-            r"\b(?:place|placed|deploy|deployed|insert|inserted)\w*\b[^.\n]{0,80}\bvalve\b",
+            r"\b(?:deploy|deployed|deployment|insert|inserted|insertion|placement|placing)\w*\b[^.\n]{0,80}\bvalves?\b",
+            text_lower,
+            re.IGNORECASE,
+        )
+        or re.search(
+            rf"\bvalves?\b[^.\n]{{0,80}}\b{placed_token}",
+            text_lower,
+            re.IGNORECASE,
+        )
+        or re.search(
+            rf"\b{placed_token}[^.\n]{{0,80}}\bvalves?\b",
             text_lower,
             re.IGNORECASE,
         )
@@ -1896,8 +1910,13 @@ def extract_blvr(note_text: str) -> Dict[str, Any]:
         proc["procedure_type"] = "Valve placement"
     elif removal_present:
         proc["procedure_type"] = "Valve removal"
-    elif "chartis" in text_lower or balloon_hit:
+    elif "chartis" in text_lower:
         proc["procedure_type"] = "Valve assessment"
+
+    # If we only see generic valve mentions with no procedure action (placement/removal/Chartis),
+    # do not assert BLVR was performed in this session.
+    if not proc.get("procedure_type"):
+        return {}
 
     # BLVR specificity (high-yield): infer target segments + final deployed valve count
     # from explicit segment tokens (e.g., RB9/RB10, LB1+2). Avoid counting valves
@@ -2162,17 +2181,34 @@ def extract_cryotherapy(note_text: str) -> Dict[str, Any]:
     if re.search(CRYOPROBE_PATTERN, text_lower, re.IGNORECASE) and not re.search(
         CRYOBIOPSY_PATTERN, text_lower, re.IGNORECASE
     ):
-        biopsy_context = bool(
-            re.search(r"(?i)\bbiops(?:y|ies|ied)\b", text_lower)
-            or re.search(r"(?i)\b(?:specimen(?:s)?|patholog(?:y|ic)|histolog(?:y|ic))\b", text_lower)
+        specimen_any_re = re.compile(r"\b(?:specimen(?:s)?|histolog(?:y|ic))\b", re.IGNORECASE)
+        specimen_none_re = re.compile(r"\bspecimen(?:s)?\b[^.\n]{0,60}\b(?:none|n/?a|na)\b", re.IGNORECASE)
+        biopsy_token_re = re.compile(r"\bbiops(?:y|ies|ied)\b", re.IGNORECASE)
+        sent_to_path_re = re.compile(r"\bsent\b[^.\n]{0,40}\bpatholog(?:y|ic)\b", re.IGNORECASE)
+        therapeutic_context_re = re.compile(
+            r"\b(?:ablat|destroy|debulk|devitaliz|recanaliz|stenos(?:is|ed)|tumou?r)\w*\b",
+            re.IGNORECASE,
         )
-        therapeutic_context = bool(
-            re.search(
-                r"(?i)\b(?:ablat|destroy|debulk|devitaliz|recanaliz|stenos(?:is|ed)|tumou?r)\w*\b",
-                text_lower,
+
+        saw_biopsy_only = False
+        saw_therapeutic = False
+
+        for cryo_match in re.finditer(CRYOPROBE_PATTERN, preferred_text, re.IGNORECASE):
+            local = preferred_text[max(0, cryo_match.start() - 240) : min(len(preferred_text), cryo_match.end() + 260)]
+            local_lower = local.lower()
+
+            specimen_context = bool(specimen_any_re.search(local_lower)) and not bool(specimen_none_re.search(local_lower))
+            biopsy_context = bool(
+                biopsy_token_re.search(local_lower) or specimen_context or sent_to_path_re.search(local_lower)
             )
-        )
-        if biopsy_context and not therapeutic_context:
+            therapeutic_context = bool(therapeutic_context_re.search(local_lower))
+
+            if therapeutic_context:
+                saw_therapeutic = True
+            if biopsy_context and not therapeutic_context:
+                saw_biopsy_only = True
+
+        if saw_biopsy_only and not saw_therapeutic:
             return {}
         return {"cryotherapy": {"performed": True}}
 
@@ -2638,22 +2674,30 @@ def extract_transbronchial_cryobiopsy(note_text: str) -> Dict[str, Any]:
     # Backstop: some notes describe diagnostic cryobiopsy using "cryoprobe biopsies"
     # without the token "cryobiopsy". Treat this as transbronchial cryobiopsy when
     # biopsy/pathology context is explicit and therapeutic/destructive intent is absent.
-    if re.search(CRYOPROBE_PATTERN, text_lower, re.IGNORECASE):
-        biopsy_context = bool(
-            re.search(r"(?i)\bbiops(?:y|ies|ied)\b", text_lower)
-            or re.search(r"(?i)\b(?:specimen(?:s)?|patholog(?:y|ic)|histolog(?:y|ic))\b", text_lower)
+    cryo_matches = list(re.finditer(CRYOPROBE_PATTERN, raw_text, re.IGNORECASE))
+    if cryo_matches:
+        therapeutic_context_re = re.compile(
+            r"\b(?:ablat|destroy|debulk|devitaliz|recanaliz|stenos(?:is|ed)|tumou?r)\w*\b",
+            re.IGNORECASE,
         )
-        pulmonary_context = bool(
-            re.search(r"(?i)\b(?:transbronchial|lung|pulmonary|parenchymal|nodule|mass|lesion)\b", text_lower)
-        )
-        therapeutic_context = bool(
-            re.search(
-                r"(?i)\b(?:ablat|destroy|debulk|devitaliz|recanaliz|stenos(?:is|ed)|tumou?r)\w*\b",
-                text_lower,
+        specimen_any_re = re.compile(r"\b(?:specimen(?:s)?|histolog(?:y|ic))\b", re.IGNORECASE)
+        specimen_none_re = re.compile(r"\bspecimen(?:s)?\b[^.\n]{0,60}\b(?:none|n/?a|na)\b", re.IGNORECASE)
+        biopsy_token_re = re.compile(r"\bbiops(?:y|ies|ied)\b", re.IGNORECASE)
+        sent_to_path_re = re.compile(r"\bsent\b[^.\n]{0,40}\bpatholog(?:y|ic)\b", re.IGNORECASE)
+
+        for cryo_match in cryo_matches:
+            local = raw_text[max(0, cryo_match.start() - 240) : min(len(raw_text), cryo_match.end() + 260)]
+            local_lower = local.lower()
+
+            specimen_context = bool(specimen_any_re.search(local_lower)) and not bool(specimen_none_re.search(local_lower))
+            biopsy_context = bool(
+                biopsy_token_re.search(local_lower) or specimen_context or sent_to_path_re.search(local_lower)
             )
-        )
-        if biopsy_context and pulmonary_context and not therapeutic_context:
-            return {"transbronchial_cryobiopsy": {"performed": True}}
+            pulmonary_context = bool(pulmonary_context_re.search(local))
+            therapeutic_context = bool(therapeutic_context_re.search(local_lower))
+
+            if biopsy_context and pulmonary_context and not therapeutic_context:
+                return {"transbronchial_cryobiopsy": {"performed": True}}
     return {}
 
 

@@ -2078,6 +2078,7 @@ class RegistryService:
             extraction_warnings.extend(granular_warnings)
 
         from app.registry.postprocess import (
+            cull_tbna_conventional_against_ebus_sampling,
             cull_hollow_ebus_claims,
             enrich_bal_from_procedure_detail,
             enrich_ebus_node_event_outcomes,
@@ -2115,6 +2116,9 @@ class RegistryService:
         )
         if peripheral_tbna_reconcile_warnings:
             extraction_warnings.extend(peripheral_tbna_reconcile_warnings)
+        tbna_conventional_warnings = cull_tbna_conventional_against_ebus_sampling(record, masked_note_text)
+        if tbna_conventional_warnings:
+            extraction_warnings.extend(tbna_conventional_warnings)
         ebus_sampling_detail_warnings = enrich_ebus_node_event_sampling_details(record, masked_note_text)
         if ebus_sampling_detail_warnings:
             extraction_warnings.extend(ebus_sampling_detail_warnings)
@@ -2304,25 +2308,51 @@ class RegistryService:
                     ebus_performed = bool(getattr(ebus_obj, "performed", False))
                     stations = getattr(ebus_obj, "stations_sampled", None)
                     stations_empty = not stations
+                    node_events = getattr(ebus_obj, "node_events", None)
                 except Exception:
                     ebus_performed = False
                     stations_empty = False
+                    node_events = None
 
                 if ebus_performed and stations_empty:
-                    warning = (
-                        "STRUCTURAL_FAILURE: linear_ebus performed but stations_sampled is empty "
-                        "(station extraction likely failed)"
+                    no_sampling_language = bool(
+                        re.search(
+                            r"(?i)\b(?:without|no)\s+(?:biops(?:y|ies)|sampling|tbna|fna)\b|\bno\s+sampling\b",
+                            masked_note_text or "",
+                        )
                     )
-                    if warning not in audit_warnings:
-                        audit_warnings.append(warning)
-                    needs_manual_review = True
+                    # Only treat missing stations as a structural failure when the note/header suggests
+                    # EBUS sampling (e.g., 31652/31653 or TBNA/pass/biopsy language). Inspection-only
+                    # EBUS surveys frequently document stations inspected without sampling.
+                    sampling_expected = bool(
+                        {"31652", "31653"} & set(header_codes)
+                        or re.search(
+                            r"(?i)\b(?:tbna|fna|needle\s+aspirat|biops(?:y|ied|ies)|passes?)\b",
+                            masked_note_text or "",
+                        )
+                    )
+                    has_any_node_events = isinstance(node_events, list) and bool(node_events)
 
-                    if "31653" in header_codes and "31653" not in derived_code_set:
-                        existing = {p.cpt for p in (report.high_conf_omissions or [])}
-                        if "31653" not in existing:
-                            report.high_conf_omissions.append(
-                                AuditPrediction(cpt="31653", prob=1.0, bucket="STRUCTURAL_FAILURE")
-                            )
+                    if no_sampling_language or (has_any_node_events and not sampling_expected):
+                        sampling_expected = False
+
+                    if not sampling_expected:
+                        pass
+                    else:
+                        warning = (
+                            "STRUCTURAL_FAILURE: linear_ebus performed but stations_sampled is empty "
+                            "(station extraction likely failed)"
+                        )
+                        if warning not in audit_warnings:
+                            audit_warnings.append(warning)
+                        needs_manual_review = True
+
+                        if "31653" in header_codes and "31653" not in derived_code_set:
+                            existing = {p.cpt for p in (report.high_conf_omissions or [])}
+                            if "31653" not in existing:
+                                report.high_conf_omissions.append(
+                                    AuditPrediction(cpt="31653", prob=1.0, bucket="STRUCTURAL_FAILURE")
+                                )
 
             def _audit_requires_review(report: AuditCompareReport, evidence: str) -> bool:
                 if not report.high_conf_omissions:

@@ -18,10 +18,10 @@ from app.registry.schema import RegistryRecord
 
 _BLVR_PLACEMENT_CONTEXT_RE = re.compile(
     r"\b(?:"
-    r"valve\b[^.\n]{0,80}\b(?:deploy|deployed|insert|inserted|place|placed|placement)\w*\b"
+    r"valves?\b[^.\n]{0,80}\b(?:deploy(?:ed|ment)?|insert(?:ed|ion)?|placement|placing|place\b|(?<!well\s)(?<!previously\s)(?<!prior\s)(?<!already\s)placed\b)"
     r"|"
-    r"(?:deploy|deployed|insert|inserted|place|placed|placement)\w*\b[^.\n]{0,80}\bvalve\b"
-    r")\b",
+    r"(?:deploy(?:ed|ment)?|insert(?:ed|ion)?|placement|placing|place\b|(?<!well\s)(?<!previously\s)(?<!prior\s)(?<!already\s)placed\b)[^.\n]{0,80}\bvalves?\b"
+    r")",
     re.IGNORECASE,
 )
 _BLVR_REMOVAL_CONTEXT_RE = re.compile(
@@ -1073,6 +1073,17 @@ def derive_all_codes_with_meta(
     # - For non-Chartis balloon occlusion (e.g., Uniblocker/Arndt/Fogarty for air leak/bleeding),
     #   do not suppress solely due to valve overlap (different clinical intent).
     occlusion_source: str | None = None
+    balloon_occlusion = _proc(record, "balloon_occlusion")
+    balloon_evidence = _evidence_text_for_prefixes(
+        record,
+        ("procedures_performed.balloon_occlusion", "code_evidence"),
+    ).lower()
+    balloon_signal = _performed(balloon_occlusion) or bool(
+        re.search(
+            r"(?i)\b(?:balloon\s+occlusion|serial\s+occlusion|endobronchial\s+blocker|uniblocker|arndt|ardnt|fogarty)\b",
+            balloon_evidence or "",
+        )
+    )
     if chartis_lobes:
         occlusion_source = "Chartis"
     else:
@@ -1084,16 +1095,13 @@ def derive_all_codes_with_meta(
         ).lower()
         if "chartis" in cv_text or "chartis" in blvr_evidence:
             occlusion_source = "Chartis"
+        elif balloon_signal:
+            occlusion_source = "Balloon occlusion"
         elif re.search(
             r"(?i)\b(?:tisseel|thrombin|fibrin\s+(?:glue|sealant)|(?:fibrin\s+)?glue)\b",
             cv_text + "\n" + blvr_evidence,
         ):
             occlusion_source = "Substance occlusion"
-        elif re.search(
-            r"(?i)\b(?:balloon\s+occlusion|serial\s+occlusion|endobronchial\s+blocker|uniblocker|arndt|ardnt|fogarty)\b",
-            cv_text + "\n" + blvr_evidence,
-        ):
-            occlusion_source = "Balloon occlusion"
 
     if occlusion_source:
         if not chartis_lobes:

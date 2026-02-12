@@ -1037,6 +1037,33 @@ class RegistryService:
                                     if gender:
                                         _add_first_literal("patient_demographics.gender", str(gender))
 
+                                # Mirror demographics into canonical patient block (new schema layout).
+                                patient = record_data.get("patient") or {}
+                                if not isinstance(patient, dict):
+                                    patient = {}
+                                patient_changed = False
+                                if age is not None and patient.get("age") is None:
+                                    patient["age"] = age
+                                    patient_changed = True
+                                if gender and not patient.get("sex"):
+                                    g = str(gender).strip()
+                                    g_lower = g.lower()
+                                    if g_lower in {"male", "m"}:
+                                        g = "M"
+                                    elif g_lower in {"female", "f"}:
+                                        g = "F"
+                                    else:
+                                        g = "O"
+                                    patient["sex"] = g
+                                    patient_changed = True
+                                if patient_changed:
+                                    record_data["patient"] = patient
+                                    other_modified = True
+                                    if age is not None:
+                                        _add_first_literal("patient.age", str(age))
+                                    if gender:
+                                        _add_first_literal("patient.sex", str(gender))
+
                             # Clinical context
                             clinical = record_data.get("clinical_context") or {}
                             if not isinstance(clinical, dict):
@@ -1051,6 +1078,17 @@ class RegistryService:
                                     "clinical_context.primary_indication",
                                     str(primary_indication),
                                 )
+
+                            # Mirror indication into canonical procedure block (new schema layout).
+                            if primary_indication:
+                                procedure = record_data.get("procedure") or {}
+                                if not isinstance(procedure, dict):
+                                    procedure = {}
+                                if not procedure.get("indication"):
+                                    procedure["indication"] = primary_indication
+                                    record_data["procedure"] = procedure
+                                    other_modified = True
+                                    _add_first_literal("procedure.indication", str(primary_indication))
 
                             # Indication category heuristic (only when primary_indication present)
                             if clinical.get("primary_indication") and not clinical.get("indication_category"):
@@ -1070,14 +1108,35 @@ class RegistryService:
 
                             # ASA class: avoid applying default=3 when ASA not explicitly documented.
                             asa_val = seed_data.get("asa_class")
-                            if asa_val is not None and clinical.get("asa_class") is None:
-                                if re.search(r"(?i)\bASA\b", seed_text or ""):
-                                    clinical["asa_class"] = asa_val
-                                    clinical_changed = True
-                                    _add_first_span_skip_cpt_headers(
-                                        "clinical_context.asa_class",
-                                        [r"\bASA(?:\s+Classification)?[\s:]+[IViv123456]+(?:-E)?\b"],
-                                    )
+                            asa_explicit = asa_val is not None and re.search(r"(?i)\bASA\b", seed_text or "")
+                            if asa_explicit and clinical.get("asa_class") is None:
+                                clinical["asa_class"] = asa_val
+                                clinical_changed = True
+                                _add_first_span_skip_cpt_headers(
+                                    "clinical_context.asa_class",
+                                    [r"\bASA(?:\s+Classification)?[\s:]+[IViv123456]+(?:-E)?\b"],
+                                )
+
+                            # Mirror ASA/anticoagulant context into canonical risk_assessment block.
+                            risk_assessment = record_data.get("risk_assessment") or {}
+                            if not isinstance(risk_assessment, dict):
+                                risk_assessment = {}
+                            risk_changed = False
+                            if asa_explicit and risk_assessment.get("asa_class") is None:
+                                risk_assessment["asa_class"] = asa_val
+                                risk_changed = True
+                                _add_first_span_skip_cpt_headers(
+                                    "risk_assessment.asa_class",
+                                    [r"\bASA(?:\s+Classification)?[\s:]+[IViv123456]+(?:-E)?\b"],
+                                )
+                            anticoagulant_use = seed_data.get("anticoagulant_use")
+                            if anticoagulant_use and not risk_assessment.get("anticoagulant_use"):
+                                risk_assessment["anticoagulant_use"] = anticoagulant_use
+                                risk_changed = True
+                                _add_first_literal("risk_assessment.anticoagulant_use", str(anticoagulant_use))
+                            if risk_changed:
+                                record_data["risk_assessment"] = risk_assessment
+                                other_modified = True
 
                             # Bronchus sign: explicit-only (do not infer).
                             bronchus_sign = seed_data.get("bronchus_sign")

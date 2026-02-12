@@ -213,6 +213,52 @@
       "type": ["string", "null"],
       "description": "Follow-up plan"
     },
+    "patient": {
+      "type": ["object", "null"],
+      "description": "General patient context (canonical view for age/sex).",
+      "additionalProperties": true,
+      "properties": {
+        "age": {
+          "type": ["integer", "null"],
+          "description": "Patient age in years"
+        },
+        "sex": {
+          "type": ["string", "null"],
+          "description": "Patient sex code (M/F/O)"
+        }
+      }
+    },
+    "procedure": {
+      "type": ["object", "null"],
+      "description": "General procedure context.",
+      "additionalProperties": true,
+      "properties": {
+        "indication": {
+          "type": ["string", "null"],
+          "description": "Primary indication for the procedure"
+        }
+      }
+    },
+    "risk_assessment": {
+      "type": ["object", "null"],
+      "description": "Patient risk factors and pre-procedure assessment.",
+      "additionalProperties": true,
+      "properties": {
+        "asa_class": {
+          "type": ["integer", "null"],
+          "minimum": 1,
+          "maximum": 6
+        },
+        "anticoagulant_use": {
+          "type": ["string", "null"]
+        },
+        "mallampati_score": {
+          "type": ["integer", "null"],
+          "minimum": 1,
+          "maximum": 4
+        }
+      }
+    },
     "clinical_context": {
       "type": ["object", "null"],
       "description": "Nested clinical context (forward-compatible with extraction-first registry record).",

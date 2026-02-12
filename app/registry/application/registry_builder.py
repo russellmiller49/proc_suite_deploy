@@ -317,6 +317,53 @@ class V3RegistryBuilder(RegistryBuilderProtocol):
             if key in metadata:
                 entry_data[key] = metadata[key]
 
+        # Backfill risk_assessment from common legacy metadata keys.
+        risk_raw = metadata.get("risk_assessment")
+        if hasattr(risk_raw, "model_dump"):
+            risk_assessment: dict[str, Any] = dict(risk_raw.model_dump())
+        elif isinstance(risk_raw, dict):
+            risk_assessment = dict(risk_raw)
+        else:
+            risk_assessment = {}
+
+        if risk_assessment.get("asa_class") is None:
+            asa_candidate = metadata.get("asa_class")
+            if asa_candidate is None:
+                legacy_ctx = metadata.get("clinical_context")
+                if isinstance(legacy_ctx, dict):
+                    asa_candidate = legacy_ctx.get("asa_class")
+            if asa_candidate is not None:
+                risk_assessment["asa_class"] = asa_candidate
+
+        if not risk_assessment.get("anticoagulant_use"):
+            anticoag_candidate = metadata.get("anticoagulant_use")
+            if not anticoag_candidate:
+                pre_anesthesia = metadata.get("pre_anesthesia")
+                if isinstance(pre_anesthesia, dict):
+                    anticoag_candidate = pre_anesthesia.get("anticoagulant_use")
+            if anticoag_candidate:
+                risk_assessment["anticoagulant_use"] = anticoag_candidate
+
+        if risk_assessment.get("mallampati_score") is None and metadata.get("mallampati_score") is not None:
+            risk_assessment["mallampati_score"] = metadata.get("mallampati_score")
+
+        if risk_assessment:
+            entry_data["risk_assessment"] = risk_assessment
+
+        # Backfill diagnostic_focus from legacy clinical_context shape when provided.
+        if "diagnostic_focus" not in entry_data and "clinical_context" in entry_data:
+            legacy_ctx = entry_data.get("clinical_context")
+            if isinstance(legacy_ctx, dict):
+                lesion = legacy_ctx.get("lesion_characteristics")
+                cao = legacy_ctx.get("central_airway_obstruction")
+                if lesion is not None or cao is not None:
+                    entry_data["diagnostic_focus"] = {
+                        "lesion_characteristics": lesion,
+                        "central_airway_obstruction": cao,
+                    }
+        if "diagnostic_focus" in entry_data and "clinical_context" in entry_data:
+            del entry_data["clinical_context"]
+
         # Handle any_complications flag
         complications = metadata.get("complications", [])
         if complications:
@@ -328,6 +375,9 @@ class V3RegistryBuilder(RegistryBuilderProtocol):
         """Return V3-specific metadata field names."""
         return [
             "sedation",
+            "risk_assessment",
+            "diagnostic_focus",
+            "clinical_context",
             "events",
             "ebus_stations",
             "ebus_station_count",

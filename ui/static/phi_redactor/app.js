@@ -1016,6 +1016,29 @@ function getRegistry(data) {
   return data?.registry || {};
 }
 
+function hasDisplayValue(value) {
+  return value !== null && value !== undefined && (typeof value !== "string" || value.trim() !== "");
+}
+
+function pickRegistryPathValue(registry, paths) {
+  const candidates = Array.isArray(paths) ? paths : [];
+  for (const path of candidates) {
+    const value = getByPath(registry, path);
+    if (hasDisplayValue(value)) return { path, value };
+  }
+  return { path: candidates[0] || "", value: null };
+}
+
+function normalizeSexDisplay(value) {
+  const raw = String(value ?? "").trim();
+  if (!raw) return null;
+  const upper = raw.toUpperCase();
+  if (upper === "M") return "Male";
+  if (upper === "F") return "Female";
+  if (upper === "O") return "Other";
+  return raw;
+}
+
 function getCodingSupport(data) {
   const cs = getRegistry(data)?.coding_support;
   return cs && typeof cs === "object" ? cs : null;
@@ -1293,12 +1316,18 @@ function renderDashboard(data) {
   renderPipelineMetadata(data);
   renderCompletenessPrompts(data);
 
-  renderClinicalContextTable(data);
+  // Right column (clinical) - procedures first, then context
   renderProceduresSummaryTable(data);
+  renderClinicalContextTable(data);
+
+  // Clear detail panels host, then render sub-panels
+  const detailPanelsHost = document.getElementById("procedureDetailPanels");
+  if (detailPanelsHost) clearEl(detailPanelsHost);
   renderDiagnosticFindings(data);
   renderBalDetails(data);
   renderLinearEbusSummary(data);
   renderEbusNodeEvents(data);
+
   renderEvidenceTraceability(data);
 
   renderDebugLogs(data);
@@ -1455,7 +1484,13 @@ function resolvePromptPath(registry, promptPath) {
 function getCompletenessInputSpec(promptPath) {
   const map = {
     "patient_demographics.age_years": { type: "integer", placeholder: "e.g., 67" },
+    "patient.age": { type: "integer", placeholder: "e.g., 67" },
+    "patient.sex": { type: "enum", options: ["M", "F", "O"] },
+    "procedure.indication": { type: "string", placeholder: "Primary indication" },
     "clinical_context.asa_class": { type: "integer", placeholder: "1–6" },
+    "risk_assessment.asa_class": { type: "integer", placeholder: "1–6" },
+    "risk_assessment.anticoagulant_use": { type: "string", placeholder: "e.g., Apixaban" },
+    "risk_assessment.mallampati_score": { type: "integer", placeholder: "1–4" },
     "clinical_context.ecog_score": { type: "ecog", placeholder: "0–4 or 0–1" },
     "clinical_context.bronchus_sign": {
       type: "enum",
@@ -2393,48 +2428,260 @@ function renderPipelineMetadata(data) {
   });
 }
 
+/**
+ * Build a collapsible detail panel (<details>) for procedure sub-sections.
+ */
+function createDetailPanel(title, badgeClass, performed, contentBuilder) {
+  const panel = document.createElement("details");
+  panel.className = "proc-detail-panel";
+  if (!performed) panel.classList.add("panel-notperformed");
+  if (performed) panel.setAttribute("open", "");
+
+  const summary = document.createElement("summary");
+  summary.className = "proc-detail-panel-header";
+
+  if (badgeClass) {
+    const badge = document.createElement("span");
+    badge.className = `panel-type-badge ${badgeClass}`;
+    badge.textContent = badgeClass.replace("badge-", "").toUpperCase();
+    summary.appendChild(badge);
+  }
+
+  const titleSpan = document.createElement("span");
+  titleSpan.textContent = title;
+  summary.appendChild(titleSpan);
+
+  panel.appendChild(summary);
+
+  const body = document.createElement("div");
+  body.className = "proc-detail-panel-body";
+  contentBuilder(body);
+  panel.appendChild(body);
+
+  return panel;
+}
+
+/**
+ * Return structured key-detail pairs for a procedure instead of a flat string.
+ * Falls back to parsing the existing summarizeProcedure() output.
+ */
+function summarizeProcedureStructured(procKey, procObj) {
+  const performed = isPerformedProcedure(procObj);
+  const p = procObj && typeof procObj === "object" ? procObj : {};
+
+  if (procKey === "diagnostic_bronchoscopy") {
+    const abn = Array.isArray(p.airway_abnormalities) ? p.airway_abnormalities.filter(Boolean) : [];
+    const findings = String(p.inspection_findings || "").trim();
+    const parts = [];
+    if (abn.length > 0) parts.push({ label: "Abnormalities", value: abn.join(", ") });
+    if (findings) parts.push({ label: "Findings", value: findings });
+    return parts;
+  }
+
+  if (procKey === "bal") {
+    const parts = [];
+    const loc = cleanLocationForDisplay(p.location);
+    if (loc) parts.push({ label: "Location", value: loc });
+    if (Number.isFinite(p.volume_instilled_ml)) parts.push({ label: "Instilled", value: `${p.volume_instilled_ml} mL` });
+    if (Number.isFinite(p.volume_recovered_ml)) parts.push({ label: "Recovered", value: `${p.volume_recovered_ml} mL` });
+    return parts;
+  }
+
+  if (procKey === "chest_ultrasound") {
+    const parts = [];
+    if (p.hemithorax) parts.push({ label: "Side", value: String(p.hemithorax).trim() });
+    if (p.effusion_volume) parts.push({ label: "Effusion", value: String(p.effusion_volume).trim() });
+    if (p.effusion_echogenicity) parts.push({ label: "Echo", value: String(p.effusion_echogenicity).trim() });
+    if (p.effusion_loculations) parts.push({ label: "Loculations", value: String(p.effusion_loculations).trim() });
+    return parts;
+  }
+
+  if (procKey === "rigid_bronchoscopy") {
+    const parts = [];
+    if (Number.isFinite(p.rigid_scope_size)) parts.push({ label: "Size", value: `${p.rigid_scope_size} mm` });
+    return parts;
+  }
+
+  if (procKey === "chest_tube") {
+    const parts = [];
+    if (p.action) parts.push({ label: "Action", value: String(p.action).trim() });
+    if (p.tube_type) parts.push({ label: "Type", value: String(p.tube_type).trim() });
+    if (p.tube_size_fr) parts.push({ label: "Size", value: `${p.tube_size_fr} Fr` });
+    if (p.guidance) parts.push({ label: "Guidance", value: String(p.guidance).trim() });
+    return parts;
+  }
+
+  if (procKey === "thoracentesis") {
+    const parts = [];
+    if (p.side) parts.push({ label: "Side", value: String(p.side).trim() });
+    if (p.guidance) parts.push({ label: "Guidance", value: String(p.guidance).trim() });
+    const vol = Number.isFinite(p.volume_removed_ml) ? p.volume_removed_ml : Number.isFinite(p.volume_drained_ml) ? p.volume_drained_ml : null;
+    if (Number.isFinite(vol)) parts.push({ label: "Removed", value: `${vol} mL` });
+    if (p.fluid_appearance) parts.push({ label: "Fluid", value: String(p.fluid_appearance).trim() });
+    if (p.manometry_performed !== null && p.manometry_performed !== undefined) {
+      parts.push({ label: "Manometry", value: p.manometry_performed ? "Yes" : "No" });
+    }
+    return parts;
+  }
+
+  if (procKey === "ipc") {
+    const parts = [];
+    if (p.action) parts.push({ label: "Action", value: String(p.action).trim() });
+    if (p.side) parts.push({ label: "Side", value: String(p.side).trim() });
+    if (p.catheter_brand) parts.push({ label: "Brand", value: String(p.catheter_brand).trim() });
+    if (p.tunneled !== null && p.tunneled !== undefined) parts.push({ label: "Tunneled", value: p.tunneled ? "Yes" : "No" });
+    return parts;
+  }
+
+  if (procKey === "pleural_biopsy") {
+    const parts = [];
+    if (p.side) parts.push({ label: "Side", value: String(p.side).trim() });
+    if (p.guidance) parts.push({ label: "Guidance", value: String(p.guidance).trim() });
+    if (p.needle_type) parts.push({ label: "Needle", value: String(p.needle_type).trim() });
+    if (Number.isFinite(p.number_of_samples)) parts.push({ label: "Samples", value: String(p.number_of_samples) });
+    return parts;
+  }
+
+  if (procKey === "pleurodesis") {
+    const parts = [];
+    if (p.method) parts.push({ label: "Method", value: String(p.method).trim() });
+    if (p.agent) parts.push({ label: "Agent", value: String(p.agent).trim() });
+    if (Number.isFinite(p.talc_dose_grams)) parts.push({ label: "Talc", value: `${p.talc_dose_grams} g` });
+    if (p.indication) parts.push({ label: "Indication", value: String(p.indication).trim() });
+    return parts;
+  }
+
+  if (procKey === "fibrinolytic_therapy") {
+    const parts = [];
+    if (Array.isArray(p.agents) && p.agents.length > 0) parts.push({ label: "Agents", value: p.agents.filter(Boolean).join(", ") });
+    if (Number.isFinite(p.tpa_dose_mg)) parts.push({ label: "tPA", value: `${p.tpa_dose_mg} mg` });
+    if (Number.isFinite(p.dnase_dose_mg)) parts.push({ label: "DNase", value: `${p.dnase_dose_mg} mg` });
+    if (Number.isFinite(p.number_of_doses)) parts.push({ label: "Doses", value: String(p.number_of_doses) });
+    if (p.indication) parts.push({ label: "Indication", value: String(p.indication).trim() });
+    return parts;
+  }
+
+  if (procKey === "medical_thoracoscopy") {
+    const parts = [];
+    if (p.side) parts.push({ label: "Side", value: String(p.side).trim() });
+    if (p.scope_type) parts.push({ label: "Scope", value: String(p.scope_type).trim() });
+    if (p.anesthesia_type) parts.push({ label: "Anesthesia", value: String(p.anesthesia_type).trim() });
+    if (p.biopsies_taken !== null && p.biopsies_taken !== undefined) parts.push({ label: "Biopsies", value: p.biopsies_taken ? "Yes" : "No" });
+    if (Number.isFinite(p.number_of_biopsies)) parts.push({ label: "Count", value: String(p.number_of_biopsies) });
+    if (p.adhesiolysis_performed !== null && p.adhesiolysis_performed !== undefined) parts.push({ label: "Adhesiolysis", value: p.adhesiolysis_performed ? "Yes" : "No" });
+    if (p.findings) parts.push({ label: "Findings", value: String(p.findings).trim() });
+    return parts;
+  }
+
+  if (procKey === "linear_ebus") {
+    if (!performed) return [];
+    const parts = [];
+    const stations = Array.isArray(p.stations_sampled) ? p.stations_sampled.filter(Boolean) : [];
+    if (stations.length > 0) parts.push({ label: "Stations", value: stations.join(", ") });
+    if (p.needle_gauge) parts.push({ label: "Needle", value: p.needle_gauge });
+    if (p.elastography_used !== null && p.elastography_used !== undefined)
+      parts.push({ label: "Elastography", value: p.elastography_used ? "Yes" : "No" });
+    const pattern = deriveLinearEbusElastographyPattern(p);
+    if (pattern) parts.push({ label: "Pattern", value: pattern });
+    return parts;
+  }
+
+  if (procKey === "therapeutic_aspiration") {
+    const parts = [];
+    if (p.material) parts.push({ label: "Material", value: p.material });
+    const loc = cleanLocationForDisplay(p.location);
+    if (loc) parts.push({ label: "Location", value: loc });
+    return parts;
+  }
+
+  if (procKey === "radial_ebus") {
+    const parts = [];
+    if (p.probe_position) parts.push({ label: "Probe", value: p.probe_position });
+    if (p.guide_sheath_used !== null && p.guide_sheath_used !== undefined)
+      parts.push({ label: "Guide sheath", value: p.guide_sheath_used ? "Yes" : "No" });
+    return parts;
+  }
+
+  if (procKey === "navigational_bronchoscopy") {
+    const parts = [];
+    if (p.target_reached !== null && p.target_reached !== undefined)
+      parts.push({ label: "Target reached", value: p.target_reached ? "Yes" : "No" });
+    if (Number.isFinite(p.divergence_mm)) parts.push({ label: "Divergence", value: `${p.divergence_mm} mm` });
+    if (p.confirmation_method) parts.push({ label: "Confirmed by", value: p.confirmation_method });
+    return parts;
+  }
+
+  // Fallback: parse existing flat string
+  const flat = summarizeProcedure(procKey, procObj);
+  if (flat === "\u2014" || !flat) return [];
+  return flat.split(" \u00b7 ").map((seg) => {
+    const colon = seg.indexOf(": ");
+    if (colon > -1) return { label: seg.slice(0, colon), value: seg.slice(colon + 2) };
+    return { label: "", value: seg };
+  });
+}
+
 function renderClinicalContextTable(data) {
-  const tbody = document.getElementById("clinicalContextBody");
-  if (!tbody) return;
-  clearEl(tbody);
+  const host = document.getElementById("clinicalContextHost");
+  if (!host) return;
+  clearEl(host);
 
   const registry = getRegistry(data);
+  const age = pickRegistryPathValue(registry, ["patient.age", "patient_demographics.age_years"]).value;
+  const sexRaw = pickRegistryPathValue(registry, ["patient.sex", "patient_demographics.gender"]).value;
+  const indication = pickRegistryPathValue(registry, ["procedure.indication", "clinical_context.primary_indication"]).value;
+  const asa = pickRegistryPathValue(registry, ["risk_assessment.asa_class", "clinical_context.asa_class"]).value;
+  const sex = normalizeSexDisplay(sexRaw);
+
   const ctx = registry?.clinical_context || {};
   const sed = registry?.sedation || {};
   const setting = registry?.procedure_setting || {};
 
   const rows = [
-    ["Primary indication", cleanIndicationForDisplay(ctx?.primary_indication)],
-    ["Indication category", ctx?.indication_category],
-    ["Bronchus sign", ctx?.bronchus_sign === null || ctx?.bronchus_sign === undefined ? null : (ctx?.bronchus_sign ? "Yes" : "No")],
-    ["Sedation type", sed?.type],
-    ["Anesthesia provider", sed?.anesthesia_provider],
-    ["Airway type", setting?.airway_type],
-    ["Procedure location", setting?.location],
-    ["Patient position", setting?.patient_position],
-  ].filter(([, v]) => v !== null && v !== undefined && String(v).trim() !== "");
+    { label: "Primary indication", value: cleanIndicationForDisplay(indication), fullWidth: true },
+    { label: "Patient age", value: age },
+    { label: "Patient sex", value: sex },
+    { label: "ASA class", value: asa },
+    { label: "Indication category", value: ctx?.indication_category },
+    { label: "Bronchus sign", value: ctx?.bronchus_sign === null || ctx?.bronchus_sign === undefined ? null : (ctx?.bronchus_sign ? "Yes" : "No") },
+    { label: "Sedation type", value: sed?.type },
+    { label: "Anesthesia provider", value: sed?.anesthesia_provider },
+    { label: "Airway type", value: setting?.airway_type },
+    { label: "Procedure location", value: setting?.location },
+    { label: "Patient position", value: setting?.patient_position },
+  ].filter((r) => r.value !== null && r.value !== undefined && String(r.value).trim() !== "");
 
   if (rows.length === 0) {
-    const tr = document.createElement("tr");
-    const td = document.createElement("td");
-    td.colSpan = 2;
-    td.className = "dash-empty";
-    td.textContent = "No clinical context available.";
-    tr.appendChild(td);
-    tbody.appendChild(tr);
+    const empty = document.createElement("div");
+    empty.className = "dash-empty";
+    empty.style.padding = "10px 12px";
+    empty.textContent = "No clinical context available.";
+    host.appendChild(empty);
     return;
   }
 
-  rows.forEach(([k, v]) => {
-    const tr = document.createElement("tr");
-    const tdK = document.createElement("td");
-    tdK.textContent = k;
-    const tdV = document.createElement("td");
-    tdV.textContent = fmtMaybe(v);
-    tr.appendChild(tdK);
-    tr.appendChild(tdV);
-    tbody.appendChild(tr);
+  const grid = document.createElement("div");
+  grid.className = "clinical-kv-grid";
+
+  rows.forEach((r) => {
+    const cell = document.createElement("div");
+    cell.className = "kv-cell";
+    if (r.fullWidth) cell.classList.add("kv-full-width");
+
+    const label = document.createElement("div");
+    label.className = "kv-cell-label";
+    label.textContent = r.label;
+
+    const value = document.createElement("div");
+    value.className = "kv-cell-value";
+    value.textContent = fmtMaybe(r.value);
+
+    cell.appendChild(label);
+    cell.appendChild(value);
+    grid.appendChild(cell);
   });
+
+  host.appendChild(grid);
 }
 
 function isPerformedProcedure(procObj) {
@@ -2634,9 +2881,9 @@ function summarizeProcedure(procKey, procObj) {
 }
 
 function renderProceduresSummaryTable(data) {
-  const tbody = document.getElementById("proceduresSummaryBody");
-  if (!tbody) return;
-  clearEl(tbody);
+  const host = document.getElementById("proceduresSummaryHost");
+  if (!host) return;
+  clearEl(host);
 
   const registry = getRegistry(data);
   const procs = registry?.procedures_performed;
@@ -2645,13 +2892,11 @@ function renderProceduresSummaryTable(data) {
   const hasPleural = pleural && typeof pleural === "object";
 
   if (!hasProcs && !hasPleural) {
-    const tr = document.createElement("tr");
-    const td = document.createElement("td");
-    td.colSpan = 3;
-    td.className = "dash-empty";
-    td.textContent = "No procedures available.";
-    tr.appendChild(td);
-    tbody.appendChild(tr);
+    const empty = document.createElement("div");
+    empty.className = "dash-empty";
+    empty.style.padding = "10px 12px";
+    empty.textContent = "No procedures available.";
+    host.appendChild(empty);
     return;
   }
 
@@ -2674,22 +2919,46 @@ function renderProceduresSummaryTable(data) {
   });
 
   if (withPerformed.length === 0) {
-    const tr = document.createElement("tr");
-    const td = document.createElement("td");
-    td.colSpan = 3;
-    td.className = "dash-empty";
-    td.textContent = "No procedures found.";
-    tr.appendChild(td);
-    tbody.appendChild(tr);
+    const empty = document.createElement("div");
+    empty.className = "dash-empty";
+    empty.style.padding = "10px 12px";
+    empty.textContent = "No procedures found.";
+    host.appendChild(empty);
     return;
   }
 
+  const table = document.createElement("table");
+  table.className = "dash-table";
+  const thead = document.createElement("thead");
+  const headTr = document.createElement("tr");
+  [{ text: "Procedure", width: "35%" }, { text: "Performed", width: "15%" }, { text: "Key Details", width: "50%" }].forEach((h) => {
+    const th = document.createElement("th");
+    th.textContent = h.text;
+    th.style.width = h.width;
+    headTr.appendChild(th);
+  });
+  thead.appendChild(headTr);
+  table.appendChild(thead);
+
+  const tbody = document.createElement("tbody");
+  let insertedSeparator = false;
+
   withPerformed.forEach(({ key, obj, performed }) => {
+    if (!performed && !insertedSeparator) {
+      insertedSeparator = true;
+      const sepTr = document.createElement("tr");
+      sepTr.className = "proc-group-separator";
+      const sepTd = document.createElement("td");
+      sepTd.colSpan = 3;
+      sepTr.appendChild(sepTd);
+      tbody.appendChild(sepTr);
+    }
+
     const tr = document.createElement("tr");
-    if (!performed) tr.classList.add("opacity-50");
+    tr.className = performed ? "proc-row-performed" : "proc-row-notperformed";
 
     const tdName = document.createElement("td");
-    tdName.style.fontWeight = "600";
+    tdName.className = "proc-name-cell";
     const actionSuffix =
       (key === "chest_tube" || key === "ipc") && obj && typeof obj === "object" && typeof obj.action === "string"
         ? String(obj.action).trim()
@@ -2698,18 +2967,43 @@ function renderProceduresSummaryTable(data) {
 
     const tdPerf = document.createElement("td");
     const badge = document.createElement("span");
-    badge.className = `status-badge ${performed ? "status-selected" : "status-suppressed"}`;
+    badge.className = performed ? "proc-badge-yes" : "proc-badge-no";
     badge.textContent = performed ? "Yes" : "No";
     tdPerf.appendChild(badge);
 
     const tdDetails = document.createElement("td");
-    tdDetails.textContent = summarizeProcedure(key, obj);
+    const detailItems = summarizeProcedureStructured(key, obj);
+    if (detailItems.length === 0) {
+      tdDetails.textContent = "\u2014";
+    } else {
+      const ul = document.createElement("ul");
+      ul.className = "proc-detail-list";
+      detailItems.forEach(({ label, value }) => {
+        const li = document.createElement("li");
+        li.className = "proc-detail-item";
+        if (label) {
+          const lbl = document.createElement("span");
+          lbl.className = "proc-detail-label";
+          lbl.textContent = label;
+          li.appendChild(lbl);
+        }
+        const val = document.createElement("span");
+        val.className = "proc-detail-value";
+        val.textContent = value;
+        li.appendChild(val);
+        ul.appendChild(li);
+      });
+      tdDetails.appendChild(ul);
+    }
 
     tr.appendChild(tdName);
     tr.appendChild(tdPerf);
     tr.appendChild(tdDetails);
     tbody.appendChild(tr);
   });
+
+  table.appendChild(tbody);
+  host.appendChild(table);
 }
 
 function toggleCard(cardId, visible) {
@@ -2719,123 +3013,139 @@ function toggleCard(cardId, visible) {
 }
 
 function renderDiagnosticFindings(data) {
-  const tbody = document.getElementById("diagnosticFindingsBody");
-  if (!tbody) return;
-  clearEl(tbody);
+  const host = document.getElementById("procedureDetailPanels");
+  if (!host) return;
 
   const proc = getRegistry(data)?.procedures_performed?.diagnostic_bronchoscopy;
   const performed = isPerformedProcedure(proc);
   const hasData = performed || hasProcedureDetails(proc);
-  toggleCard("diagnosticFindingsCard", hasData);
-  const card = document.getElementById("diagnosticFindingsCard");
-  if (card) card.classList.toggle("opacity-50", hasData && !performed);
   if (!hasData) return;
 
-  const abn = Array.isArray(proc?.airway_abnormalities) ? proc.airway_abnormalities.filter(Boolean) : [];
-  const rows = [
-    ["Airway abnormalities", abn.length ? abn.join(", ") : "—"],
-    ["Findings (free text)", proc?.inspection_findings || "—"],
-  ];
-  rows.forEach(([k, v]) => {
-    const tr = document.createElement("tr");
-    const tdK = document.createElement("td");
-    tdK.textContent = k;
-    const tdV = document.createElement("td");
-    tdV.textContent = fmtMaybe(v);
-    tr.appendChild(tdK);
-    tr.appendChild(tdV);
-    tbody.appendChild(tr);
+  const panel = createDetailPanel("Diagnostic Bronchoscopy Findings", "badge-diagnostic", performed, (body) => {
+    const table = document.createElement("table");
+    table.className = "dash-table kv-table";
+    const tbody = document.createElement("tbody");
+
+    const abn = Array.isArray(proc?.airway_abnormalities) ? proc.airway_abnormalities.filter(Boolean) : [];
+    const rows = [
+      ["Airway abnormalities", abn.length ? abn.join(", ") : "\u2014"],
+      ["Findings (free text)", proc?.inspection_findings || "\u2014"],
+    ];
+    rows.forEach(([k, v]) => {
+      const tr = document.createElement("tr");
+      const tdK = document.createElement("td");
+      tdK.textContent = k;
+      const tdV = document.createElement("td");
+      tdV.textContent = fmtMaybe(v);
+      tr.appendChild(tdK);
+      tr.appendChild(tdV);
+      tbody.appendChild(tr);
+    });
+
+    table.appendChild(tbody);
+    body.appendChild(table);
   });
+
+  host.appendChild(panel);
 }
 
 function renderBalDetails(data) {
-  const tbody = document.getElementById("balDetailsBody");
-  if (!tbody) return;
-  clearEl(tbody);
+  const host = document.getElementById("procedureDetailPanels");
+  if (!host) return;
 
   const proc = getRegistry(data)?.procedures_performed?.bal;
   const performed = isPerformedProcedure(proc);
   const hasData = performed || hasProcedureDetails(proc);
-  toggleCard("balDetailsCard", hasData);
-  const card = document.getElementById("balDetailsCard");
-  if (card) card.classList.toggle("opacity-50", hasData && !performed);
   if (!hasData) return;
 
-  const rows = [
-    ["Location", proc?.location || "—"],
-    ["Instilled (mL)", Number.isFinite(proc?.volume_instilled_ml) ? String(proc.volume_instilled_ml) : "—"],
-    ["Recovered (mL)", Number.isFinite(proc?.volume_recovered_ml) ? String(proc.volume_recovered_ml) : "—"],
-    ["Appearance", proc?.appearance || "—"],
-  ];
-  rows.forEach(([k, v]) => {
-    const tr = document.createElement("tr");
-    const tdK = document.createElement("td");
-    tdK.textContent = k;
-    const tdV = document.createElement("td");
-    tdV.textContent = fmtMaybe(v);
-    tr.appendChild(tdK);
-    tr.appendChild(tdV);
-    tbody.appendChild(tr);
+  const panel = createDetailPanel("BAL Details", "badge-sampling", performed, (body) => {
+    const table = document.createElement("table");
+    table.className = "dash-table kv-table";
+    const tbody = document.createElement("tbody");
+
+    const rows = [
+      ["Location", proc?.location || "\u2014"],
+      ["Instilled (mL)", Number.isFinite(proc?.volume_instilled_ml) ? String(proc.volume_instilled_ml) : "\u2014"],
+      ["Recovered (mL)", Number.isFinite(proc?.volume_recovered_ml) ? String(proc.volume_recovered_ml) : "\u2014"],
+      ["Appearance", proc?.appearance || "\u2014"],
+    ];
+    rows.forEach(([k, v]) => {
+      const tr = document.createElement("tr");
+      const tdK = document.createElement("td");
+      tdK.textContent = k;
+      const tdV = document.createElement("td");
+      tdV.textContent = fmtMaybe(v);
+      tr.appendChild(tdK);
+      tr.appendChild(tdV);
+      tbody.appendChild(tr);
+    });
+
+    table.appendChild(tbody);
+    body.appendChild(table);
   });
+
+  host.appendChild(panel);
 }
 
 function renderLinearEbusSummary(data) {
-  const tbody = document.getElementById("linearEbusSummaryBody");
-  if (!tbody) return;
-  clearEl(tbody);
+  const host = document.getElementById("procedureDetailPanels");
+  if (!host) return;
 
   const proc = getRegistry(data)?.procedures_performed?.linear_ebus;
   const performed = isPerformedProcedure(proc);
   const events = Array.isArray(proc?.node_events) ? proc.node_events : [];
   const hasData = performed || hasProcedureDetails(proc) || events.length > 0;
-  toggleCard("linearEbusSummaryCard", hasData);
-  const card = document.getElementById("linearEbusSummaryCard");
-  if (card) card.classList.toggle("opacity-50", hasData && !performed);
   if (!hasData) return;
 
-  const derivedPattern = deriveLinearEbusElastographyPattern(proc);
-  const stations =
-    Array.isArray(proc?.stations_sampled) && proc.stations_sampled.length > 0
-      ? proc.stations_sampled.filter(Boolean)
-      : Array.isArray(events)
-        ? events
-            .filter((e) => e?.action && e.action !== "inspected_only" && e.station)
-            .map((e) => e.station)
-        : [];
-  const uniqueStations = Array.from(new Set(stations));
+  const panel = createDetailPanel("Linear EBUS Technical Summary", "badge-ebus", performed, (body) => {
+    const table = document.createElement("table");
+    table.className = "dash-table kv-table";
+    const tbody = document.createElement("tbody");
 
-  const rows = [
-    ["Stations sampled", uniqueStations.length ? uniqueStations.join(", ") : "—"],
-    ["Needle gauge", proc?.needle_gauge || "—"],
-    ["Elastography used", proc?.elastography_used === null || proc?.elastography_used === undefined ? "—" : (proc.elastography_used ? "Yes" : "No")],
-    ["Elastography pattern", derivedPattern || "—"],
-  ];
+    const derivedPattern = deriveLinearEbusElastographyPattern(proc);
+    const stations =
+      Array.isArray(proc?.stations_sampled) && proc.stations_sampled.length > 0
+        ? proc.stations_sampled.filter(Boolean)
+        : Array.isArray(events)
+          ? events
+              .filter((e) => e?.action && e.action !== "inspected_only" && e.station)
+              .map((e) => e.station)
+          : [];
+    const uniqueStations = Array.from(new Set(stations));
 
-  rows.forEach(([k, v]) => {
-    const tr = document.createElement("tr");
-    const tdK = document.createElement("td");
-    tdK.textContent = k;
-    const tdV = document.createElement("td");
-    tdV.textContent = fmtMaybe(v);
-    tr.appendChild(tdK);
-    tr.appendChild(tdV);
-    tbody.appendChild(tr);
+    const rows = [
+      ["Stations sampled", uniqueStations.length ? uniqueStations.join(", ") : "\u2014"],
+      ["Needle gauge", proc?.needle_gauge || "\u2014"],
+      ["Elastography used", proc?.elastography_used === null || proc?.elastography_used === undefined ? "\u2014" : (proc.elastography_used ? "Yes" : "No")],
+      ["Elastography pattern", derivedPattern || "\u2014"],
+    ];
+
+    rows.forEach(([k, v]) => {
+      const tr = document.createElement("tr");
+      const tdK = document.createElement("td");
+      tdK.textContent = k;
+      const tdV = document.createElement("td");
+      tdV.textContent = fmtMaybe(v);
+      tr.appendChild(tdK);
+      tr.appendChild(tdV);
+      tbody.appendChild(tr);
+    });
+
+    table.appendChild(tbody);
+    body.appendChild(table);
   });
+
+  host.appendChild(panel);
 }
 
 function renderEbusNodeEvents(data) {
-  const tbody = document.getElementById("ebusNodeEventsBody");
-  if (!tbody) return;
-  clearEl(tbody);
+  const host = document.getElementById("procedureDetailPanels");
+  if (!host) return;
 
   const proc = getRegistry(data)?.procedures_performed?.linear_ebus;
   const performed = isPerformedProcedure(proc);
   const events = Array.isArray(proc?.node_events) ? proc.node_events : [];
-  const show = events.length > 0;
-  toggleCard("ebusNodeEventsCard", show);
-  const card = document.getElementById("ebusNodeEventsCard");
-  if (card) card.classList.toggle("opacity-50", show && !performed);
-  if (!show) return;
+  if (events.length === 0) return;
 
   const actionLabel = (action) => {
     const a = String(action || "");
@@ -2843,52 +3153,80 @@ function renderEbusNodeEvents(data) {
     if (a === "needle_aspiration") return "Needle aspiration";
     if (a === "core_biopsy") return "Core biopsy";
     if (a === "forceps_biopsy") return "Forceps biopsy";
-    return a || "—";
+    return a || "\u2014";
   };
 
-  events.forEach((ev) => {
-    const tr = document.createElement("tr");
+  const panel = createDetailPanel("Linear EBUS Node Events (Granular)", "badge-ebus", performed, (body) => {
+    const table = document.createElement("table");
+    table.className = "dash-table striped";
+    const thead = document.createElement("thead");
+    const headTr = document.createElement("tr");
+    [
+      { text: "Station", width: "12%" },
+      { text: "Action", width: "36%" },
+      { text: "Passes", width: "10%" },
+      { text: "Elastography", width: "20%" },
+      { text: "Evidence", width: "22%" },
+    ].forEach((h) => {
+      const th = document.createElement("th");
+      th.textContent = h.text;
+      th.style.width = h.width;
+      headTr.appendChild(th);
+    });
+    thead.appendChild(headTr);
+    table.appendChild(thead);
 
-    const tdStation = document.createElement("td");
-    tdStation.textContent = fmtMaybe(ev?.station);
+    const tbody = document.createElement("tbody");
 
-    const tdAction = document.createElement("td");
-    tdAction.textContent = actionLabel(ev?.action);
+    events.forEach((ev) => {
+      const tr = document.createElement("tr");
 
-    const tdPasses = document.createElement("td");
-    tdPasses.textContent = Number.isFinite(ev?.passes) ? String(ev.passes) : "—";
+      const tdStation = document.createElement("td");
+      tdStation.textContent = fmtMaybe(ev?.station);
 
-    const tdElast = document.createElement("td");
-    tdElast.textContent = fmtMaybe(ev?.elastography_pattern);
+      const tdAction = document.createElement("td");
+      tdAction.textContent = actionLabel(ev?.action);
 
-    const tdEvidence = document.createElement("td");
-    const quote = String(ev?.evidence_quote || "").trim();
-    if (!quote) {
-      tdEvidence.textContent = "—";
-    } else {
-      const details = document.createElement("details");
-      details.className = "inline-details";
-      const summary = document.createElement("summary");
-      summary.textContent = safeSnippet(quote, 0, quote.length);
-      details.appendChild(summary);
-      const body = document.createElement("div");
-      body.style.marginTop = "8px";
-      const pre = document.createElement("pre");
-      pre.style.whiteSpace = "pre-wrap";
-      pre.style.margin = "0";
-      pre.textContent = quote;
-      body.appendChild(pre);
-      details.appendChild(body);
-      tdEvidence.appendChild(details);
-    }
+      const tdPasses = document.createElement("td");
+      tdPasses.textContent = Number.isFinite(ev?.passes) ? String(ev.passes) : "\u2014";
 
-    tr.appendChild(tdStation);
-    tr.appendChild(tdAction);
-    tr.appendChild(tdPasses);
-    tr.appendChild(tdElast);
-    tr.appendChild(tdEvidence);
-    tbody.appendChild(tr);
+      const tdElast = document.createElement("td");
+      tdElast.textContent = fmtMaybe(ev?.elastography_pattern);
+
+      const tdEvidence = document.createElement("td");
+      const quote = String(ev?.evidence_quote || "").trim();
+      if (!quote) {
+        tdEvidence.textContent = "\u2014";
+      } else {
+        const details = document.createElement("details");
+        details.className = "inline-details";
+        const summary = document.createElement("summary");
+        summary.textContent = safeSnippet(quote, 0, quote.length);
+        details.appendChild(summary);
+        const detBody = document.createElement("div");
+        detBody.style.marginTop = "8px";
+        const pre = document.createElement("pre");
+        pre.style.whiteSpace = "pre-wrap";
+        pre.style.margin = "0";
+        pre.textContent = quote;
+        detBody.appendChild(pre);
+        details.appendChild(detBody);
+        tdEvidence.appendChild(details);
+      }
+
+      tr.appendChild(tdStation);
+      tr.appendChild(tdAction);
+      tr.appendChild(tdPasses);
+      tr.appendChild(tdElast);
+      tr.appendChild(tdEvidence);
+      tbody.appendChild(tr);
+    });
+
+    table.appendChild(tbody);
+    body.appendChild(table);
   });
+
+  host.appendChild(panel);
 }
 
 function renderEvidenceTraceability(data) {
@@ -3131,63 +3469,34 @@ function buildFlattenedTables(data) {
   });
 
   const clinicalRows = [];
-  const ctx = registry?.clinical_context || {};
-  const sed = registry?.sedation || {};
-  const setting = registry?.procedure_setting || {};
+  const ageInfo = pickRegistryPathValue(registry, ["patient.age", "patient_demographics.age_years"]);
+  const sexInfo = pickRegistryPathValue(registry, ["patient.sex", "patient_demographics.gender"]);
+  const indicationInfo = pickRegistryPathValue(registry, ["procedure.indication", "clinical_context.primary_indication"]);
+  const asaInfo = pickRegistryPathValue(registry, ["risk_assessment.asa_class", "clinical_context.asa_class"]);
+  clinicalRows.push({
+    field: "Patient age",
+    value: hasDisplayValue(ageInfo.value) ? String(ageInfo.value) : "",
+    __meta: { path: `registry.${ageInfo.path || "patient.age"}`, valueType: "number" },
+  });
+  clinicalRows.push({
+    field: "Patient sex",
+    value: normalizeSexDisplay(sexInfo.value) || "",
+    __meta: { path: `registry.${sexInfo.path || "patient.sex"}`, valueType: "text" },
+  });
   clinicalRows.push({
     field: "Primary indication",
-    value: cleanIndicationForDisplay(ctx?.primary_indication) || "",
-    __meta: { path: "registry.clinical_context.primary_indication", valueType: "text" },
+    value: cleanIndicationForDisplay(indicationInfo.value) || "",
+    __meta: { path: `registry.${indicationInfo.path || "procedure.indication"}`, valueType: "text" },
   });
   clinicalRows.push({
-    field: "Indication category",
-    value: ctx?.indication_category || "",
-    __meta: { path: "registry.clinical_context.indication_category", valueType: "text" },
-  });
-  clinicalRows.push({
-    field: "Bronchus sign",
-    value: toYesNo(ctx?.bronchus_sign),
+    field: "ASA class",
+    value: hasDisplayValue(asaInfo.value) ? String(asaInfo.value) : "",
     __meta: {
-      path: "registry.clinical_context.bronchus_sign",
-      valueType: "boolean",
+      path: `registry.${asaInfo.path || "risk_assessment.asa_class"}`,
+      valueType: "number",
       inputType: "select",
-      options: YES_NO_OPTIONS,
+      options: [1, 2, 3, 4, 5, 6],
     },
-  });
-  clinicalRows.push({
-    field: "Sedation type",
-    value: sed?.type || "",
-    __meta: {
-      path: "registry.sedation.type",
-      valueType: "text",
-      inputType: "select",
-      options: SEDATION_TYPE_OPTIONS,
-    },
-  });
-  clinicalRows.push({
-    field: "Anesthesia provider",
-    value: sed?.anesthesia_provider || "",
-    __meta: { path: "registry.sedation.anesthesia_provider", valueType: "text" },
-  });
-  clinicalRows.push({
-    field: "Airway type",
-    value: setting?.airway_type || "",
-    __meta: {
-      path: "registry.procedure_setting.airway_type",
-      valueType: "text",
-      inputType: "select",
-      options: AIRWAY_TYPE_OPTIONS,
-    },
-  });
-  clinicalRows.push({
-    field: "Procedure location",
-    value: setting?.location || "",
-    __meta: { path: "registry.procedure_setting.location", valueType: "text" },
-  });
-  clinicalRows.push({
-    field: "Patient position",
-    value: setting?.patient_position || "",
-    __meta: { path: "registry.procedure_setting.patient_position", valueType: "text" },
   });
 
   tables.push({

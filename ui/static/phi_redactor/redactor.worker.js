@@ -11,9 +11,11 @@
 import { pipeline, env } from "https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2";
 import { applyVeto } from "./protectedVeto.js";
 
-const MODEL_PATH = "./vendor/phi_distilbert_ner_quant/";
-const MODEL_ID = "phi_distilbert_ner_quant";
 const MODEL_BASE_URL = new URL("./vendor/", import.meta.url).toString();
+const MODEL_CANDIDATES = [
+  { id: "phi_distilbert_ner_quant", path: "./vendor/phi_distilbert_ner_quant/" },
+  { id: "phi_distilbert_ner", path: "./vendor/phi_distilbert_ner/" },
+];
 const TASK = "token-classification";
 
 // Character windowing (simple + robust)
@@ -486,9 +488,22 @@ let classifierUnquantized = null;
 
 let modelPromiseQuantized = null;
 let modelPromiseUnquantized = null;
+let activeModel = null;
+let activeModelPromise = null;
 
 let protectedTerms = null;
 let termsPromise = null;
+
+const DEFAULT_PROTECTED_TERMS = {
+  anatomy_terms: [],
+  device_manufacturers: [],
+  protected_device_names: [],
+  ln_station_regex: "^\\\\d{1,2}[LRlr](?:[is])?$",
+  segment_regex: "^[LRlr][Bb]\\\\d{1,2}(?:\\\\+\\\\d{1,2})?$",
+  address_markers: [],
+  code_markers: [],
+  station_markers: [],
+};
 
 let cancelled = false;
 let debug = false;
@@ -535,14 +550,53 @@ async function loadProtectedTerms() {
   if (termsPromise) return termsPromise;
 
   termsPromise = (async () => {
-    const termsUrl = new URL(`${MODEL_PATH}protected_terms.json`, import.meta.url);
-    const res = await fetch(termsUrl);
-    if (!res.ok) throw new Error(`Failed to load protected_terms.json (${res.status})`);
-    protectedTerms = await res.json();
+    const model = await resolveActiveModel();
+    if (!model) {
+      protectedTerms = { ...DEFAULT_PROTECTED_TERMS };
+      return protectedTerms;
+    }
+
+    const termsUrl = new URL(`${model.path}protected_terms.json`, import.meta.url);
+    try {
+      const res = await fetch(termsUrl);
+      if (res.ok) {
+        protectedTerms = await res.json();
+        return protectedTerms;
+      }
+    } catch {
+      // Fall back to defaults when terms are unavailable in local dev.
+    }
+
+    protectedTerms = { ...DEFAULT_PROTECTED_TERMS };
     return protectedTerms;
   })();
 
   return termsPromise;
+}
+
+async function resolveActiveModel() {
+  if (activeModel) return activeModel;
+  if (activeModelPromise) return activeModelPromise;
+
+  activeModelPromise = (async () => {
+    for (const candidate of MODEL_CANDIDATES) {
+      const configUrl = new URL(`${candidate.path}config.json`, import.meta.url);
+      try {
+        const res = await fetch(configUrl);
+        if (res.ok) return candidate;
+      } catch {
+        // Continue probing candidates.
+      }
+    }
+    return null;
+  })();
+
+  try {
+    activeModel = await activeModelPromise;
+    return activeModel;
+  } finally {
+    activeModelPromise = null;
+  }
 }
 
 // =============================================================================
@@ -552,8 +606,10 @@ async function loadProtectedTerms() {
 async function loadQuantizedModel() {
   if (classifierQuantized) return classifierQuantized;
   if (modelPromiseQuantized) return modelPromiseQuantized;
+  const model = await resolveActiveModel();
+  if (!model) throw new Error("No local PHI model bundle found under ./vendor/");
 
-  modelPromiseQuantized = pipeline(TASK, MODEL_ID, { device: "wasm", quantized: true })
+  modelPromiseQuantized = pipeline(TASK, model.id, { device: "wasm", quantized: true })
     .then((c) => {
       classifierQuantized = c;
       return c;
@@ -570,8 +626,10 @@ async function loadQuantizedModel() {
 async function loadUnquantizedModel() {
   if (classifierUnquantized) return classifierUnquantized;
   if (modelPromiseUnquantized) return modelPromiseUnquantized;
+  const model = await resolveActiveModel();
+  if (!model) throw new Error("No local PHI model bundle found under ./vendor/");
 
-  modelPromiseUnquantized = pipeline(TASK, MODEL_ID, { device: "wasm", quantized: false })
+  modelPromiseUnquantized = pipeline(TASK, model.id, { device: "wasm", quantized: false })
     .then((c) => {
       classifierUnquantized = c;
       return c;
@@ -586,6 +644,13 @@ async function loadUnquantizedModel() {
 }
 
 async function loadModel(config = {}) {
+  const resolvedModel = await resolveActiveModel();
+  if (!resolvedModel) {
+    throw new Error(
+      "Local PHI model not found. Expected ui/static/phi_redactor/vendor/phi_distilbert_ner or ui/static/phi_redactor/vendor/phi_distilbert_ner_quant."
+    );
+  }
+
   const forceUnquantized = Boolean(config.forceUnquantized);
 
   if (forceUnquantized) {

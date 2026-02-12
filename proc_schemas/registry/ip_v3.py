@@ -16,7 +16,7 @@ from datetime import date, datetime
 from enum import Enum
 from typing import Any, List, Optional, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import AliasChoices, BaseModel, Field
 
 from proc_schemas.shared.ebus_events import NodeInteraction
 
@@ -82,6 +82,27 @@ class ProcedureInfo(BaseModel):
     urgency: Literal["routine", "urgent", "emergent"] = "routine"
     operator: str = ""
     facility: str = ""
+
+
+class RiskAssessment(BaseModel):
+    """Patient risk factors and pre-procedure assessment."""
+
+    asa_class: Optional[int] = Field(
+        default=None,
+        ge=1,
+        le=6,
+        description="ASA Physical Status Classification (1-6).",
+    )
+    anticoagulant_use: Optional[str] = Field(
+        default=None,
+        description="Documented anticoagulant/antiplatelet use.",
+    )
+    mallampati_score: Optional[int] = Field(
+        default=None,
+        ge=1,
+        le=4,
+        description="Mallampati airway score (1-4) when documented.",
+    )
 
 
 class Sedation(BaseModel):
@@ -296,11 +317,15 @@ class CentralAirwayObstruction(BaseModel):
     )
 
 
-class ClinicalContextV3(BaseModel):
-    """Structured clinical context fields for V3."""
+class DiagnosticFocus(BaseModel):
+    """Specific pathology targets (lesion and obstruction findings)."""
 
     lesion_characteristics: LesionCharacteristics | None = None
     central_airway_obstruction: CentralAirwayObstruction | None = None
+
+
+class ClinicalContextV3(DiagnosticFocus):
+    """Deprecated alias for DiagnosticFocus (backward compatibility)."""
 
 
 class IPRegistryV3(BaseModel):
@@ -323,11 +348,15 @@ class IPRegistryV3(BaseModel):
     # Patient and procedure
     patient: PatientInfo = Field(default_factory=PatientInfo)
     procedure: ProcedureInfo = Field(default_factory=ProcedureInfo)
+    risk_assessment: RiskAssessment = Field(default_factory=RiskAssessment)
 
     # Sedation
     sedation: Sedation = Field(default_factory=Sedation)
 
-    clinical_context: ClinicalContextV3 = Field(default_factory=ClinicalContextV3)
+    diagnostic_focus: DiagnosticFocus = Field(
+        default_factory=DiagnosticFocus,
+        validation_alias=AliasChoices("diagnostic_focus", "clinical_context"),
+    )
 
     established_tracheostomy_route: bool = Field(
         False,
@@ -406,5 +435,17 @@ class IPRegistryV3(BaseModel):
     # Free text
     impression: str = ""
     recommendations: str = ""
+
+    @property
+    def clinical_context(self) -> DiagnosticFocus:
+        """Backward-compatible alias for `diagnostic_focus`."""
+        return self.diagnostic_focus
+
+    @clinical_context.setter
+    def clinical_context(self, value: DiagnosticFocus | dict[str, Any]) -> None:
+        if isinstance(value, DiagnosticFocus):
+            self.diagnostic_focus = value
+            return
+        self.diagnostic_focus = DiagnosticFocus.model_validate(value)
 
     model_config = {"frozen": False}

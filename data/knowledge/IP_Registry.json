@@ -285,6 +285,87 @@
         }
       }
     },
+    "patient": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "description": "General patient context (canonical view for age/sex).",
+      "properties": {
+        "age": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 120,
+          "description": "Patient age in years"
+        },
+        "sex": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "M",
+            "F",
+            "O",
+            null
+          ],
+          "description": "Patient sex code (M/F/O)"
+        }
+      }
+    },
+    "procedure": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "description": "General procedure context.",
+      "properties": {
+        "indication": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Primary indication for the procedure"
+        }
+      }
+    },
+    "risk_assessment": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "description": "Patient risk factors and pre-procedure assessment.",
+      "properties": {
+        "asa_class": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1,
+          "maximum": 6,
+          "description": "ASA Physical Status Classification (1-6)."
+        },
+        "anticoagulant_use": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Documented anticoagulant/antiplatelet use."
+        },
+        "mallampati_score": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1,
+          "maximum": 4,
+          "description": "Mallampati airway score (1-4) when documented."
+        }
+      }
+    },
     "clinical_context": {
       "type": [
         "object",

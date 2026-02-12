@@ -124,7 +124,13 @@ function upsertCompletenessAddendum(text, block) {
 function getCompletenessInputSpec(promptPath) {
   const map = {
     "patient_demographics.age_years": { type: "integer", placeholder: "e.g., 67" },
+    "patient.age": { type: "integer", placeholder: "e.g., 67" },
+    "patient.sex": { type: "enum", options: ["M", "F", "O"] },
+    "procedure.indication": { type: "string", placeholder: "Primary indication" },
     "clinical_context.asa_class": { type: "integer", placeholder: "1–6" },
+    "risk_assessment.asa_class": { type: "integer", placeholder: "1–6" },
+    "risk_assessment.anticoagulant_use": { type: "string", placeholder: "e.g., Apixaban" },
+    "risk_assessment.mallampati_score": { type: "integer", placeholder: "1–4" },
     "clinical_context.ecog_score": { type: "ecog", placeholder: "0–4 or 0–1" },
     "clinical_context.bronchus_sign": {
       type: "enum",

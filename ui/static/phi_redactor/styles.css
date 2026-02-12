@@ -1755,6 +1755,226 @@ dialog.modal::backdrop {
   margin-top: 14px;
 }
 
+/* ================================================================
+   CLINICAL TABLES: ENHANCED HIERARCHY
+   ================================================================ */
+
+/* Hero card for Procedures Summary (top of right column) */
+.clinical-hero-card {
+  border-left: 3px solid var(--primary);
+}
+
+.clinical-hero-card .dash-card-header {
+  background: linear-gradient(135deg, #f0f7ff 0%, #f8fafc 100%);
+  padding: 12px 14px;
+}
+
+.clinical-hero-card .dash-card-header .section-title {
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.clinical-hero-card .dash-card-header .section-number {
+  background: var(--primary);
+  color: white;
+  border: none;
+}
+
+/* Procedures table: performed rows */
+.proc-row-performed td:first-child {
+  border-left: 3px solid var(--success);
+}
+
+/* Procedures table: not-performed rows */
+.proc-row-notperformed {
+  opacity: 0.45;
+}
+
+.proc-row-notperformed td:first-child {
+  border-left: 3px solid transparent;
+}
+
+/* Separator row between performed and not-performed groups */
+.proc-group-separator td {
+  padding: 0;
+  height: 2px;
+  background: var(--border-color);
+  border-bottom: none;
+}
+
+/* Procedure name column */
+.proc-name-cell {
+  font-weight: 600;
+  font-size: 13.5px;
+  color: var(--text-primary);
+}
+
+/* Performed/Not-performed badges */
+.proc-badge-yes {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 8px;
+  border-radius: 9999px;
+  font-size: 11px;
+  font-weight: 600;
+  background: #dcfce7;
+  color: #15803d;
+  border: 1px solid #bbf7d0;
+}
+
+.proc-badge-no {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 8px;
+  border-radius: 9999px;
+  font-size: 11px;
+  font-weight: 500;
+  background: #f3f4f6;
+  color: #9ca3af;
+  border: 1px solid #e5e7eb;
+}
+
+/* Structured key details (label + value pairs) */
+.proc-detail-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+}
+
+.proc-detail-item {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 3px;
+  font-size: 12.5px;
+}
+
+.proc-detail-label {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.proc-detail-value {
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+/* Procedure detail sub-panels (collapsible) */
+.proc-detail-panel {
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: var(--bg-card);
+}
+
+.proc-detail-panel + .proc-detail-panel {
+  margin-top: 8px;
+}
+
+.proc-detail-panel summary.proc-detail-panel-header {
+  cursor: pointer;
+  user-select: none;
+  padding: 8px 12px;
+  background: #fbfdff;
+  color: var(--text-primary);
+  font-weight: 600;
+  font-size: 12.5px;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-bottom: 1px solid transparent;
+}
+
+.proc-detail-panel summary.proc-detail-panel-header::-webkit-details-marker {
+  display: none;
+}
+
+.proc-detail-panel summary.proc-detail-panel-header::before {
+  content: "\25B8";
+  color: var(--text-muted);
+  font-size: 11px;
+  transition: transform 0.15s ease;
+}
+
+.proc-detail-panel[open] summary.proc-detail-panel-header::before {
+  transform: rotate(90deg);
+}
+
+.proc-detail-panel[open] summary.proc-detail-panel-header {
+  border-bottom-color: var(--border-color);
+}
+
+.proc-detail-panel-body {
+  padding: 0;
+}
+
+.proc-detail-panel.panel-notperformed {
+  opacity: 0.5;
+}
+
+/* Panel type badges */
+.panel-type-badge {
+  display: inline-flex;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.panel-type-badge.badge-diagnostic { background: #e0f2fe; color: #075985; }
+.panel-type-badge.badge-ebus { background: #f3e8ff; color: #7e22ce; }
+.panel-type-badge.badge-sampling { background: #fef3c7; color: #92400e; }
+
+/* Clinical Context: compact 2-column KV grid */
+.clinical-kv-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0;
+}
+
+.clinical-kv-grid .kv-cell {
+  display: flex;
+  flex-direction: column;
+  padding: 8px 12px;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.clinical-kv-grid .kv-cell:nth-child(even) {
+  border-left: 1px solid #f1f5f9;
+}
+
+.kv-cell-label {
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 2px;
+}
+
+.kv-cell-value {
+  font-size: 13px;
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+.clinical-kv-grid .kv-cell.kv-full-width {
+  grid-column: 1 / -1;
+}
+
+/* Subtle zebra striping for multi-row tables */
+.dash-table.striped tbody tr:nth-child(even) {
+  background: #fafbfc;
+}
+
 /* --- PRINT OPTIMIZATIONS --- */
 @media print {
   .no-print { display: none !important; }

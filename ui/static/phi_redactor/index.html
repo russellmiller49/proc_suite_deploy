@@ -306,105 +306,29 @@
 		                </div>
 		                <div id="registryGridRoot" class="hidden"></div>
 		                <div id="registryLegacyRightRoot">
-		                <div class="dash-card">
-		                  <div class="dash-card-header">
-		                    <div class="section-title">
-		                      <span class="section-number">8</span>
-	                      Patient &amp; Clinical Context
-	                    </div>
-	                  </div>
-	                  <div class="dash-card-body">
-	                    <table class="dash-table kv-table">
-	                      <tbody id="clinicalContextBody"></tbody>
-	                    </table>
-	                  </div>
-	                </div>
-
-	                <div class="dash-card">
-	                  <div class="dash-card-header">
-	                    <div class="section-title">
-	                      <span class="section-number">9</span>
-	                      Procedures Performed (Summary)
-	                    </div>
-	                  </div>
-	                  <div class="dash-card-body">
-	                    <table class="dash-table">
-	                      <thead>
-	                        <tr>
-	                          <th width="35%">Procedure</th>
-	                          <th width="15%">Performed</th>
-	                          <th width="50%">Key Details</th>
-	                        </tr>
-	                      </thead>
-	                      <tbody id="proceduresSummaryBody"></tbody>
-	                    </table>
-	                  </div>
-	                </div>
-
-	                <div class="dash-card" id="diagnosticFindingsCard">
-	                  <div class="dash-card-header">
-	                    <div class="section-title">
-	                      <span class="section-number">10</span>
-	                      Diagnostic Bronchoscopy Findings
-	                    </div>
-	                  </div>
-	                  <div class="dash-card-body">
-	                    <table class="dash-table kv-table">
-	                      <tbody id="diagnosticFindingsBody"></tbody>
-	                    </table>
-	                  </div>
-	                </div>
-
-	                <div class="dash-card" id="balDetailsCard">
-	                  <div class="dash-card-header">
-	                    <div class="section-title">
-	                      <span class="section-number">11</span>
-	                      BAL Details
-	                    </div>
-	                  </div>
-	                  <div class="dash-card-body">
-	                    <table class="dash-table kv-table">
-	                      <tbody id="balDetailsBody"></tbody>
-	                    </table>
-	                  </div>
-	                </div>
-
-	                <div class="dash-card" id="linearEbusSummaryCard">
-	                  <div class="dash-card-header">
-	                    <div class="section-title">
-	                      <span class="section-number">12</span>
-	                      Linear EBUS Technical Summary
-	                    </div>
-	                  </div>
-	                  <div class="dash-card-body">
-	                    <table class="dash-table kv-table">
-	                      <tbody id="linearEbusSummaryBody"></tbody>
-	                    </table>
-	                  </div>
-	                </div>
-
-	                <div class="dash-card" id="ebusNodeEventsCard">
-	                  <div class="dash-card-header">
-	                    <div class="section-title">
-	                      <span class="section-number">13</span>
-	                      Linear EBUS Node Events (Granular)
-	                    </div>
-	                  </div>
-	                  <div class="dash-card-body">
-		                    <table class="dash-table">
-		                      <thead>
-		                        <tr>
-		                          <th width="12%">Station</th>
-	                          <th width="36%">Action</th>
-	                          <th width="10%">Passes</th>
-	                          <th width="20%">Elastography</th>
-	                          <th width="22%">Evidence</th>
-	                        </tr>
-	                      </thead>
-		                      <tbody id="ebusNodeEventsBody"></tbody>
-		                    </table>
+		                  <div id="proceduresSummaryCard" class="dash-card clinical-hero-card">
+		                    <div class="dash-card-header">
+		                      <div class="section-title">
+		                        <span class="section-number">8</span>
+		                        Procedures Performed
+		                      </div>
+		                    </div>
+		                    <div class="dash-card-body" id="proceduresSummaryHost"></div>
 		                  </div>
-		                </div>
+
+		                  <div id="clinicalContextCard" class="dash-card">
+		                    <div class="dash-card-header">
+		                      <div class="section-title">
+		                        <span class="section-number">9</span>
+		                        Patient &amp; Clinical Context
+		                      </div>
+		                    </div>
+		                    <div class="dash-card-body">
+		                      <div id="clinicalContextHost"></div>
+		                    </div>
+		                  </div>
+
+		                  <div id="procedureDetailPanels"></div>
 		                </div>
 		              </div>
 		            </div>

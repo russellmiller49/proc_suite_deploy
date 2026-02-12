@@ -17,6 +17,48 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+def _truthy_env(name: str) -> bool:
+    return os.getenv(name, "").strip().lower() in ("1", "true", "yes")
+
+
+def configure_eval_env() -> dict[str, str]:
+    """Force deterministic/offline settings unless explicitly allowed online."""
+    if _truthy_env("PROCSUITE_ALLOW_ONLINE"):
+        return {}
+
+    forced = {
+        # Avoid loading repo-local dotenv (which may contain API keys).
+        "PROCSUITE_SKIP_DOTENV": "1",
+        # Required runtime invariant (keep scripts aligned with service behavior).
+        "PROCSUITE_PIPELINE_MODE": "extraction_first",
+        "REGISTRY_EXTRACTION_ENGINE": "parallel_ner",
+        # No LLM self-correct/fallback during eval scoring.
+        "REGISTRY_SELF_CORRECT_ENABLED": "0",
+        "REGISTRY_LLM_FALLBACK_ON_COVERAGE_FAIL": "0",
+        # Disable RAW-ML auditing (may call LLM depending on config).
+        "REGISTRY_AUDITOR_SOURCE": "disabled",
+        # Force stub/offline LLMs even if keys are present in the environment.
+        "REGISTRY_USE_STUB_LLM": "1",
+        "GEMINI_OFFLINE": "1",
+        "OPENAI_OFFLINE": "1",
+        # Reporter-specific offline guardrails.
+        "REPORTER_DISABLE_LLM": "1",
+        "QA_REPORTER_ALLOW_SIMPLE_FALLBACK": "0",
+        "PROCSUITE_FAST_MODE": "1",
+        "PROCSUITE_SKIP_WARMUP": "1",
+    }
+
+    applied: dict[str, str] = {}
+    for key, value in forced.items():
+        if os.environ.get(key) != value:
+            os.environ[key] = value
+            applied[key] = value
+    return applied
+
+
+# Apply env before importing app modules so any LLM clients are stubbed.
+_APPLIED_ENV_DEFAULTS = configure_eval_env()
+
 from app.api.services.qa_pipeline import ReportingStrategy, SimpleReporterStrategy
 from app.registry.application.registry_service import RegistryService
 from app.reporting.engine import (
@@ -66,27 +108,6 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--max-cases", type=int, default=0)
     parser.add_argument("--seed", type=int, default=42)
     return parser.parse_args(argv)
-
-
-def configure_eval_env() -> dict[str, str]:
-    defaults = {
-        "PROCSUITE_SKIP_DOTENV": "1",
-        "PROCSUITE_SKIP_WARMUP": "1",
-        "REPORTER_DISABLE_LLM": "1",
-        "QA_REPORTER_ALLOW_SIMPLE_FALLBACK": "0",
-        "REGISTRY_SELF_CORRECT_ENABLED": "0",
-        "REGISTRY_LLM_FALLBACK_ON_COVERAGE_FAIL": "0",
-        "PROCSUITE_FAST_MODE": "1",
-        "LLM_PROVIDER": "openai_compat",
-        "OPENAI_OFFLINE": "1",
-    }
-    applied: dict[str, str] = {}
-    for key, value in defaults.items():
-        if key not in os.environ:
-            os.environ[key] = value
-            applied[key] = value
-    return applied
-
 
 def load_jsonl(path: Path) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
@@ -172,16 +193,21 @@ def build_structured_renderer() -> Callable[[str], str]:
         schemas,
         procedure_order=_load_procedure_order(),
     )
+    registry_engine = RegistryService()
     strategy = ReportingStrategy(
         reporter_engine=reporter_engine,
         inference_engine=InferenceEngine(),
         validation_engine=ValidationEngine(templates, schemas),
-        registry_engine=RegistryService(),
+        registry_engine=registry_engine,
         simple_strategy=SimpleReporterStrategy(),
     )
 
     def _render(prompt_text: str) -> str:
-        payload = strategy.render(text=prompt_text, registry_data=None)
+        # Avoid the "lightweight registry extraction" pathway (can fail and/or call LLMs
+        # depending on environment). Use extraction-first record as the structured seed.
+        extraction = registry_engine.extract_fields_extraction_first(prompt_text)
+        record_data = extraction.record.model_dump(exclude_none=True)
+        payload = strategy.render(text=prompt_text, registry_data={"record": record_data})
         return str(payload.get("markdown") or "")
 
     return _render
@@ -290,8 +316,6 @@ def main(argv: list[str] | None = None) -> int:
     if not args.input.exists():
         raise FileNotFoundError(f"Input dataset not found: {args.input}")
 
-    applied_env = configure_eval_env()
-
     raw_rows = load_jsonl(args.input)
     rows = maybe_subsample(to_eval_rows(raw_rows), int(args.max_cases), int(args.seed))
 
@@ -316,7 +340,7 @@ def main(argv: list[str] | None = None) -> int:
         "created_at": datetime_now_iso(),
         "input_path": str(args.input),
         "row_count": len(rows),
-        "environment_defaults_applied": applied_env,
+        "environment_defaults_applied": _APPLIED_ENV_DEFAULTS,
         "baselines": {
             "compose_report_from_text": dictation_report,
             "structured_reporting_strategy": structured_report,

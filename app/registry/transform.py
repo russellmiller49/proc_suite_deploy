@@ -79,6 +79,7 @@ def build_nested_registry_payload(data: dict[str, Any]) -> dict[str, Any]:
     # Remove string-typed values for fields that should be nested dicts
     # LLM sometimes returns these as narrative strings instead of structured data
     nested_fields = [
+        "patient", "procedure", "risk_assessment",
         "patient_demographics", "providers", "clinical_context", "sedation",
         "procedure_setting", "equipment", "procedures_performed", "pleural_procedures",
         "specimens", "complications", "outcomes", "billing", "metadata",
@@ -90,6 +91,18 @@ def build_nested_registry_payload(data: dict[str, Any]) -> dict[str, Any]:
     providers = _build_providers(data)
     if providers:
         payload["providers"] = providers
+
+    patient = _build_patient(data)
+    if patient:
+        payload["patient"] = patient
+
+    procedure = _build_procedure(data)
+    if procedure:
+        payload["procedure"] = procedure
+
+    risk_assessment = _build_risk_assessment(data)
+    if risk_assessment:
+        payload["risk_assessment"] = risk_assessment
 
     demographics = _build_patient_demographics(data)
     if demographics:
@@ -198,6 +211,40 @@ def _build_patient_demographics(data: dict[str, Any]) -> dict[str, Any]:
         result["gender"] = mapping.get(gender, gender)
     if not result:
         return {}
+    return result
+
+
+def _build_patient(data: dict[str, Any]) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    if data.get("patient_age") is not None:
+        result["age"] = data.get("patient_age")
+    gender = data.get("gender")
+    if gender:
+        g = str(gender).strip().lower()
+        if g in {"male", "m"}:
+            result["sex"] = "M"
+        elif g in {"female", "f"}:
+            result["sex"] = "F"
+        else:
+            result["sex"] = "O"
+    return result
+
+
+def _build_procedure(data: dict[str, Any]) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    if data.get("primary_indication"):
+        result["indication"] = data.get("primary_indication")
+    return result
+
+
+def _build_risk_assessment(data: dict[str, Any]) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    if data.get("asa_class") is not None:
+        result["asa_class"] = data.get("asa_class")
+    if data.get("anticoagulant_use"):
+        result["anticoagulant_use"] = data.get("anticoagulant_use")
+    if data.get("mallampati_score") is not None:
+        result["mallampati_score"] = data.get("mallampati_score")
     return result
 
 

@@ -14,11 +14,53 @@ from pathlib import Path
 from typing import Any
 
 import torch
-from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
+from transformers import (
+    AutoConfig,
+    AutoModelForCausalLM,
+    AutoModelForSeq2SeqLM,
+    AutoTokenizer,
+    BitsAndBytesConfig,
+)
 
 ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
+
+def _truthy_env(name: str) -> bool:
+    return os.getenv(name, "").strip().lower() in ("1", "true", "yes")
+
+
+def configure_eval_env() -> dict[str, str]:
+    """Force deterministic/offline settings unless explicitly allowed online."""
+    if _truthy_env("PROCSUITE_ALLOW_ONLINE"):
+        return {}
+
+    forced = {
+        "PROCSUITE_SKIP_DOTENV": "1",
+        "PROCSUITE_PIPELINE_MODE": "extraction_first",
+        "REGISTRY_EXTRACTION_ENGINE": "parallel_ner",
+        "REGISTRY_SELF_CORRECT_ENABLED": "0",
+        "REGISTRY_LLM_FALLBACK_ON_COVERAGE_FAIL": "0",
+        "REGISTRY_AUDITOR_SOURCE": "disabled",
+        "REGISTRY_USE_STUB_LLM": "1",
+        "GEMINI_OFFLINE": "1",
+        "OPENAI_OFFLINE": "1",
+        "REPORTER_DISABLE_LLM": "1",
+        "QA_REPORTER_ALLOW_SIMPLE_FALLBACK": "0",
+        "PROCSUITE_FAST_MODE": "1",
+        "PROCSUITE_SKIP_WARMUP": "1",
+    }
+
+    applied: dict[str, str] = {}
+    for key, value in forced.items():
+        if os.environ.get(key) != value:
+            os.environ[key] = value
+            applied[key] = value
+    return applied
+
+
+# Apply env before importing app modules so any LLM clients are stubbed.
+_APPLIED_ENV_DEFAULTS = configure_eval_env()
 
 from app.registry.application.registry_service import RegistryService
 from app.reporting.engine import compose_structured_report_with_meta
@@ -76,33 +118,92 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--num-beams", type=int, default=1)
     return parser.parse_args(argv)
 
-
-def configure_eval_env() -> dict[str, str]:
-    defaults = {
-        "PROCSUITE_SKIP_DOTENV": "1",
-        "PROCSUITE_SKIP_WARMUP": "1",
-        "REPORTER_DISABLE_LLM": "1",
-        "QA_REPORTER_ALLOW_SIMPLE_FALLBACK": "0",
-        "REGISTRY_SELF_CORRECT_ENABLED": "0",
-        "REGISTRY_LLM_FALLBACK_ON_COVERAGE_FAIL": "0",
-        "PROCSUITE_FAST_MODE": "1",
-        "LLM_PROVIDER": "openai_compat",
-        "OPENAI_OFFLINE": "1",
-    }
-    applied: dict[str, str] = {}
-    for key, value in defaults.items():
-        if key not in os.environ:
-            os.environ[key] = value
-            applied[key] = value
-    return applied
-
-
 def format_source_prompt(prompt_text: str) -> str:
     return (
         "Generate a valid ProcedureBundle JSON object from this clinical prompt. "
         "Return JSON only.\n\n"
         f"PROMPT:\n{prompt_text.strip()}"
     )
+
+def _adapter_config_path(model_dir: Path) -> Path:
+    return model_dir / "adapter_config.json"
+
+
+def _looks_like_peft_adapter(model_dir: Path) -> bool:
+    return _adapter_config_path(model_dir).exists()
+
+
+def _load_peft_causal_model(model_dir: Path):
+    try:
+        from peft import PeftConfig, PeftModel
+    except Exception as exc:
+        raise RuntimeError(
+            "Model dir looks like a PEFT adapter but peft is not installed. "
+            "Install with: pip install -U peft"
+        ) from exc
+
+    peft_cfg = PeftConfig.from_pretrained(model_dir)
+
+    load_in_4bit = True
+    compute_dtype = torch.bfloat16 if (torch.cuda.is_available() and torch.cuda.is_bf16_supported()) else torch.float16
+    bnb_cfg = BitsAndBytesConfig(
+        load_in_4bit=load_in_4bit,
+        bnb_4bit_use_double_quant=True,
+        bnb_4bit_quant_type="nf4",
+        bnb_4bit_compute_dtype=compute_dtype,
+    )
+
+    base = AutoModelForCausalLM.from_pretrained(
+        peft_cfg.base_model_name_or_path,
+        quantization_config=bnb_cfg,
+        device_map="auto",
+    )
+    model = PeftModel.from_pretrained(base, model_dir)
+    model.eval()
+    return model
+
+
+def load_model_and_tokenizer(model_dir: Path):
+    tokenizer = AutoTokenizer.from_pretrained(model_dir)
+
+    if _looks_like_peft_adapter(model_dir):
+        model = _load_peft_causal_model(model_dir)
+        return "causal", model, tokenizer
+
+    cfg = AutoConfig.from_pretrained(model_dir)
+    if getattr(cfg, "is_encoder_decoder", False):
+        model = AutoModelForSeq2SeqLM.from_pretrained(model_dir)
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        model.to(device)
+        model.eval()
+        return "seq2seq", model, tokenizer
+
+    compute_dtype = torch.bfloat16 if (torch.cuda.is_available() and torch.cuda.is_bf16_supported()) else torch.float16
+    bnb_cfg = BitsAndBytesConfig(
+        load_in_4bit=True,
+        bnb_4bit_use_double_quant=True,
+        bnb_4bit_quant_type="nf4",
+        bnb_4bit_compute_dtype=compute_dtype,
+    )
+    model = AutoModelForCausalLM.from_pretrained(
+        model_dir,
+        quantization_config=bnb_cfg,
+        device_map="auto",
+    )
+    model.eval()
+    return "causal", model, tokenizer
+
+
+def _format_causal_chat_prompt(tokenizer: Any, prompt_text: str) -> str:
+    system = "You are a clinical documentation structuring engine. Output JSON only."
+    user = format_source_prompt(prompt_text)
+    messages = [
+        {"role": "system", "content": system},
+        {"role": "user", "content": user},
+    ]
+    if hasattr(tokenizer, "apply_chat_template") and getattr(tokenizer, "chat_template", None):
+        return tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+    return f"{system}\n\n{user}\n\n"
 
 
 def load_jsonl(path: Path) -> list[dict[str, Any]]:
@@ -220,13 +321,7 @@ def main(argv: list[str] | None = None) -> int:
     if not args.model_dir.exists():
         raise FileNotFoundError(f"Model dir not found: {args.model_dir}")
 
-    applied_env = configure_eval_env()
-
-    tokenizer = AutoTokenizer.from_pretrained(args.model_dir)
-    model = AutoModelForSeq2SeqLM.from_pretrained(args.model_dir)
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    model.to(device)
-    model.eval()
+    model_kind, model, tokenizer = load_model_and_tokenizer(args.model_dir)
 
     raw_rows = load_jsonl(args.input)
     rows = maybe_subsample(to_rows(raw_rows), int(args.max_cases), int(args.seed))
@@ -252,26 +347,52 @@ def main(argv: list[str] | None = None) -> int:
         generated_text = ""
         rendered_markdown = ""
 
-        prompt = format_source_prompt(row.prompt_text)
-        encoded = tokenizer(
-            prompt,
-            truncation=True,
-            max_length=int(args.max_source_length),
-            return_tensors="pt",
-        )
-        encoded = {k: v.to(device) for k, v in encoded.items()}
-
-        with torch.no_grad():
-            generated = model.generate(
-                **encoded,
-                max_new_tokens=int(args.max_new_tokens),
-                num_beams=int(args.num_beams),
-                do_sample=False,
+        if model_kind == "seq2seq":
+            prompt = format_source_prompt(row.prompt_text)
+            device = next(model.parameters()).device
+            encoded = tokenizer(
+                prompt,
+                truncation=True,
+                max_length=int(args.max_source_length),
+                return_tensors="pt",
             )
+            encoded = {k: v.to(device) for k, v in encoded.items()}
 
-        # Keep special tokens so T5 brace placeholders (`<extra_id_0>` / `<extra_id_1>`) survive.
-        # `ml.lib.reporter_json_parse` normalizes them back to `{` / `}`.
-        generated_text = tokenizer.decode(generated[0], skip_special_tokens=False)
+            with torch.no_grad():
+                generated = model.generate(
+                    **encoded,
+                    max_new_tokens=int(args.max_new_tokens),
+                    num_beams=int(args.num_beams),
+                    do_sample=False,
+                )
+
+            # Keep special tokens so T5 brace placeholders (`<extra_id_0>` / `<extra_id_1>`) survive.
+            # `ml.lib.reporter_json_parse` normalizes them back to `{` / `}`.
+            generated_text = tokenizer.decode(generated[0], skip_special_tokens=False)
+        else:
+            prompt = _format_causal_chat_prompt(tokenizer, row.prompt_text)
+            device = next(model.parameters()).device
+            encoded = tokenizer(
+                prompt,
+                truncation=True,
+                max_length=int(args.max_source_length),
+                return_tensors="pt",
+            )
+            encoded = {k: v.to(device) for k, v in encoded.items()}
+
+            with torch.no_grad():
+                generated = model.generate(
+                    **encoded,
+                    max_new_tokens=int(args.max_new_tokens),
+                    num_beams=int(args.num_beams),
+                    do_sample=False,
+                    pad_token_id=getattr(tokenizer, "eos_token_id", None),
+                )
+
+            # Decode only the newly-generated tokens (avoid re-parsing the prompt).
+            input_len = int(encoded["input_ids"].shape[1])
+            gen_only = generated[0][input_len:]
+            generated_text = tokenizer.decode(gen_only, skip_special_tokens=True)
 
         bundle = None
         try:
@@ -367,7 +488,7 @@ def main(argv: list[str] | None = None) -> int:
         "created_at": datetime_now_iso(),
         "input_path": str(args.input),
         "model_dir": str(args.model_dir),
-        "environment_defaults_applied": applied_env,
+        "environment_defaults_applied": _APPLIED_ENV_DEFAULTS,
         "summary": summary,
         "promotion_gate_report": gate_report,
         "per_case": per_case,

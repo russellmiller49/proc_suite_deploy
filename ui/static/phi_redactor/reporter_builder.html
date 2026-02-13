@@ -217,6 +217,33 @@
         </p>
       </section>
 
+      <section class="content-card" id="phiCard">
+        <h3>0. PHI Redaction (Client-side)</h3>
+        <p class="subtle">
+          Run PHI detection locally in your browser and apply redactions before seeding. The server should receive only scrubbed text.
+        </p>
+        <div class="builder-toolbar">
+          <button id="phiRunBtn" class="secondary" type="button">Run Detection</button>
+          <button id="phiApplyBtn" class="primary" type="button" disabled>Apply Redactions</button>
+          <button id="phiRevertBtn" class="secondary" type="button" disabled>Revert</button>
+          <div class="spacer"></div>
+          <label class="inline-check" title="If enabled, clinician/provider/staff names are treated as PHI and will be redacted.">
+            <input id="phiRedactProvidersToggle" type="checkbox" checked />
+            Redact clinician names
+          </label>
+        </div>
+        <div class="builder-section">
+          <div class="subtle">
+            <span id="phiStatusText">Loading local PHI model…</span>
+            <span id="phiProgressText" class="progress"></span>
+          </div>
+          <div class="subtle" id="phiSummaryText"></div>
+        </div>
+        <div class="warning">
+          <strong>PHI Policy:</strong> Apply redactions before seeding. This tool is best-effort and does not replace your compliance workflow.
+        </div>
+      </section>
+
       <section class="content-card">
         <h3>1. Seed From Text</h3>
         <label class="subtle" for="seedText">

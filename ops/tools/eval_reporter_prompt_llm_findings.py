@@ -1,5 +1,17 @@
 #!/usr/bin/env python3
-"""Evaluate baseline reporter performance on reporter_prompt split."""
+"""Evaluate GPT findings->registry->report pipeline on reporter_prompt split.
+
+This is the Structured-First reporter POC (v2):
+masked prompt text -> GPT findings (evidence-cited) -> synthetic NER -> registry flags
+-> guardrails -> deterministic registry->CPT -> reporter templates.
+
+Safety:
+- This script is OFFLINE by default. To allow real GPT calls, set:
+  PROCSUITE_ALLOW_ONLINE=1
+  LLM_PROVIDER=openai_compat
+  OPENAI_API_KEY=...
+  OPENAI_MODEL_STRUCTURER=gpt-5-mini
+"""
 
 from __future__ import annotations
 
@@ -11,20 +23,24 @@ import sys
 from dataclasses import dataclass
 from difflib import SequenceMatcher
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
+
 
 def _truthy_env(name: str) -> bool:
     return os.getenv(name, "").strip().lower() in ("1", "true", "yes")
 
 
 def configure_eval_env() -> dict[str, str]:
-    """Force deterministic/offline settings unless explicitly allowed online."""
-    if _truthy_env("PROCSUITE_ALLOW_ONLINE"):
-        return {}
+    """Force deterministic settings and guard against unintended LLM calls.
+
+    By default this script runs offline; set PROCSUITE_ALLOW_ONLINE=1 to enable
+    real GPT calls for the findings extraction step.
+    """
+    allow_online = _truthy_env("PROCSUITE_ALLOW_ONLINE")
 
     forced = {
         # Avoid loading repo-local dotenv (which may contain API keys).
@@ -37,16 +53,29 @@ def configure_eval_env() -> dict[str, str]:
         "REGISTRY_LLM_FALLBACK_ON_COVERAGE_FAIL": "0",
         # Disable RAW-ML auditing (may call LLM depending on config).
         "REGISTRY_AUDITOR_SOURCE": "disabled",
-        # Force stub/offline LLMs even if keys are present in the environment.
+        # Force stub/offline LLMs in the registry service even if keys are present.
         "REGISTRY_USE_STUB_LLM": "1",
         "GEMINI_OFFLINE": "1",
-        "OPENAI_OFFLINE": "1",
-        # Reporter-specific offline guardrails.
-        "REPORTER_DISABLE_LLM": "1",
+        # Reporter-only fallback should not be used for this evaluation.
         "QA_REPORTER_ALLOW_SIMPLE_FALLBACK": "0",
         "PROCSUITE_FAST_MODE": "1",
         "PROCSUITE_SKIP_WARMUP": "1",
     }
+
+    if allow_online:
+        forced.update(
+            {
+                "OPENAI_OFFLINE": "0",
+                "REPORTER_DISABLE_LLM": "0",
+            }
+        )
+    else:
+        forced.update(
+            {
+                "OPENAI_OFFLINE": "1",
+                "REPORTER_DISABLE_LLM": "1",
+            }
+        )
 
     applied: dict[str, str] = {}
     for key, value in forced.items():
@@ -56,29 +85,30 @@ def configure_eval_env() -> dict[str, str]:
     return applied
 
 
-# Apply env before importing app modules so any LLM clients are stubbed.
 _APPLIED_ENV_DEFAULTS = configure_eval_env()
 
 from app.api.services.qa_pipeline import ReportingStrategy, SimpleReporterStrategy
 from app.registry.application.registry_service import RegistryService
-from app.reporting.engine import (
-    ReporterEngine,
-    _load_procedure_order,
-    compose_report_from_text,
-    default_schema_registry,
-    default_template_registry,
-)
+from app.reporting.engine import ReporterEngine, _load_procedure_order, default_schema_registry, default_template_registry
 from app.reporting.inference import InferenceEngine
 from app.reporting.validation import ValidationEngine
+from app.reporting.llm_findings import build_record_payload_for_reporting, seed_registry_record_from_llm_findings
+from ml.lib.reporter_prompt_masking import mask_prompt_cpt_noise
 from ml.scripts.generate_reporter_gold_dataset import (
     CRITICAL_FLAG_EXACT,
     CRITICAL_FLAG_PREFIXES,
     collect_performed_flags,
 )
-from ml.lib.reporter_prompt_masking import mask_prompt_cpt_noise
 
 DEFAULT_INPUT = Path("data/ml_training/reporter_prompt/v1/reporter_prompt_test.jsonl")
-DEFAULT_OUTPUT = Path("data/ml_training/reporter_prompt/v1/reporter_prompt_baseline_report.json")
+DEFAULT_OUTPUT = Path("data/ml_training/reporter_prompt/v1/reporter_prompt_llm_findings_eval_report.json")
+
+PROMOTION_GATES = {
+    "required_section_coverage": 0.99,
+    "avg_cpt_jaccard": 0.30,
+    "avg_performed_flag_f1": 0.40,
+    "critical_extra_flag_rate": 0.03,
+}
 
 REQUIRED_SECTION_HEADERS = [
     "INTERVENTIONAL PULMONOLOGY OPERATIVE REPORT",
@@ -96,7 +126,7 @@ REQUIRED_SECTION_HEADERS = [
 
 
 @dataclass(frozen=True)
-class BaselineRow:
+class EvalRow:
     id: str
     prompt_text: str
     completion_canonical: str
@@ -116,6 +146,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     return parser.parse_args(argv)
 
+
 def load_jsonl(path: Path) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     with path.open("r", encoding="utf-8") as handle:
@@ -125,6 +156,33 @@ def load_jsonl(path: Path) -> list[dict[str, Any]]:
                 continue
             rows.append(json.loads(line))
     return rows
+
+
+def to_rows(raw: list[dict[str, Any]], *, prompt_field: str) -> list[EvalRow]:
+    out: list[EvalRow] = []
+    for idx, row in enumerate(raw, start=1):
+        row_id = str(row.get("id") or f"row_{idx}")
+        prompt = str(row.get(prompt_field) or "").strip()
+        if not prompt and prompt_field == "prompt_text_masked":
+            raw_prompt = str(row.get("prompt_text") or "").strip()
+            if raw_prompt:
+                prompt = mask_prompt_cpt_noise(raw_prompt)
+        if not prompt:
+            prompt = str(row.get("prompt_text") or "").strip()
+        completion = str(row.get("completion_canonical") or "").strip()
+        if not prompt or not completion:
+            continue
+        out.append(EvalRow(id=row_id, prompt_text=prompt, completion_canonical=completion))
+    return out
+
+
+def maybe_subsample(rows: list[EvalRow], max_cases: int, seed: int) -> list[EvalRow]:
+    if max_cases <= 0 or len(rows) <= max_cases:
+        return rows
+    rng = random.Random(seed)
+    picked = rng.sample(rows, max_cases)
+    picked.sort(key=lambda item: item.id)
+    return picked
 
 
 def normalize_text(text: str) -> str:
@@ -141,33 +199,6 @@ def missing_sections(report_text: str) -> list[str]:
     return [header for header in REQUIRED_SECTION_HEADERS if header.upper() not in upper]
 
 
-def to_eval_rows(rows: list[dict[str, Any]], *, prompt_field: str) -> list[BaselineRow]:
-    out: list[BaselineRow] = []
-    for idx, row in enumerate(rows, start=1):
-        prompt = str(row.get(prompt_field) or "").strip()
-        if not prompt and prompt_field == "prompt_text_masked":
-            raw_prompt = str(row.get("prompt_text") or "").strip()
-            if raw_prompt:
-                prompt = mask_prompt_cpt_noise(raw_prompt)
-        if not prompt:
-            prompt = str(row.get("prompt_text") or "").strip()
-        completion = str(row.get("completion_canonical") or "").strip()
-        row_id = str(row.get("id") or f"row_{idx}")
-        if not prompt or not completion:
-            continue
-        out.append(BaselineRow(id=row_id, prompt_text=prompt, completion_canonical=completion))
-    return out
-
-
-def maybe_subsample(rows: list[BaselineRow], max_cases: int, seed: int) -> list[BaselineRow]:
-    if max_cases <= 0 or len(rows) <= max_cases:
-        return rows
-    rng = random.Random(seed)
-    picked = rng.sample(rows, max_cases)
-    picked.sort(key=lambda r: r.id)
-    return picked
-
-
 def _is_critical_flag(path: str) -> bool:
     return path in CRITICAL_FLAG_EXACT or path.startswith(CRITICAL_FLAG_PREFIXES)
 
@@ -180,14 +211,14 @@ def extract_flags_and_cpt(note_text: str, registry_service: RegistryService) -> 
     return flags, cpt
 
 
-def _cpt_jaccard(gold: set[str], pred: set[str]) -> float:
+def cpt_jaccard(gold: set[str], pred: set[str]) -> float:
     union = gold | pred
     if not union:
         return 1.0
     return float(len(gold & pred) / len(union))
 
 
-def _flag_f1(gold: set[str], pred: set[str]) -> tuple[float, int, int]:
+def flag_f1(gold: set[str], pred: set[str]) -> tuple[float, int, int]:
     tp = len(gold & pred)
     fp = len(pred - gold)
     fn = len(gold - pred)
@@ -198,7 +229,36 @@ def _flag_f1(gold: set[str], pred: set[str]) -> tuple[float, int, int]:
     return (2 * prec * rec / (prec + rec)), fp, fn
 
 
-def build_structured_renderer() -> Callable[[str], str]:
+def _avg(values: list[float]) -> float:
+    return float(sum(values) / len(values)) if values else 0.0
+
+
+def evaluate_gates(summary: dict[str, Any]) -> dict[str, Any]:
+    checks: dict[str, Any] = {}
+    primary_pass = True
+
+    for key, threshold in PROMOTION_GATES.items():
+        observed = float(summary.get(key, 0.0))
+        if key == "critical_extra_flag_rate":
+            passed = observed <= threshold
+        else:
+            passed = observed >= threshold
+        checks[key] = {
+            "observed": round(observed, 4),
+            "threshold": threshold,
+            "passed": passed,
+        }
+        if not passed:
+            primary_pass = False
+
+    return {
+        "primary_gates_passed": primary_pass,
+        "all_checks": checks,
+        "deployment_recommendation": "allow_optional_qa_integration" if primary_pass else "do_not_integrate",
+    }
+
+
+def build_structured_strategy() -> ReportingStrategy:
     templates = default_template_registry()
     schemas = default_schema_registry()
     reporter_engine = ReporterEngine(
@@ -207,7 +267,7 @@ def build_structured_renderer() -> Callable[[str], str]:
         procedure_order=_load_procedure_order(),
     )
     registry_engine = RegistryService()
-    strategy = ReportingStrategy(
+    return ReportingStrategy(
         reporter_engine=reporter_engine,
         inference_engine=InferenceEngine(),
         validation_engine=ValidationEngine(templates, schemas),
@@ -215,31 +275,25 @@ def build_structured_renderer() -> Callable[[str], str]:
         simple_strategy=SimpleReporterStrategy(),
     )
 
-    def _render(prompt_text: str) -> str:
-        # Avoid the "lightweight registry extraction" pathway (can fail and/or call LLMs
-        # depending on environment). Use extraction-first record as the structured seed.
-        extraction = registry_engine.extract_fields_extraction_first(prompt_text)
-        record_data = extraction.record.model_dump(exclude_none=True)
-        payload = strategy.render(text=prompt_text, registry_data={"record": record_data})
-        return str(payload.get("markdown") or "")
 
-    return _render
+def main(argv: list[str] | None = None) -> int:
+    args = parse_args(argv)
+    if not args.input.exists():
+        raise FileNotFoundError(f"Input dataset not found: {args.input}")
 
+    if not _truthy_env("PROCSUITE_ALLOW_ONLINE"):
+        print("This evaluation requires real GPT calls.")
+        print("Set PROCSUITE_ALLOW_ONLINE=1 and configure OpenAI env vars to run.")
+        print("Refusing to run with offline defaults.")
+        return 2
 
-def build_dictation_renderer() -> Callable[[str], str]:
-    def _render(prompt_text: str) -> str:
-        _report, markdown = compose_report_from_text(prompt_text)
-        return markdown
+    raw_rows = load_jsonl(args.input)
+    prompt_field = str(getattr(args, "prompt_field", "prompt_text")).strip() or "prompt_text"
+    rows = maybe_subsample(to_rows(raw_rows, prompt_field=prompt_field), int(args.max_cases), int(args.seed))
 
-    return _render
+    reporter = build_structured_strategy()
+    registry_service = RegistryService()
 
-
-def evaluate_renderer(
-    rows: list[BaselineRow],
-    *,
-    renderer: Callable[[str], str],
-    registry_service: RegistryService,
-) -> dict[str, Any]:
     per_case: list[dict[str, Any]] = []
     sim_scores: list[float] = []
     cpt_scores: list[float] = []
@@ -250,41 +304,50 @@ def evaluate_renderer(
 
     for row in rows:
         try:
-            generated = renderer(row.prompt_text)
-            sim = similarity_ratio(row.completion_canonical, generated)
+            seed = seed_registry_record_from_llm_findings(row.prompt_text)
+            record_payload = build_record_payload_for_reporting(seed)
+            rendered = reporter.render(
+                text=seed.masked_prompt_text,
+                registry_data={"record": record_payload},
+            )
+            markdown = str(rendered.get("markdown") or "")
+            if not markdown.strip():
+                raise RuntimeError("Empty markdown output")
+
+            sim = similarity_ratio(row.completion_canonical, markdown)
             sim_scores.append(sim)
 
-            miss = missing_sections(generated)
+            miss = missing_sections(markdown)
             if not miss:
                 full_shell_count += 1
 
             gold_flags, gold_cpt = extract_flags_and_cpt(row.completion_canonical, registry_service)
-            pred_flags, pred_cpt = extract_flags_and_cpt(generated, registry_service)
+            pred_flags, pred_cpt = extract_flags_and_cpt(markdown, registry_service)
 
-            cpt_j = _cpt_jaccard(gold_cpt, pred_cpt)
-            flag_f1, fp, fn = _flag_f1(gold_flags, pred_flags)
+            cpt_score = cpt_jaccard(gold_cpt, pred_cpt)
+            f1, fp, fn = flag_f1(gold_flags, pred_flags)
             critical_extra = sorted([flag for flag in (pred_flags - gold_flags) if _is_critical_flag(flag)])
-
             if critical_extra:
                 critical_extra_cases += 1
 
-            cpt_scores.append(cpt_j)
-            f1_scores.append(flag_f1)
+            cpt_scores.append(cpt_score)
+            f1_scores.append(f1)
 
             per_case.append(
                 {
                     "id": row.id,
                     "text_similarity": round(sim, 4),
                     "missing_sections": miss,
-                    "cpt_jaccard": round(cpt_j, 4),
-                    "performed_flag_f1": round(flag_f1, 4),
+                    "cpt_jaccard": round(cpt_score, 4),
+                    "performed_flag_f1": round(f1, 4),
                     "critical_extra_flags": critical_extra,
                     "flag_false_positive_count": fp,
                     "flag_false_negative_count": fn,
+                    "seed_warnings_count": int(len(seed.warnings or [])),
                     "error": None,
                 }
             )
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             failures += 1
             per_case.append(
                 {
@@ -296,15 +359,13 @@ def evaluate_renderer(
                     "critical_extra_flags": [],
                     "flag_false_positive_count": 0,
                     "flag_false_negative_count": 0,
-                    "error": str(exc),
+                    "seed_warnings_count": 0,
+                    "error": f"{type(exc).__name__}",
                 }
             )
 
     total = len(rows)
     successful = total - failures
-
-    def _avg(values: list[float]) -> float:
-        return float(sum(values) / len(values)) if values else 0.0
 
     summary = {
         "total_cases": total,
@@ -317,57 +378,21 @@ def evaluate_renderer(
         "critical_extra_flag_rate": round((critical_extra_cases / successful) if successful else 0.0, 4),
     }
 
-    return {"summary": summary, "per_case": per_case}
-
-
-def _clinical_score(summary: dict[str, Any]) -> float:
-    return float(summary.get("avg_cpt_jaccard", 0.0)) + float(summary.get("avg_performed_flag_f1", 0.0))
-
-
-def main(argv: list[str] | None = None) -> int:
-    args = parse_args(argv)
-    if not args.input.exists():
-        raise FileNotFoundError(f"Input dataset not found: {args.input}")
-
-    raw_rows = load_jsonl(args.input)
-    prompt_field = str(getattr(args, "prompt_field", "prompt_text")).strip() or "prompt_text"
-    rows = maybe_subsample(to_eval_rows(raw_rows, prompt_field=prompt_field), int(args.max_cases), int(args.seed))
-
-    registry_service = RegistryService()
-
-    dictation_report = evaluate_renderer(
-        rows,
-        renderer=build_dictation_renderer(),
-        registry_service=registry_service,
-    )
-    structured_report = evaluate_renderer(
-        rows,
-        renderer=build_structured_renderer(),
-        registry_service=registry_service,
-    )
-
-    dict_score = _clinical_score(dictation_report["summary"])
-    structured_score = _clinical_score(structured_report["summary"])
-    comparator = "structured" if structured_score >= dict_score else "dictation"
-
     payload = {
         "created_at": datetime_now_iso(),
         "input_path": str(args.input),
         "prompt_field": prompt_field,
-        "row_count": len(rows),
+        "row_count": total,
         "environment_defaults_applied": _APPLIED_ENV_DEFAULTS,
-        "baselines": {
-            "compose_report_from_text": dictation_report,
-            "structured_reporting_strategy": structured_report,
-        },
-        "comparator_baseline": comparator,
-        "comparator_reason": "higher avg_cpt_jaccard + avg_performed_flag_f1",
+        "summary": summary,
+        "promotion_gate_report": evaluate_gates(summary),
+        "per_case": per_case,
     }
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 
-    print(f"Baseline comparator: {comparator}")
+    print(f"Primary gates passed: {payload['promotion_gate_report']['primary_gates_passed']}")
     print(f"Wrote report: {args.output}")
     return 0
 

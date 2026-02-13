@@ -65,6 +65,7 @@ _APPLIED_ENV_DEFAULTS = configure_eval_env()
 from app.registry.application.registry_service import RegistryService
 from app.reporting.engine import compose_structured_report_with_meta
 from ml.lib.reporter_json_parse import parse_and_validate_bundle
+from ml.lib.reporter_prompt_masking import mask_prompt_cpt_noise
 from ml.scripts.generate_reporter_gold_dataset import (
     CRITICAL_FLAG_EXACT,
     CRITICAL_FLAG_PREFIXES,
@@ -113,6 +114,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
     parser.add_argument("--max-cases", type=int, default=0)
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument(
+        "--prompt-field",
+        default="prompt_text",
+        help="Which JSONL field to use as model input (default: prompt_text). "
+        "Common options: prompt_text, prompt_text_masked.",
+    )
     parser.add_argument("--max-source-length", type=int, default=512)
     parser.add_argument("--max-new-tokens", type=int, default=1536)
     parser.add_argument("--num-beams", type=int, default=1)
@@ -217,11 +224,17 @@ def load_jsonl(path: Path) -> list[dict[str, Any]]:
     return rows
 
 
-def to_rows(raw: list[dict[str, Any]]) -> list[EvalRow]:
+def to_rows(raw: list[dict[str, Any]], *, prompt_field: str) -> list[EvalRow]:
     out: list[EvalRow] = []
     for idx, row in enumerate(raw, start=1):
         row_id = str(row.get("id") or f"row_{idx}")
-        prompt = str(row.get("prompt_text") or "").strip()
+        prompt = str(row.get(prompt_field) or "").strip()
+        if not prompt and prompt_field == "prompt_text_masked":
+            raw_prompt = str(row.get("prompt_text") or "").strip()
+            if raw_prompt:
+                prompt = mask_prompt_cpt_noise(raw_prompt)
+        if not prompt:
+            prompt = str(row.get("prompt_text") or "").strip()
         completion = str(row.get("completion_canonical") or "").strip()
         if not prompt or not completion:
             continue
@@ -324,7 +337,8 @@ def main(argv: list[str] | None = None) -> int:
     model_kind, model, tokenizer = load_model_and_tokenizer(args.model_dir)
 
     raw_rows = load_jsonl(args.input)
-    rows = maybe_subsample(to_rows(raw_rows), int(args.max_cases), int(args.seed))
+    prompt_field = str(getattr(args, "prompt_field", "prompt_text")).strip() or "prompt_text"
+    rows = maybe_subsample(to_rows(raw_rows, prompt_field=prompt_field), int(args.max_cases), int(args.seed))
 
     registry_service = RegistryService()
 
@@ -488,6 +502,7 @@ def main(argv: list[str] | None = None) -> int:
         "created_at": datetime_now_iso(),
         "input_path": str(args.input),
         "model_dir": str(args.model_dir),
+        "prompt_field": prompt_field,
         "environment_defaults_applied": _APPLIED_ENV_DEFAULTS,
         "summary": summary,
         "promotion_gate_report": gate_report,

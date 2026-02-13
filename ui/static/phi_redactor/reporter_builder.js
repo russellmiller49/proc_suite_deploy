@@ -12,6 +12,14 @@ const completenessPromptsBodyEl = document.getElementById("completenessPromptsBo
 const completenessInsertBtn = document.getElementById("completenessInsertBtn");
 const completenessCopyBtn = document.getElementById("completenessCopyBtn");
 
+const phiRunBtn = document.getElementById("phiRunBtn");
+const phiApplyBtn = document.getElementById("phiApplyBtn");
+const phiRevertBtn = document.getElementById("phiRevertBtn");
+const phiRedactProvidersToggleEl = document.getElementById("phiRedactProvidersToggle");
+const phiStatusTextEl = document.getElementById("phiStatusText");
+const phiProgressTextEl = document.getElementById("phiProgressText");
+const phiSummaryTextEl = document.getElementById("phiSummaryText");
+
 const summaryQuestionsEl = document.getElementById("summaryQuestions");
 const summaryIssuesEl = document.getElementById("summaryIssues");
 const summaryWarningsEl = document.getElementById("summaryWarnings");
@@ -42,8 +50,47 @@ const state = {
   busy: false,
 };
 
+// --- Client-side PHI redaction state (local worker) ---
+
+const PHI_WORKER_BASE_CONFIG = {
+  aiThreshold: 0.5,
+  debug: false,
+  // Quantized INT8 ONNX can silently collapse to all-"O" under WASM.
+  // Keep this ON until quantized inference is validated end-to-end.
+  forceUnquantized: true,
+  // Merge mode: "union" (default, safer) or "best_of" (legacy)
+  mergeMode: "union",
+  // If false, clinician/provider/staff names are treated as PHI and can be redacted.
+  protectProviders: false,
+};
+
+let phiWorker = null;
+let phiWorkerReady = false;
+let phiWorkerUsingLegacy = false;
+let phiWorkerLegacyFallbackAttempted = false;
+let phiRunning = false;
+let phiHasRunDetection = false;
+let phiScrubbedConfirmed = false;
+let phiDetections = [];
+let phiOriginalText = "";
+
 function setStatus(text) {
   statusTextEl.textContent = text;
+}
+
+function setPhiStatus(text) {
+  if (!phiStatusTextEl) return;
+  phiStatusTextEl.textContent = String(text || "");
+}
+
+function setPhiProgress(text) {
+  if (!phiProgressTextEl) return;
+  phiProgressTextEl.textContent = String(text || "");
+}
+
+function setPhiSummary(text) {
+  if (!phiSummaryTextEl) return;
+  phiSummaryTextEl.textContent = String(text || "");
 }
 
 function showBanner(level, text) {
@@ -98,6 +145,143 @@ async function copyToClipboard(text) {
 
 function escapeRegExp(s) {
   return String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function buildPhiWorkerConfigForRun() {
+  const cfg = { ...PHI_WORKER_BASE_CONFIG };
+  const redactProviders = phiRedactProvidersToggleEl ? Boolean(phiRedactProvidersToggleEl.checked) : true;
+  cfg.protectProviders = !redactProviders;
+  return cfg;
+}
+
+function shouldForceLegacyPhiWorker() {
+  const params = new URLSearchParams(location.search);
+  if (params.get("legacy_phi") === "1") return true;
+
+  const ua = navigator.userAgent || "";
+  const isIOSDevice =
+    /iPad|iPhone|iPod/i.test(ua) || (ua.includes("Mac") && "ontouchend" in document);
+  const isSafari =
+    /Safari/i.test(ua) && !/Chrome|CriOS|FxiOS|EdgiOS|OPR/i.test(ua);
+  return isIOSDevice && isSafari;
+}
+
+function buildPhiWorkerUrl(name) {
+  return `/ui/${name}?v=${Date.now()}`;
+}
+
+function startPhiWorker({ forceLegacy = false } = {}) {
+  if (!phiRunBtn) return;
+
+  if (phiWorker) {
+    try {
+      phiWorker.terminate();
+    } catch {
+      // ignore
+    }
+  }
+
+  phiWorkerReady = false;
+  phiWorkerUsingLegacy = forceLegacy;
+
+  let nextWorker = null;
+  let nextIsLegacy = forceLegacy;
+
+  if (!forceLegacy) {
+    try {
+      nextWorker = new Worker(buildPhiWorkerUrl("redactor.worker.js"), { type: "module" });
+      nextIsLegacy = false;
+    } catch {
+      phiWorkerLegacyFallbackAttempted = true;
+      nextIsLegacy = true;
+      setPhiStatus("Module worker unsupported; falling back to legacy worker…");
+    }
+  }
+
+  if (!nextWorker) {
+    nextWorker = new Worker(buildPhiWorkerUrl("redactor.worker.legacy.js"));
+    nextIsLegacy = true;
+  }
+
+  phiWorker = nextWorker;
+  phiWorkerUsingLegacy = nextIsLegacy;
+  attachPhiWorkerHandlers(phiWorker);
+  try {
+    phiWorker.postMessage({ type: "init", debug: false, config: PHI_WORKER_BASE_CONFIG });
+  } catch (e) {
+    setPhiStatus(`PHI worker init failed: ${e?.message || e}`);
+  }
+}
+
+function attachPhiWorkerHandlers(activeWorker) {
+  activeWorker.addEventListener("error", (ev) => {
+    if (!phiWorkerUsingLegacy && !phiWorkerLegacyFallbackAttempted) {
+      phiWorkerLegacyFallbackAttempted = true;
+      setPhiStatus("Module worker failed to load; falling back to legacy worker…");
+      setPhiProgress("");
+      startPhiWorker({ forceLegacy: true });
+      return;
+    }
+    phiWorkerReady = false;
+    setPhiStatus(`PHI worker error: ${ev.message || "failed to load"}`);
+    setPhiProgress("");
+    phiRunning = false;
+    updateControls();
+  });
+
+  activeWorker.addEventListener("messageerror", () => {
+    phiWorkerReady = false;
+    setPhiStatus("PHI worker message error (serialization failed)");
+    setPhiProgress("");
+    phiRunning = false;
+    updateControls();
+  });
+
+  activeWorker.onmessage = (e) => {
+    const msg = e.data;
+    if (!msg || typeof msg.type !== "string") return;
+
+    if (msg.type === "ready") {
+      phiWorkerReady = true;
+      setPhiStatus("Ready (local model loaded)");
+      setPhiProgress("");
+      updateControls();
+      return;
+    }
+
+    if (msg.type === "progress") {
+      const stage = msg.stage ? String(msg.stage) : "";
+      if (stage) setPhiProgress(stage);
+      return;
+    }
+
+    if (msg.type === "done") {
+      phiRunning = false;
+      const detections = Array.isArray(msg.detections) ? msg.detections : [];
+      phiDetections = detections
+        .filter((d) => Number.isFinite(d?.start) && Number.isFinite(d?.end) && d.end > d.start)
+        .map((d) => ({
+          start: Number(d.start),
+          end: Number(d.end),
+          label: String(d.label || "PHI"),
+        }));
+      phiHasRunDetection = true;
+      phiScrubbedConfirmed = false;
+      setPhiStatus("Detection complete. Apply redactions to confirm scrubbed text.");
+      setPhiProgress("");
+      setPhiSummary(`${phiDetections.length} PHI span${phiDetections.length === 1 ? "" : "s"} detected`);
+      updateControls();
+      return;
+    }
+
+    if (msg.type === "error") {
+      phiRunning = false;
+      const message = String(msg.message || "unknown error");
+      setPhiStatus(`PHI worker error: ${message}`);
+      setPhiProgress("");
+      updateControls();
+    }
+  };
 }
 
 function upsertCompletenessAddendum(text, block) {
@@ -386,7 +570,10 @@ function updateControls() {
   const hasBundle = Boolean(state.bundle);
   const hasQuestions = Array.isArray(state.questions) && state.questions.length > 0;
   const hasTransferNote = buildTransferNoteText().length > 0;
-  seedBtn.disabled = state.busy;
+  const requiresPhi = Boolean(phiRunBtn && phiApplyBtn && phiStatusTextEl);
+  const phiOk = !requiresPhi || phiScrubbedConfirmed;
+  seedBtn.disabled = state.busy || !phiOk;
+  seedBtn.title = !phiOk ? "Run PHI detection and apply redactions first" : "";
   refreshBtn.disabled = state.busy || !hasBundle;
   clearBtn.disabled = state.busy;
   applyPatchBtn.disabled = state.busy || !hasBundle || !hasQuestions;
@@ -394,6 +581,10 @@ function updateControls() {
   if (completenessInsertBtn) completenessInsertBtn.disabled = state.busy || !completenessPrompts.length;
   if (completenessCopyBtn) completenessCopyBtn.disabled = state.busy || !buildCompletenessAddendumBlock();
   strictToggleEl.disabled = state.busy;
+
+  if (phiRunBtn) phiRunBtn.disabled = state.busy || phiRunning || !phiWorkerReady;
+  if (phiApplyBtn) phiApplyBtn.disabled = state.busy || phiRunning || !phiHasRunDetection;
+  if (phiRevertBtn) phiRevertBtn.disabled = state.busy || phiRunning || !phiOriginalText;
 }
 
 function renderSummary() {
@@ -896,6 +1087,7 @@ async function seedBundleFromText() {
     const strict = Boolean(strictToggleEl.checked);
     const seed = await postJSON("/report/seed_from_text", {
       text,
+      already_scrubbed: true,
       metadata: {},
       strict,
     });
@@ -1015,6 +1207,13 @@ function clearState() {
   completenessPrompts = [];
   completenessValuesByPath = new Map();
   seedTextEl.value = "";
+  phiDetections = [];
+  phiHasRunDetection = false;
+  phiScrubbedConfirmed = false;
+  phiOriginalText = "";
+  setPhiSummary("");
+  setPhiProgress("");
+  if (phiWorkerReady) setPhiStatus("Ready (local model loaded)");
   hideBanner();
   renderAll();
 }
@@ -1063,12 +1262,108 @@ if (completenessCopyBtn) {
     });
   });
 }
-seedTextEl.addEventListener("input", updateControls);
+seedTextEl.addEventListener("input", () => {
+  if (!phiRunBtn) {
+    updateControls();
+    return;
+  }
+
+  // Any text edit invalidates prior detection + scrub confirmation.
+  if (phiHasRunDetection || phiScrubbedConfirmed) {
+    phiHasRunDetection = false;
+    phiScrubbedConfirmed = false;
+    phiDetections = [];
+    phiOriginalText = "";
+    setPhiSummary("");
+    setPhiProgress("");
+    setPhiStatus("Text changed. Run detection to confirm redactions.");
+  }
+
+  updateControls();
+});
+
+if (phiRunBtn) {
+  const forceLegacy = shouldForceLegacyPhiWorker();
+  setPhiStatus(forceLegacy ? "Loading legacy PHI worker…" : "Loading local PHI model…");
+  startPhiWorker({ forceLegacy });
+
+  phiRunBtn.addEventListener("click", () => {
+    if (!phiWorker || phiRunning || !phiWorkerReady) return;
+    phiRunning = true;
+    phiHasRunDetection = false;
+    phiScrubbedConfirmed = false;
+    phiDetections = [];
+    phiOriginalText = String(seedTextEl.value || "");
+    setPhiStatus("Detecting… (client-side)");
+    setPhiProgress("");
+    setPhiSummary("");
+    updateControls();
+    try {
+      phiWorker.postMessage({
+        type: "start",
+        text: phiOriginalText,
+        config: buildPhiWorkerConfigForRun(),
+      });
+    } catch (e) {
+      phiRunning = false;
+      setPhiStatus(`Detection failed to start: ${e?.message || e}`);
+      updateControls();
+    }
+  });
+}
+
+if (phiApplyBtn) {
+  phiApplyBtn.addEventListener("click", () => {
+    if (!phiHasRunDetection) return;
+
+    const spans = (Array.isArray(phiDetections) ? phiDetections : [])
+      .filter((d) => Number.isFinite(d.start) && Number.isFinite(d.end) && d.end > d.start)
+      .sort((a, b) => b.start - a.start);
+
+    let text = String(seedTextEl.value || "");
+    for (const d of spans) {
+      const start = Math.max(0, Math.min(text.length, Number(d.start)));
+      const end = Math.max(0, Math.min(text.length, Number(d.end)));
+      if (end <= start) continue;
+      text = `${text.slice(0, start)}[REDACTED]${text.slice(end)}`;
+    }
+    seedTextEl.value = text;
+    phiScrubbedConfirmed = true;
+    setPhiStatus("Redactions applied (scrubbed text ready to seed)");
+    setPhiProgress("");
+    setPhiSummary(`${spans.length} span${spans.length === 1 ? "" : "s"} redacted`);
+    updateControls();
+  });
+}
+
+if (phiRevertBtn) {
+  phiRevertBtn.addEventListener("click", () => {
+    if (!phiOriginalText) return;
+    seedTextEl.value = phiOriginalText;
+    phiDetections = [];
+    phiHasRunDetection = false;
+    phiScrubbedConfirmed = false;
+    phiOriginalText = "";
+    setPhiSummary("");
+    setPhiProgress("");
+    setPhiStatus("Reverted. Run detection to confirm redactions.");
+    updateControls();
+  });
+}
 
 const dashboardTransfer = consumeDashboardTransferPayload();
 if (dashboardTransfer?.note) {
   seedTextEl.value = dashboardTransfer.note;
-  showBanner("success", "Loaded note from dashboard. Click “Seed Bundle” to generate questions.");
+  if (phiRunBtn) {
+    phiDetections = [];
+    phiHasRunDetection = false;
+    phiScrubbedConfirmed = false;
+    phiOriginalText = "";
+    setPhiSummary("");
+    setPhiProgress("");
+    setPhiStatus("Note loaded. Run detection and apply redactions before seeding.");
+  }
+  showBanner("success", "Loaded note from dashboard. Run PHI detection, apply redactions, then seed.");
 }
 
 renderAll();

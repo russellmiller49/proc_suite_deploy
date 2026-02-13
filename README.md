@@ -5,7 +5,7 @@
 This toolkit enables:
 1.  **Predict CPT Codes**: Analyze procedure notes using ML + LLM hybrid pipeline to generate billing codes with RVU calculations.
 2.  **Extract Registry Data**: Use deterministic extractors and LLMs to extract structured clinical data (EBUS stations, complications, demographics) into a validated schema.
-3.  **Generate Reports**: Create standardized, human-readable procedure reports from structured data.
+3.  **Generate Reports**: Create standardized, human-readable procedure reports from structured data (Reporter Builder + deterministic templates).
 
 ## Documentation
 
@@ -46,6 +46,48 @@ This toolkit enables:
     The UI flow is: paste note -> run PHI detection -> apply redactions -> submit scrubbed note -> review results.
     Optional: edit values in **Flattened Tables (Editable)** (generates **Edited JSON (Training)**) and export JSON/tables.
 
+### Reporter Builder Quick Notes
+
+- Reporter Builder UI: `http://localhost:8000/ui/reporter_builder.html`
+- Client-side PHI gate is enforced before seeding: `Run Detection` -> `Apply Redactions` -> `Seed Bundle`
+- `POST /report/seed_from_text` supports:
+  - `REPORTER_SEED_STRATEGY=registry_extract_fields` (default)
+  - `REPORTER_SEED_STRATEGY=llm_findings` (reporter-only findings path)
+  - `REPORTER_SEED_LLM_STRICT=1` to disable fallback
+
+Reporter findings mode uses existing OpenAI-compatible settings:
+
+- `LLM_PROVIDER=openai_compat`
+- `OPENAI_MODEL_STRUCTURER=gpt-5-mini`
+- `OPENAI_API_KEY=...`
+- `OPENAI_OFFLINE=0` (or fallback/strict behavior applies)
+
+### Reporter Prompt Sampling Tool
+
+Generate random prompt/output reporter runs from training JSONL files:
+
+```bash
+python ops/tools/run_reporter_random_seeds.py \
+  --input-dir /home/rjm/projects/proc_suite_notes/reporter_training/reporter_training \
+  --count 20 \
+  --seed 42 \
+  --output reporter_tests.txt \
+  --include-metadata-json
+```
+
+Outputs:
+- `reporter_tests.txt`
+- `reporter_tests.json` (or custom path via `--metadata-output`)
+
+### Reporter LLM Findings Evaluator
+
+```bash
+PROCSUITE_ALLOW_ONLINE=1 \
+LLM_PROVIDER=openai_compat \
+OPENAI_MODEL_STRUCTURER=gpt-5-mini \
+python ops/tools/eval_reporter_prompt_llm_findings.py
+```
+
 ## Recent Updates (2026-01-25)
 
 - **Schema refactor:** shared EBUS node-event types now live in `proc_schemas/shared/ebus_events.py` and are re-exported via `app/registry/schema/ebus_events.py`.
@@ -66,6 +108,13 @@ This toolkit enables:
 - **KB hygiene (Phase 0–2):** added `docs/KNOWLEDGE_INVENTORY.md`, `docs/KNOWLEDGE_RELEASE_CHECKLIST.md`, and `make validate-knowledge-release` for safer knowledge/schema updates.
 - **KB version gating:** loaders now enforce KB filename semantic version ↔ internal `"version"` (override: `PSUITE_KNOWLEDGE_ALLOW_VERSION_MISMATCH=1`).
 - **Single source of truth:** runtime code metadata/RVUs come from `master_code_index`, and synonym phrase lists are centralized in KB `synonyms`.
+
+## Recent Updates (2026-02-13)
+
+- **Reporter seed strategy switch:** `POST /report/seed_from_text` now supports `REPORTER_SEED_STRATEGY=llm_findings` (default remains `registry_extract_fields`).
+- **LLM findings reporter path:** masked prompt -> evidence-cited findings -> synthetic NER -> `NERToRegistryMapper` -> `ClinicalGuardrails` -> deterministic CPT derivation -> existing Jinja templates.
+- **Client-side PHI in Reporter Builder:** seeding is gated until local PHI detection + redaction are applied; seeded requests send `already_scrubbed=true`.
+- **Reporter prompt tooling:** added `ops/tools/run_reporter_random_seeds.py` and `ops/tools/eval_reporter_prompt_llm_findings.py`.
 
 ## Key Modules
 
@@ -192,6 +241,8 @@ make preflight
 | `OPENAI_MODEL_STRUCTURER` | Model override for structurer tasks (openai_compat only) | `OPENAI_MODEL` |
 | `OPENAI_MODEL_JUDGE` | Model override for self-correction judge (openai_compat only) | `OPENAI_MODEL` |
 | `OPENAI_OFFLINE` | Disable openai_compat network calls (use stubs) | `0` |
+| `REPORTER_SEED_STRATEGY` | Reporter seed mode: `registry_extract_fields` or `llm_findings` | `registry_extract_fields` |
+| `REPORTER_SEED_LLM_STRICT` | In `llm_findings` mode, fail instead of fallback when LLM seeding errors | `0` |
 | `OPENAI_PRIMARY_API` | Primary API: `responses` or `chat` | `responses` |
 | `OPENAI_RESPONSES_FALLBACK_TO_CHAT` | Fall back to Chat Completions on 404 | `1` |
 | `OPENAI_TIMEOUT_READ_REGISTRY_SECONDS` | Read timeout for registry tasks (seconds) | `180` |

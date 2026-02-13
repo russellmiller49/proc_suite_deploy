@@ -1,0 +1,5816 @@
+{
+  "ruleset_id": "ip_registry_relationship_matrix_v3",
+  "version": "v3",
+  "generated_at": "2026-02-07T21:01:54.704714+00:00",
+  "source": {
+    "workbook": "ip_registry_relationship_matrix_v3.xlsx",
+    "sheets": [
+      "Relationship Matrix",
+      "EBUS Station Bundle",
+      "Procedure Flag Bundles",
+      "Glossary"
+    ]
+  },
+  "glossary": {
+    "Trigger field": "The field (or field pattern) that, when populated/true, should prompt for additional related fields.",
+    "Condition / When to prompt": "Extra logic that controls when the rule should fire (e.g., only if a complication type is 'bleeding').",
+    "Companion fields": "Fields that should be requested/filled to make the trigger field clinically interpretable and research-ready.",
+    "Companion type": "Required = essential for correctness; Recommended = high-value completeness; Derived = can be computed from other fields.",
+    "Schema status": "Existing = present in current IPRegistryV3 / RegistryRecord; Proposed = suggested new fields to add.",
+    "Tier": "Implementation priority: Tier 1 = highest ROI for research/benchmarking; Tier 2/3 = valuable add-ons."
+  },
+  "relationship_rules": [
+    {
+      "id": "rule_000_5ef44d2e0c",
+      "domain": "Patient & Demographics",
+      "layer": "Entry schema (IPRegistryV3)",
+      "trigger": {
+        "raw": "patient.age",
+        "expression": {
+          "op": "exists",
+          "path": "patient.age"
+        }
+      },
+      "condition_text": "Age is present (non-null)",
+      "companions": [
+        {
+          "raw": "patient.sex",
+          "paths": [
+            "patient.sex"
+          ]
+        },
+        {
+          "raw": "patient.bmi",
+          "paths": [
+            "patient.bmi"
+          ]
+        },
+        {
+          "raw": "patient.smoking_status",
+          "paths": [
+            "patient.smoking_status"
+          ]
+        }
+      ],
+      "companion_type": "Recommended",
+      "schema_status": "Existing",
+      "tier": "Tier 0",
+      "notes": "Basic covariates for risk adjustment and subgrouping.",
+      "tier_number": 0
+    },
+    {
+      "id": "rule_001_6ada9c5408",
+      "domain": "Patient & Demographics",
+      "layer": "Entry schema (IPRegistryV3)",
+      "trigger": {
+        "raw": "patient.bmi",
+        "expression": {
+          "op": "exists",
+          "path": "patient.bmi"
+        }
+      },
+      "condition_text": "BMI is present",
+      "companions": [
+        {
+          "raw": "patient.age",
+          "paths": [
+            "patient.age"
+          ]
+        },
+        {
+          "raw": "patient.sex",
+          "paths": [
+            "patient.sex"
+          ]
+        }
+      ],
+      "companion_type": "Recommended",
+      "schema_status": "Existing",
+      "tier": "Tier 0",
+      "notes": "BMI without age/sex is less interpretable.",
+      "tier_number": 0
+    },
+    {
+      "id": "rule_002_a3be8023a3",
+      "domain": "Procedure Metadata",
+      "layer": "Entry schema (IPRegistryV3)",
+      "trigger": {
+        "raw": "procedure.procedure_date",
+        "expression": {
+          "op": "exists",
+          "path": "procedure.procedure_date"
+        }
+      },
+      "condition_text": "Procedure date is present",
+      "companions": [
+        {
+          "raw": "procedure.facility",
+          "paths": [
+            "procedure.facility"
+          ]
+        },
+        {
+          "raw": "procedure.operator",
+          "paths": [
+            "procedure.operator"
+          ]
+        },
+        {
+          "raw": "procedure.procedure_type",
+          "paths": [
+            "procedure.procedure_type"
+          ]
+        },
+        {
+          "raw": "procedure.indication",
+          "paths": [
+            "procedure.indication"
+          ]
+        },
+        {
+          "raw": "procedure.urgency",
+          "paths": [
+            "procedure.urgency"
+          ]
+        }
+      ],
+      "companion_type": "Recommended",
+      "schema_status": "Existing",
+      "tier": "Tier 0",
+      "notes": "Enables center/operator benchmarking and urgency stratification.",
+      "tier_number": 0
+    },
+    {
+      "id": "rule_003_817bee7e35",
+      "domain": "Procedure Metadata",
+      "layer": "Entry schema (IPRegistryV3)",
+      "trigger": {
+        "raw": "procedure.procedure_type",
+        "expression": {
+          "op": "exists",
+          "path": "procedure.procedure_type"
+        }
+      },
+      "condition_text": "Procedure type is set",
+      "companions": [
+        {
+          "raw": "procedure.indication",
+          "paths": [
+            "procedure.indication"
+          ]
+        },
+        {
+          "raw": "procedure.urgency",
+          "paths": [
+            "procedure.urgency"
+          ]
+        }
+      ],
+      "companion_type": "Recommended",
+      "schema_status": "Existing",
+      "tier": "Tier 0",
+      "notes": "Indication + urgency are needed to interpret complication rates.",
+      "tier_number": 0
+    },
+    {
+      "id": "rule_004_b7c9e39397",
+      "domain": "Sedation / Anesthesia",
+      "layer": "Entry schema (IPRegistryV3)",
+      "trigger": {
+        "raw": "sedation.type",
+        "expression": {
+          "op": "exists",
+          "path": "sedation.type"
+        }
+      },
+      "condition_text": "Sedation type is set",
+      "companions": [
+        {
+          "raw": "sedation.provider",
+          "paths": [
+            "sedation.provider"
+          ]
+        },
+        {
+          "raw": "sedation.agents",
+          "paths": [
+            "sedation.agents"
+          ]
+        },
+        {
+          "raw": "sedation.start_time",
+          "paths": [
+            "sedation.start_time"
+          ]
+        },
+        {
+          "raw": "sedation.end_time",
+          "paths": [
+            "sedation.end_time"
+          ]
+        },
+        {
+          "raw": "sedation.duration_minutes",
+          "paths": [
+            "sedation.duration_minutes"
+          ]
+        },
+        {
+          "raw": "sedation.independent_observer",
+          "paths": [
+            "sedation.independent_observer"
+          ]
+        }
+      ],
+      "companion_type": "Recommended",
+      "schema_status": "Existing",
+      "tier": "Tier 0",
+      "notes": "Captures depth and duration; important confounder for diagnostic yield.",
+      "tier_number": 0
+    },
+    {
+      "id": "rule_005_6da238f46e",
+      "domain": "Sedation / Anesthesia",
+      "layer": "Entry schema (IPRegistryV3)",
+      "trigger": {
+        "raw": "sedation.start_time + sedation.end_time",
+        "expression": {
+          "op": "and",
+          "args": [
+            {
+              "op": "exists",
+              "path": "sedation.start_time"
+            },
+            {
+              "op": "exists",
+              "path": "sedation.end_time"
+            }
+          ]
+        }
+      },
+      "condition_text": "Both start_time and end_time are present",
+      "companions": [
+        {
+          "raw": "sedation.duration_minutes (derived = end-start)",
+          "paths": [
+            "sedation.duration_minutes"
+          ],
+          "derived": true,
+          "note": "derived = end-start"
+        }
+      ],
+      "companion_type": "Derived",
+      "schema_status": "Existing",
+      "tier": "Tier 0",
+      "notes": "Duration can be computed; prompting prevents missingness.",
+      "tier_number": 0
+    },
+    {
+      "id": "rule_006_6f24a98fd8",
+      "domain": "Sedation / Anesthesia",
+      "layer": "Extraction schema (RegistryRecord)",
+      "trigger": {
+        "raw": "sedation.type",
+        "expression": {
+          "op": "exists",
+          "path": "sedation.type"
+        }
+      },
+      "condition_text": "Sedation type is set; if 'general' or 'mac' inferred",
+      "companions": [
+        {
+          "raw": "sedation.anesthesia_provider (CRNA/Anesthesiologist/etc)",
+          "paths": [
+            "sedation.anesthesia_provider"
+          ],
+          "note": "CRNA/Anesthesiologist/etc"
+        }
+      ],
+      "companion_type": "Recommended",
+      "schema_status": "Existing (extraction)",
+      "tier": "Tier 0",
+      "notes": "Extraction code infers anesthesia_provider when explicitly stated; useful for operational analytics.",
+      "tier_number": 0
+    },
+    {
+      "id": "rule_007_ec8dfb658c",
+      "domain": "Clinical Context",
+      "layer": "Entry schema (IPRegistryV3)",
+      "trigger": {
+        "raw": "clinical_context.lesion_characteristics",
+        "expression": {
+          "op": "exists",
+          "path": "clinical_context.lesion_characteristics"
+        }
+      },
+      "condition_text": "Any lesion characteristics are present",
+      "companions": [
+        {
+          "raw": "navigation_performed",
+          "paths": [
+            "navigation_performed"
+          ]
+        },
+        {
+          "raw": "navigation_system",
+          "paths": [
+            "navigation_system"
+          ]
+        },
+        {
+          "raw": "radial_ebus_performed",
+          "paths": [
+            "radial_ebus_performed"
+          ]
+        },
+        {
+          "raw": "ebus_performed",
+          "paths": [
+            "ebus_performed"
+          ]
+        },
+        {
+          "raw": "tblb_performed",
+          "paths": [
+            "tblb_performed"
+          ]
+        }
+      ],
+      "companion_type": "Recommended",
+      "schema_status": "Existing",
+      "tier": "Tier 0",
+      "notes": "Lesion characteristics contextualize peripheral/nodule workflows; prompts ensure downstream procedure fields are captured.",
+      "tier_number": 0
+    },
+    {
+      "id": "rule_008_7d482540be",
+      "domain": "Clinical Context",
+      "layer": "Entry schema (IPRegistryV3)",
+      "trigger": {
+        "raw": "clinical_context.central_airway_obstruction",
+        "expression": {
+          "op": "exists",
+          "path": "clinical_context.central_airway_obstruction"
+        }
+      },
+      "condition_text": "Any CAO fields are present",
+      "companions": [
+        {
+          "raw": "dilation_performed",
+          "paths": [
+            "dilation_performed"
+          ]
+        },
+        {
+          "raw": "stent_placed",
+          "paths": [
+            "stent_placed"
+          ]
+        },
+        {
+          "raw": "ablation_performed",
+          "paths": [
+            "ablation_performed"
+          ]
+        },
+        {
+          "raw": "findings[*] (CAO)",
+          "paths": [
+            "findings[*]"
+          ],
+          "note": "CAO"
+        }
+      ],
+      "companion_type": "Recommended",
+      "schema_status": "Existing",
+      "tier": "Tier 0",
+      "notes": "CAO summary should be paired with therapeutic interventions and outcomes.",
+      "tier_number": 0
+    },
+    {
+      "id": "rule_009_fcea1cf77b",
+      "domain": "Risk Adjustment",
+      "layer": "Entry schema (IPRegistryV3)",
+      "trigger": {
+        "raw": "(new) clinical_context.ecog_score",
+        "expression": {
+          "op": "exists",
+          "path": "clinical_context.ecog_score"
+        },
+        "proposed": true
+      },
+      "condition_text": "Case involves malignancy evaluation or staging; performance status documented",
+      "companions": [
+        {
+          "raw": "(new) clinical_context.asa_class",
+          "paths": [
+            "clinical_context.asa_class"
+          ],
+          "proposed": true
+        },
+        {
+          "raw": "sedation.type",
+          "paths": [
+            "sedation.type"
+          ]
+        },
+        {
+          "raw": "procedure.urgency",
+          "paths": [
+            "procedure.urgency"
+          ]
+        }
+      ],
+      "companion_type": "Recommended",
+      "schema_status": "Proposed",
+      "tier": "Tier 1",
+      "notes": "ECOG/Zubrod is a key oncology covariate; complements ASA.",
+      "tier_number": 1
+    },
+    {
+      "id": "rule_010_70fb8b2c2d",
+      "domain": "Risk Adjustment",
+      "layer": "Entry schema (IPRegistryV3)",
+      "trigger": {
+        "raw": "(new) clinical_context.on_anticoagulation",
+        "expression": {
+          "op": "exists",
+          "path": "clinical_context.on_anticoagulation"
+        },
+        "proposed": true
+      },
+      "condition_text": "Any biopsy or TBNA performed OR bleeding complication occurred",
+      "companions": [
+        {
+          "raw": "(new) clinical_context.anticoagulant_agent",
+          "paths": [
+            "clinical_context.anticoagulant_agent"
+          ],
+          "proposed": true
+        },
+        {
+          "raw": "(new) clinical_context.held_prior_to_procedure",
+          "paths": [
+            "clinical_context.held_prior_to_procedure"
+          ],
+          "proposed": true
+        }
+      ],
+      "companion_type": "Recommended",
+      "schema_status": "Proposed",
+      "tier": "Tier 1",
+      "notes": "Required covariate for bleeding risk analysis.",
+      "tier_number": 1
+    },
+    {
+      "id": "rule_011_06c09fa449",
+      "domain": "Sedation / Anesthesia",
+      "layer": "Entry schema (IPRegistryV3)",
+      "trigger": {
+        "raw": "(new) sedation.airway_device",
+        "expression": {
+          "op": "exists",
+          "path": "sedation.airway_device"
+        },
+        "proposed": true
+      },
+      "condition_text": "Sedation.type='general' OR rigid_bronchoscopy performed",
+      "companions": [
+        {
+          "raw": "(new) sedation.airway_device_type (ETT/LMA/trach)",
+          "paths": [
+            "sedation.airway_device_type"
+          ],
+          "proposed": true,
+          "note": "ETT/LMA/trach"
+        },
+        {
+          "raw": "(new) sedation.size (if ETT)",
+          "paths": [
+            "sedation.size"
+          ],
+          "proposed": true,
+          "note": "if ETT"
+        },
+        {
+          "raw": "sedation.provider",
+          "paths": [
+            "sedation.provider"
+          ]
+        }
+      ],
+      "companion_type": "Recommended",
+      "schema_status": "Proposed",
+      "tier": "Tier 2",
+      "notes": "Helps distinguish general/ETT vs general/LMA; impacts yield/complications.",
+      "tier_number": 2
+    },
+    {
+      "id": "rule_012_dad7c68980",
+      "domain": "Event Timeline",
+      "layer": "Entry schema (IPRegistryV3)",
+      "trigger": {
+        "raw": "events[*]",
+        "expression": {
+          "op": "exists",
+          "path": "events[*]"
+        }
+      },
+      "condition_text": "An event is added",
+      "companions": [
+        {
+          "raw": "events[*].timestamp",
+          "paths": [
+            "events[*].timestamp"
+          ]
+        },
+        {
+          "raw": "events[*].event_type",
+          "paths": [
+            "events[*].event_type"
+          ]
+        },
+        {
+          "raw": "events[*].description",
+          "paths": [
+            "events[*].description"
+          ]
+        },
+        {
+          "raw": "events[*].location",
+          "paths": [
+            "events[*].location"
+          ]
+        },
+        {
+          "raw": "events[*].outcome",
+          "paths": [
+            "events[*].outcome"
+          ]
+        }
+      ],
+      "companion_type": "Required",
+      "schema_status": "Existing",
+      "tier": "Tier 0",
+      "notes": "Structured event log should minimally include type + description; timestamp recommended.",
+      "tier_number": 0
+    },
+    {
+      "id": "rule_013_bfabd925fa",
+      "domain": "Event Timeline",
+      "layer": "Entry schema (IPRegistryV3)",
+      "trigger": {
+        "raw": "events[*].event_type='biopsy'",
+        "expression": {
+          "op": "eq",
+          "path": "events[*].event_type",
+          "value": "biopsy"
+        }
+      },
+      "condition_text": "Biopsy event logged",
+      "companions": [
+        {
+          "raw": "ebus_stations[*] OR tblb_sites[*] OR (new) navigation_targets[*]",
+          "paths": [
+            "ebus_stations[*] OR tblb_sites[*] OR (new) navigation_targets[*]"
+          ]
+        }
+      ],
+      "companion_type": "Recommended",
+      "schema_status": "Existing/Proposed",
+      "tier": "Tier 2",
+      "notes": "Link event log to the corresponding site-level data for interpretability.",
+      "tier_number": 2
+    },
+    {
+      "id": "rule_014_52f5bcf908",
+      "domain": "EBUS / Staging",
+      "layer": "Entry schema (IPRegistryV3)",
+      "trigger": {
+        "raw": "ebus_performed",
+        "expression": {
+          "op": "exists",
+          "path": "ebus_performed"
+        }
+      },
+      "condition_text": "ebus_performed=True",
+      "companions": [
+        {
+          "raw": "ebus_stations[*]",
+          "paths": [
+            "ebus_stations[*]"
+          ]
+        },
+        {
+          "raw": "ebus_station_count (derived)",
+          "paths": [
+            "ebus_station_count"
+          ],
+          "derived": true,
+          "note": "derived"
+        }
+      ],
+      "companion_type": "Required",
+      "schema_status": "Existing",
+      "tier": "Tier 0",
+      "notes": "If EBUS is performed, at least one station record should exist (or explicitly documented none).",
+      "tier_number": 0
+    },
+    {
+      "id": "rule_015_dddabd8e42",
+      "domain": "EBUS / Staging",
+      "layer": "Entry schema (IPRegistryV3)",
+      "trigger": {
+        "raw": "ebus_stations[*].location.lymph_node_station",
+        "expression": {
+          "op": "exists",
+          "path": "ebus_stations[*].location.lymph_node_station"
+        }
+      },
+      "condition_text": "A station is entered (e.g., 7)",
+      "companions": [
+        {
+          "raw": "ebus_stations[*].technique",
+          "paths": [
+            "ebus_stations[*].technique"
+          ]
+        },
+        {
+          "raw": "ebus_stations[*].passes",
+          "paths": [
+            "ebus_stations[*].passes"
+          ]
+        },
+        {
+          "raw": "ebus_stations[*].specimens_obtained",
+          "paths": [
+            "ebus_stations[*].specimens_obtained"
+          ]
+        },
+        {
+          "raw": "ebus_stations[*].rose_result",
+          "paths": [
+            "ebus_stations[*].rose_result"
+          ]
+        },
+        {
+          "raw": "ebus_stations[*].pathology_result",
+          "paths": [
+            "ebus_stations[*].pathology_result"
+          ]
+        },
+        {
+          "raw": "ebus_stations[*].adequacy",
+          "paths": [
+            "ebus_stations[*].adequacy"
+          ]
+        },
+        {
+          "raw": "(new) ebus_stations[*].needle_gauge (per-station override)",
+          "paths": [
+            "ebus_stations[*].needle_gauge"
+          ],
+          "proposed": true,
+          "note": "per-station override"
+        },
+        {
+          "raw": "(new) ebus_stations[*].node_size_short_axis_mm",
+          "paths": [
+            "ebus_stations[*].node_size_short_axis_mm"
+          ],
+          "proposed": true
+        },
+        {
+          "raw": "(new) ebus_stations[*].node_morphology.shape (round/oval)",
+          "paths": [
+            "ebus_stations[*].node_morphology.shape"
+          ],
+          "proposed": true,
+          "note": "round/oval"
+        },
+        {
+          "raw": "(new) ebus_stations[*].node_morphology.border (distinct/indistinct)",
+          "paths": [
+            "ebus_stations[*].node_morphology.border"
+          ],
+          "proposed": true,
+          "note": "distinct/indistinct"
+        },
+        {
+          "raw": "(new) ebus_stations[*].node_morphology.echogenicity (homogeneous/heterogeneous)",
+          "paths": [
+            "ebus_stations[*].node_morphology.echogenicity"
+          ],
+          "proposed": true,
+          "note": "homogeneous/heterogeneous"
+        },
+        {
+          "raw": "(new) ebus_stations[*].node_morphology.necrosis (Y/N)",
+          "paths": [
+            "ebus_stations[*].node_morphology.necrosis"
+          ],
+          "proposed": true,
+          "note": "Y/N"
+        },
+        {
+          "raw": "(new) ebus_stations[*].lymphocytes_present (Y/N)",
+          "paths": [
+            "ebus_stations[*].lymphocytes_present"
+          ],
+          "proposed": true,
+          "note": "Y/N"
+        }
+      ],
+      "companion_type": "Required + Recommended",
+      "schema_status": "Existing + Proposed",
+      "tier": "Tier 1",
+      "notes": "This is the station-level bundle you described: station \u2192 morphology/size + sampling technique + passes + ROSE + final pathology + adequacy.",
+      "tier_number": 1
+    },
+    {
+      "id": "rule_016_81539817ac",
+      "domain": "EBUS / Staging",
+      "layer": "Entry schema (IPRegistryV3)",
+      "trigger": {
+        "raw": "ebus_station_count",
+        "expression": {
+          "op": "exists",
+          "path": "ebus_station_count"
+        }
+      },
+      "condition_text": "ebus_station_count is present OR ebus_stations populated",
+      "companions": [
+        {
+          "raw": "ebus_station_count (derived = count_unique(ebus_stations[*].location.lymph_node_station))",
+          "paths": [
+            "ebus_station_count"
+          ],
+          "derived": true,
+          "note": "derived = count_unique(ebus_stations[*].location.lymph_node_station)"
+        }
+      ],
+      "companion_type": "Derived",
+      "schema_status": "Existing",
+      "tier": "Tier 0",
+      "notes": "Avoid double-entry; use derived count for CPT logic.",
+      "tier_number": 0
+    },
+    {
+      "id": "rule_017_fa9c37a8ae",
+      "domain": "EBUS / Staging",
+      "layer": "Entry schema (IPRegistryV3)",
+      "trigger": {
+        "raw": "ebus_stations[*].rose_result",
+        "expression": {
+          "op": "exists",
+          "path": "ebus_stations[*].rose_result"
+        }
+      },
+      "condition_text": "ROSE result is provided for a station",
+      "companions": [
+        {
+          "raw": "ebus_stations[*].pathology_result",
+          "paths": [
+            "ebus_stations[*].pathology_result"
+          ]
+        },
+        {
+          "raw": "(new) ebus_stations[*].rose_concordance (derived)",
+          "paths": [
+            "ebus_stations[*].rose_concordance"
+          ],
+          "proposed": true,
+          "derived": true,
+          "note": "derived"
+        }
+      ],
+      "companion_type": "Recommended",
+      "schema_status": "Existing + Proposed",
+      "tier": "Tier 1",
+      "notes": "Enable ROSE concordance quality metric (ROSE vs final pathology).",
+      "tier_number": 1
+    },
+    {
+      "id": "rule_018_5f71723303",
+      "domain": "EBUS / Staging",
+      "layer": "Entry schema (IPRegistryV3)",
+      "trigger": {
+        "raw": "ebus_stations[*].pathology_result='negative/benign'",
+        "expression": {
+          "op": "eq",
+          "path": "ebus_stations[*].pathology_result",
+          "value": "negative/benign"
+        }
+      },
+      "condition_text": "Final pathology indicates no malignancy",
+      "companions": [
+        {
+          "raw": "(new) ebus_stations[*].lymphocytes_present",
+          "paths": [
+            "ebus_stations[*].lymphocytes_present"
+          ],
+          "proposed": true
+        }
+      ],
+      "companion_type": "Required (quality)",
+      "schema_status": "Proposed",
+      "tier": "Tier 1",
+      "notes": "Needed to distinguish true negative vs non-diagnostic station (AQuIRE/WABIP adequacy indicator).",
+      "tier_number": 1
+    },
+    {
+      "id": "rule_019_7a7ea669a2",
+      "domain": "EBUS / Staging",
+      "layer": "Entry schema (proc_schemas/registry/ip_v3.py)",
+      "trigger": {
+        "raw": "(new) linear_ebus.node_events[*].station",
+        "expression": {
+          "op": "exists",
+          "path": "linear_ebus.node_events[*].station"
+        },
+        "proposed": true
+      },
+      "condition_text": "Granular EBUS event-log is used (LinearEBUS integrated)",
+      "companions": [
+        {
+          "raw": "(new) linear_ebus.node_events[*].action (sampled vs inspected_only)",
+          "paths": [
+            "linear_ebus.node_events[*].action"
+          ],
+          "proposed": true,
+          "note": "sampled vs inspected_only"
+        },
+        {
+          "raw": "(new) linear_ebus.node_events[*].passes",
+          "paths": [
+            "linear_ebus.node_events[*].passes"
+          ],
+          "proposed": true
+        },
+        {
+          "raw": "(new) linear_ebus.node_events[*].needle_gauge",
+          "paths": [
+            "linear_ebus.node_events[*].needle_gauge"
+          ],
+          "proposed": true
+        },
+        {
+          "raw": "(new) linear_ebus.node_events[*].rose_result",
+          "paths": [
+            "linear_ebus.node_events[*].rose_result"
+          ],
+          "proposed": true
+        },
+        {
+          "raw": "(new) linear_ebus.node_events[*].pathology_result",
+          "paths": [
+            "linear_ebus.node_events[*].pathology_result"
+          ],
+          "proposed": true
+        },
+        {
+          "raw": "(new) linear_ebus.node_events[*].node_size_short_axis_mm",
+          "paths": [
+            "linear_ebus.node_events[*].node_size_short_axis_mm"
+          ],
+          "proposed": true
+        },
+        {
+          "raw": "(new) linear_ebus.node_events[*].lymphocytes_present",
+          "paths": [
+            "linear_ebus.node_events[*].lymphocytes_present"
+          ],
+          "proposed": true
+        }
+      ],
+      "companion_type": "Required + Recommended",
+      "schema_status": "Proposed (needs wiring)",
+      "tier": "Tier 2",
+      "notes": "LinearEBUS model exists and supports stations_sampled derivation; wiring it into IPRegistryV3 would allow consistent station-level completeness prompts.",
+      "tier_number": 2
+    },
+    {
+      "id": "rule_020_8fffe07e2c",
+      "domain": "Transbronchial Biopsy",
+      "layer": "Entry schema (IPRegistryV3)",
+      "trigger": {
+        "raw": "tblb_performed",
+        "expression": {
+          "op": "exists",
+          "path": "tblb_performed"
+        }
+      },
+      "condition_text": "tblb_performed=True",
+      "companions": [
+        {
+          "raw": "tblb_sites[*]",
+          "paths": [
+            "tblb_sites[*]"
+          ]
+        },
+        {
+          "raw": "tblb_technique",
+          "paths": [
+            "tblb_technique"
+          ]
+        }
+      ],
+      "companion_type": "Required",
+      "schema_status": "Existing",
+      "tier": "Tier 0",
+      "notes": "Site-level records needed to interpret yield and complications.",
+      "tier_number": 0
+    },
+    {
+      "id": "rule_021_4db58a848e",
+      "domain": "Transbronchial Biopsy",
+      "layer": "Entry schema (IPRegistryV3)",
+      "trigger": {
+        "raw": "tblb_sites[*].location",
+        "expression": {
+          "op": "exists",
+          "path": "tblb_sites[*].location"
+        }
+      },
+      "condition_text": "A TBLB site is entered",
+      "companions": [
+        {
+          "raw": "tblb_sites[*].technique",
+          "paths": [
+            "tblb_sites[*].technique"
+          ]
+        },
+        {
+          "raw": "tblb_sites[*].passes",
+          "paths": [
+            "tblb_sites[*].passes"
+          ]
+        },
+        {
+          "raw": "tblb_sites[*].specimens_obtained",
+          "paths": [
+            "tblb_sites[*].specimens_obtained"
+          ]
+        },
+        {
+          "raw": "tblb_sites[*].pathology_result",
+          "paths": [
+            "tblb_sites[*].pathology_result"
+          ]
+        },
+        {
+          "raw": "tblb_sites[*].adequacy",
+          "paths": [
+            "tblb_sites[*].adequacy"
+          ]
+        },
+        {
+          "raw": "(new) tblb_sites[*].fluoroscopy_used (Y/N)",
+          "paths": [
+            "tblb_sites[*].fluoroscopy_used"
+          ],
+          "proposed": true,
+          "note": "Y/N"
+        }
+      ],
+      "companion_type": "Recommended",
+      "schema_status": "Existing + Proposed",
+      "tier": "Tier 2",
+      "notes": "Per-site biopsy counts + tool + pathology; fluoroscopy is a safety/quality covariate.",
+      "tier_number": 2
+    },
+    {
+      "id": "rule_022_1ec36455f3",
+      "domain": "Transbronchial Biopsy",
+      "layer": "Entry schema (IPRegistryV3)",
+      "trigger": {
+        "raw": "tblb_technique='cryobiopsy'",
+        "expression": {
+          "op": "eq",
+          "path": "tblb_technique",
+          "value": "cryobiopsy"
+        }
+      },
+      "condition_text": "Cryobiopsy performed",
+      "companions": [
+        {
+          "raw": "balloon_occlusion.performed (if used for airway blockade)",
+          "paths": [
+            "balloon_occlusion.performed"
+          ],
+          "note": "if used for airway blockade"
+        },
+        {
+          "raw": "(new) cryobiopsy.probe_size_mm",
+          "paths": [
+            "cryobiopsy.probe_size_mm"
+          ],
+          "proposed": true
+        },
+        {
+          "raw": "(new) cryobiopsy.freeze_time_seconds",
+          "paths": [
+            "cryobiopsy.freeze_time_seconds"
+          ],
+          "proposed": true
+        },
+        {
+          "raw": "(new) cryobiopsy.number_of_samples",
+          "paths": [
+            "cryobiopsy.number_of_samples"
+          ],
+          "proposed": true
+        },
+        {
+          "raw": "(new) cryobiopsy.fluoroscopy_used",
+          "paths": [
+            "cryobiopsy.fluoroscopy_used"
+          ],
+          "proposed": true
+        }
+      ],
+      "companion_type": "Recommended",
+      "schema_status": "Proposed",
+      "tier": "Tier 2",
+      "notes": "Cryobiopsy has unique technique details and bleeding risk; pairing with blockade method supports comparability.",
+      "tier_number": 2
+    },
+    {
+      "id": "rule_023_2f0dccd2cc",
+      "domain": "Navigation / Peripheral",
+      "layer": "Entry schema (IPRegistryV3)",
+      "trigger": {
+        "raw": "navigation_performed",
+        "expression": {
+          "op": "exists",
+          "path": "navigation_performed"
+        }
+      },
+      "condition_text": "navigation_performed=True",
+      "companions": [
+        {
+          "raw": "navigation_system",
+          "paths": [
+            "navigation_system"
+          ]
+        },
+        {
+          "raw": "navigation_target_reached",
+          "paths": [
+            "navigation_target_reached"
+          ]
+        },
+        {
+          "raw": "clinical_context.lesion_characteristics",
+          "paths": [
+            "clinical_context.lesion_characteristics"
+          ]
+        },
+        {
+          "raw": "radial_ebus_performed (if used)",
+          "paths": [
+            "radial_ebus_performed"
+          ],
+          "note": "if used"
+        },
+        {
+          "raw": "(new) navigation.ct_bronchus_sign",
+          "paths": [
+            "navigation.ct_bronchus_sign"
+          ],
+          "proposed": true
+        },
+        {
+          "raw": "(new) navigation.tool_in_lesion_confirmation_method",
+          "paths": [
+            "navigation.tool_in_lesion_confirmation_method"
+          ],
+          "proposed": true
+        },
+        {
+          "raw": "(new) navigation.ct_to_body_divergence",
+          "paths": [
+            "navigation.ct_to_body_divergence"
+          ],
+          "proposed": true
+        },
+        {
+          "raw": "(new) navigation_targets[*] (per-target details)",
+          "paths": [
+            "navigation_targets[*]"
+          ],
+          "proposed": true,
+          "note": "per-target details"
+        }
+      ],
+      "companion_type": "Required + Recommended",
+      "schema_status": "Existing + Proposed",
+      "tier": "Tier 1",
+      "notes": "Adds the key 'predictors of yield' bundle (CT bronchus sign, TiL, CTBD) and target-level details.",
+      "tier_number": 1
+    },
+    {
+      "id": "rule_024_206c7fb3b3",
+      "domain": "Navigation / Peripheral",
+      "layer": "Entry schema (IPRegistryV3)",
+      "trigger": {
+        "raw": "clinical_context.lesion_characteristics.size_long_axis_mm OR size_short_axis_mm",
+        "expression": {
+          "op": "or",
+          "args": [
+            {
+              "op": "exists",
+              "path": "clinical_context.lesion_characteristics.size_long_axis_mm"
+            },
+            {
+              "op": "exists",
+              "path": "clinical_context.lesion_characteristics.size_short_axis_mm"
+            }
+          ]
+        }
+      },
+      "condition_text": "Lesion size recorded",
+      "companions": [
+        {
+          "raw": "clinical_context.lesion_characteristics.morphology",
+          "paths": [
+            "clinical_context.lesion_characteristics.morphology"
+          ]
+        },
+        {
+          "raw": "clinical_context.lesion_characteristics.location_text",
+          "paths": [
+            "clinical_context.lesion_characteristics.location_text"
+          ]
+        }
+      ],
+      "companion_type": "Recommended",
+      "schema_status": "Existing",
+      "tier": "Tier 0",
+      "notes": "Size should be paired with morphology and anatomic location.",
+      "tier_number": 0
+    },
+    {
+      "id": "rule_025_73ddd86f53",
+      "domain": "Navigation / Peripheral",
+      "layer": "Entry schema (IPRegistryV3)",
+      "trigger": {
+        "raw": "radial_ebus_performed",
+        "expression": {
+          "op": "exists",
+          "path": "radial_ebus_performed"
+        }
+      },
+      "condition_text": "radial_ebus_performed=True",
+      "companions": [
+        {
+          "raw": "radial_ebus_findings[*]",
+          "paths": [
+            "radial_ebus_findings[*]"
+          ]
+        },
+        {
+          "raw": "(new) radial_ebus.view_classification (concentric/eccentric/absent)",
+          "paths": [
+            "radial_ebus.view_classification"
+          ],
+          "proposed": true,
+          "note": "concentric/eccentric/absent"
+        },
+        {
+          "raw": "(new) radial_ebus.tool_in_lesion_confirmed (Y/N)",
+          "paths": [
+            "radial_ebus.tool_in_lesion_confirmed"
+          ],
+          "proposed": true,
+          "note": "Y/N"
+        }
+      ],
+      "companion_type": "Recommended",
+      "schema_status": "Existing + Proposed",
+      "tier": "Tier 1",
+      "notes": "Radial view classification strongly predicts yield; tool-in-lesion is an interpretability metric.",
+      "tier_number": 1
+    },
+    {
+      "id": "rule_026_15f1a6e615",
+      "domain": "Navigation / Peripheral",
+      "layer": "Extraction schema (RegistryRecord.granular_data)",
+      "trigger": {
+        "raw": "granular_data.navigation_targets[*].target_location_text",
+        "expression": {
+          "op": "exists",
+          "path": "granular_data.navigation_targets[*].target_location_text"
+        }
+      },
+      "condition_text": "A navigation target is recorded",
+      "companions": [
+        {
+          "raw": "granular_data.navigation_targets[*].target_number",
+          "paths": [
+            "granular_data.navigation_targets[*].target_number"
+          ]
+        },
+        {
+          "raw": "granular_data.navigation_targets[*].fiducial_marker_placed",
+          "paths": [
+            "granular_data.navigation_targets[*].fiducial_marker_placed"
+          ]
+        },
+        {
+          "raw": "(new) granular_data.navigation_targets[*].ct_bronchus_sign",
+          "paths": [
+            "granular_data.navigation_targets[*].ct_bronchus_sign"
+          ],
+          "proposed": true
+        },
+        {
+          "raw": "(new) granular_data.navigation_targets[*].radial_view",
+          "paths": [
+            "granular_data.navigation_targets[*].radial_view"
+          ],
+          "proposed": true
+        },
+        {
+          "raw": "(new) granular_data.navigation_targets[*].tool_in_lesion_method",
+          "paths": [
+            "granular_data.navigation_targets[*].tool_in_lesion_method"
+          ],
+          "proposed": true
+        },
+        {
+          "raw": "(new) granular_data.navigation_targets[*].ct_to_body_divergence",
+          "paths": [
+            "granular_data.navigation_targets[*].ct_to_body_divergence"
+          ],
+          "proposed": true
+        },
+        {
+          "raw": "(new) granular_data.navigation_targets[*].sampling_modalities",
+          "paths": [
+            "granular_data.navigation_targets[*].sampling_modalities"
+          ],
+          "proposed": true
+        },
+        {
+          "raw": "(new) granular_data.navigation_targets[*].final_pathology",
+          "paths": [
+            "granular_data.navigation_targets[*].final_pathology"
+          ],
+          "proposed": true
+        }
+      ],
+      "companion_type": "Recommended",
+      "schema_status": "Existing + Proposed",
+      "tier": "Tier 1",
+      "notes": "Granular navigation_targets already exists; add predictors-of-yield and outcome linkage at the per-target level.",
+      "tier_number": 1
+    },
+    {
+      "id": "rule_027_8d6888debb",
+      "domain": "BAL / Airway Sampling",
+      "layer": "Entry schema (IPRegistryV3)",
+      "trigger": {
+        "raw": "bal_performed",
+        "expression": {
+          "op": "exists",
+          "path": "bal_performed"
+        }
+      },
+      "condition_text": "bal_performed=True",
+      "companions": [
+        {
+          "raw": "bal_sites[*]",
+          "paths": [
+            "bal_sites[*]"
+          ]
+        },
+        {
+          "raw": "bal_volume_ml",
+          "paths": [
+            "bal_volume_ml"
+          ]
+        },
+        {
+          "raw": "bal_return_ml",
+          "paths": [
+            "bal_return_ml"
+          ]
+        }
+      ],
+      "companion_type": "Required + Recommended",
+      "schema_status": "Existing",
+      "tier": "Tier 0",
+      "notes": "Site + instilled/return volumes are the minimal quantitative BAL bundle.",
+      "tier_number": 0
+    },
+    {
+      "id": "rule_028_f27520df5a",
+      "domain": "BAL / Airway Sampling",
+      "layer": "Entry schema (IPRegistryV3)",
+      "trigger": {
+        "raw": "bal_volume_ml",
+        "expression": {
+          "op": "exists",
+          "path": "bal_volume_ml"
+        }
+      },
+      "condition_text": "BAL volume instilled is recorded",
+      "companions": [
+        {
+          "raw": "bal_return_ml",
+          "paths": [
+            "bal_return_ml"
+          ]
+        }
+      ],
+      "companion_type": "Recommended",
+      "schema_status": "Existing",
+      "tier": "Tier 0",
+      "notes": "Return volume supports quality metrics and procedural context.",
+      "tier_number": 0
+    },
+    {
+      "id": "rule_029_2b1c599f5a",
+      "domain": "BAL / Airway Sampling",
+      "layer": "Entry schema (IPRegistryV3)",
+      "trigger": {
+        "raw": "bal_sites[*]",
+        "expression": {
+          "op": "exists",
+          "path": "bal_sites[*]"
+        }
+      },
+      "condition_text": "BAL site is entered",
+      "companions": [
+        {
+          "raw": "bal_sites[*].laterality",
+          "paths": [
+            "bal_sites[*].laterality"
+          ]
+        },
+        {
+          "raw": "bal_sites[*].segment",
+          "paths": [
+            "bal_sites[*].segment"
+          ]
+        }
+      ],
+      "companion_type": "Recommended",
+      "schema_status": "Existing",
+      "tier": "Tier 2",
+      "notes": "More specific localization improves interpretability for infection/ILD workups.",
+      "tier_number": 2
+    },
+    {
+      "id": "rule_030_fac7a3e6db",
+      "domain": "Central Airway Obstruction",
+      "layer": "Entry schema (IPRegistryV3)",
+      "trigger": {
+        "raw": "dilation_performed",
+        "expression": {
+          "op": "exists",
+          "path": "dilation_performed"
+        }
+      },
+      "condition_text": "dilation_performed=True",
+      "companions": [
+        {
+          "raw": "dilation_sites[*]",
+          "paths": [
+            "dilation_sites[*]"
+          ]
+        },
+        {
+          "raw": "dilation_technique",
+          "paths": [
+            "dilation_technique"
+          ]
+        },
+        {
+          "raw": "clinical_context.central_airway_obstruction.obstruction_percent_pre",
+          "paths": [
+            "clinical_context.central_airway_obstruction.obstruction_percent_pre"
+          ]
+        },
+        {
+          "raw": "clinical_context.central_airway_obstruction.obstruction_percent_post",
+          "paths": [
+            "clinical_context.central_airway_obstruction.obstruction_percent_post"
+          ]
+        }
+      ],
+      "companion_type": "Required + Recommended",
+      "schema_status": "Existing",
+      "tier": "Tier 0",
+      "notes": "Pair intervention with pre/post obstruction metrics to quantify effect.",
+      "tier_number": 0
+    },
+    {
+      "id": "rule_031_fceef01bae",
+      "domain": "Central Airway Obstruction",
+      "layer": "Entry schema (IPRegistryV3)",
+      "trigger": {
+        "raw": "stent_placed",
+        "expression": {
+          "op": "exists",
+          "path": "stent_placed"
+        }
+      },
+      "condition_text": "stent_placed=True",
+      "companions": [
+        {
+          "raw": "stents[*].location",
+          "paths": [
+            "stents[*].location"
+          ]
+        },
+        {
+          "raw": "stents[*].action_type",
+          "paths": [
+            "stents[*].action_type"
+          ]
+        },
+        {
+          "raw": "stents[*].type",
+          "paths": [
+            "stents[*].type"
+          ]
+        },
+        {
+          "raw": "stents[*].subtype",
+          "paths": [
+            "stents[*].subtype"
+          ]
+        },
+        {
+          "raw": "stents[*].size",
+          "paths": [
+            "stents[*].size"
+          ]
+        },
+        {
+          "raw": "stents[*].manufacturer",
+          "paths": [
+            "stents[*].manufacturer"
+          ]
+        },
+        {
+          "raw": "stents[*].deployment_successful",
+          "paths": [
+            "stents[*].deployment_successful"
+          ]
+        },
+        {
+          "raw": "stents[*].complications",
+          "paths": [
+            "stents[*].complications"
+          ]
+        },
+        {
+          "raw": "clinical_context.central_airway_obstruction.obstruction_percent_pre",
+          "paths": [
+            "clinical_context.central_airway_obstruction.obstruction_percent_pre"
+          ]
+        },
+        {
+          "raw": "clinical_context.central_airway_obstruction.obstruction_percent_post",
+          "paths": [
+            "clinical_context.central_airway_obstruction.obstruction_percent_post"
+          ]
+        }
+      ],
+      "companion_type": "Required + Recommended",
+      "schema_status": "Existing",
+      "tier": "Tier 0",
+      "notes": "Stents should always be paired with structured stent details + pre/post obstruction where available.",
+      "tier_number": 0
+    },
+    {
+      "id": "rule_032_baa72b4223",
+      "domain": "Central Airway Obstruction",
+      "layer": "Entry schema (IPRegistryV3)",
+      "trigger": {
+        "raw": "ablation_performed",
+        "expression": {
+          "op": "exists",
+          "path": "ablation_performed"
+        }
+      },
+      "condition_text": "ablation_performed=True",
+      "companions": [
+        {
+          "raw": "ablation_technique",
+          "paths": [
+            "ablation_technique"
+          ]
+        },
+        {
+          "raw": "ablation_sites[*]",
+          "paths": [
+            "ablation_sites[*]"
+          ]
+        },
+        {
+          "raw": "(new) ablation.settings (wattage/flow/argon/laser power)",
+          "paths": [
+            "ablation.settings"
+          ],
+          "proposed": true,
+          "note": "wattage/flow/argon/laser power"
+        },
+        {
+          "raw": "clinical_context.central_airway_obstruction.obstruction_percent_pre/post",
+          "paths": [
+            "clinical_context.central_airway_obstruction.obstruction_percent_pre/post"
+          ]
+        }
+      ],
+      "companion_type": "Required + Recommended",
+      "schema_status": "Existing + Proposed",
+      "tier": "Tier 2",
+      "notes": "Ablation is not interpretable without modality + settings and effect on lumen.",
+      "tier_number": 2
+    },
+    {
+      "id": "rule_033_01c82324a8",
+      "domain": "Central Airway Obstruction",
+      "layer": "Extraction schema (RegistryRecord.granular_data)",
+      "trigger": {
+        "raw": "granular_data.cao_interventions_detail[*].location_text",
+        "expression": {
+          "op": "exists",
+          "path": "granular_data.cao_interventions_detail[*].location_text"
+        }
+      },
+      "condition_text": "A CAO intervention location is recorded",
+      "companions": [
+        {
+          "raw": "granular_data.cao_interventions_detail[*].modalities_applied",
+          "paths": [
+            "granular_data.cao_interventions_detail[*].modalities_applied"
+          ]
+        },
+        {
+          "raw": "(new) granular_data.cao_interventions_detail[*].pre_obstruction_percent",
+          "paths": [
+            "granular_data.cao_interventions_detail[*].pre_obstruction_percent"
+          ],
+          "proposed": true
+        },
+        {
+          "raw": "(new) granular_data.cao_interventions_detail[*].post_obstruction_percent",
+          "paths": [
+            "granular_data.cao_interventions_detail[*].post_obstruction_percent"
+          ],
+          "proposed": true
+        },
+        {
+          "raw": "(new) granular_data.cao_interventions_detail[*].stent_size",
+          "paths": [
+            "granular_data.cao_interventions_detail[*].stent_size"
+          ],
+          "proposed": true
+        },
+        {
+          "raw": "(new) granular_data.cao_interventions_detail[*].ablation_settings",
+          "paths": [
+            "granular_data.cao_interventions_detail[*].ablation_settings"
+          ],
+          "proposed": true
+        }
+      ],
+      "companion_type": "Recommended",
+      "schema_status": "Existing + Proposed",
+      "tier": "Tier 2",
+      "notes": "Granular CAO interventions list exists; add standardized pre/post quantification and device/settings for benchmarking.",
+      "tier_number": 2
+    },
+    {
+      "id": "rule_034_e2dad41783",
+      "domain": "BLVR / Endobronchial Valves",
+      "layer": "Entry schema (IPRegistryV3)",
+      "trigger": {
+        "raw": "blvr_performed",
+        "expression": {
+          "op": "exists",
+          "path": "blvr_performed"
+        }
+      },
+      "condition_text": "blvr_performed=True",
+      "companions": [
+        {
+          "raw": "blvr_target_lobe",
+          "paths": [
+            "blvr_target_lobe"
+          ]
+        },
+        {
+          "raw": "blvr_valves",
+          "paths": [
+            "blvr_valves"
+          ]
+        },
+        {
+          "raw": "blvr_chartis_performed",
+          "paths": [
+            "blvr_chartis_performed"
+          ]
+        },
+        {
+          "raw": "blvr_cv_result (if chartis_performed)",
+          "paths": [
+            "blvr_cv_result"
+          ],
+          "note": "if chartis_performed"
+        },
+        {
+          "raw": "(new) blvr.valve_type (Zephyr/Spiration/etc)",
+          "paths": [
+            "blvr.valve_type"
+          ],
+          "proposed": true,
+          "note": "Zephyr/Spiration/etc"
+        },
+        {
+          "raw": "(new) blvr.segments_treated",
+          "paths": [
+            "blvr.segments_treated"
+          ],
+          "proposed": true
+        },
+        {
+          "raw": "(new) blvr.valve_sizes",
+          "paths": [
+            "blvr.valve_sizes"
+          ],
+          "proposed": true
+        },
+        {
+          "raw": "(new) complications[*] (pneumothorax etc)",
+          "paths": [
+            "complications[*]"
+          ],
+          "proposed": true,
+          "note": "pneumothorax etc"
+        }
+      ],
+      "companion_type": "Required + Recommended",
+      "schema_status": "Existing + Proposed",
+      "tier": "Tier 2",
+      "notes": "Valve details are necessary for comparative studies and understanding pneumothorax risk.",
+      "tier_number": 2
+    },
+    {
+      "id": "rule_035_0ea1c0aefe",
+      "domain": "BLVR / Endobronchial Valves",
+      "layer": "Entry schema (IPRegistryV3)",
+      "trigger": {
+        "raw": "blvr_chartis_performed",
+        "expression": {
+          "op": "exists",
+          "path": "blvr_chartis_performed"
+        }
+      },
+      "condition_text": "Chartis performed",
+      "companions": [
+        {
+          "raw": "blvr_cv_result",
+          "paths": [
+            "blvr_cv_result"
+          ]
+        }
+      ],
+      "companion_type": "Required",
+      "schema_status": "Existing",
+      "tier": "Tier 0",
+      "notes": "Collateral ventilation result is uninterpretable without CV result.",
+      "tier_number": 0
+    },
+    {
+      "id": "rule_036_54421bf189",
+      "domain": "Balloon Occlusion / Blocker",
+      "layer": "Entry schema (IPRegistryV3)",
+      "trigger": {
+        "raw": "balloon_occlusion.performed",
+        "expression": {
+          "op": "exists",
+          "path": "balloon_occlusion.performed"
+        }
+      },
+      "condition_text": "balloon_occlusion.performed=True",
+      "companions": [
+        {
+          "raw": "balloon_occlusion.occlusion_location",
+          "paths": [
+            "balloon_occlusion.occlusion_location"
+          ]
+        },
+        {
+          "raw": "balloon_occlusion.air_leak_result",
+          "paths": [
+            "balloon_occlusion.air_leak_result"
+          ]
+        }
+      ],
+      "companion_type": "Required",
+      "schema_status": "Existing",
+      "tier": "Tier 0",
+      "notes": "Minimal bundle for air leak localization workflows.",
+      "tier_number": 0
+    },
+    {
+      "id": "rule_037_990e5fbcd7",
+      "domain": "Balloon Occlusion / Blocker",
+      "layer": "Entry schema (IPRegistryV3)",
+      "trigger": {
+        "raw": "balloon_occlusion.performed",
+        "expression": {
+          "op": "exists",
+          "path": "balloon_occlusion.performed"
+        }
+      },
+      "condition_text": "Used for bleeding control during biopsy",
+      "companions": [
+        {
+          "raw": "(new) bleeding.nashville_grade",
+          "paths": [
+            "bleeding.nashville_grade"
+          ],
+          "proposed": true
+        },
+        {
+          "raw": "(new) bleeding.hemostasis_interventions",
+          "paths": [
+            "bleeding.hemostasis_interventions"
+          ],
+          "proposed": true
+        }
+      ],
+      "companion_type": "Recommended",
+      "schema_status": "Proposed",
+      "tier": "Tier 1",
+      "notes": "Blocker use maps to higher Nashville bleeding grade.",
+      "tier_number": 1
+    },
+    {
+      "id": "rule_038_f75e215b2d",
+      "domain": "Findings",
+      "layer": "Entry schema (IPRegistryV3)",
+      "trigger": {
+        "raw": "findings[*]",
+        "expression": {
+          "op": "exists",
+          "path": "findings[*]"
+        }
+      },
+      "condition_text": "A finding is recorded",
+      "companions": [
+        {
+          "raw": "findings[*].category",
+          "paths": [
+            "findings[*].category"
+          ]
+        },
+        {
+          "raw": "findings[*].description",
+          "paths": [
+            "findings[*].description"
+          ]
+        },
+        {
+          "raw": "findings[*].location",
+          "paths": [
+            "findings[*].location"
+          ]
+        },
+        {
+          "raw": "findings[*].severity",
+          "paths": [
+            "findings[*].severity"
+          ]
+        },
+        {
+          "raw": "findings[*].action_taken",
+          "paths": [
+            "findings[*].action_taken"
+          ]
+        }
+      ],
+      "companion_type": "Required",
+      "schema_status": "Existing",
+      "tier": "Tier 0",
+      "notes": "A finding without category/description/location has limited utility.",
+      "tier_number": 0
+    },
+    {
+      "id": "rule_039_57720fe417",
+      "domain": "Findings",
+      "layer": "Entry schema (IPRegistryV3)",
+      "trigger": {
+        "raw": "findings[*].action_taken contains 'biopsy' OR biopsy performed elsewhere",
+        "expression": {
+          "op": "or",
+          "args": [
+            {
+              "op": "contains",
+              "path": "findings[*].action_taken",
+              "value": "biopsy"
+            },
+            {
+              "op": "raw",
+              "text": "biopsy performed elsewhere"
+            }
+          ]
+        }
+      },
+      "condition_text": "Finding led to sampling or therapy",
+      "companions": [
+        {
+          "raw": "events[*] (corresponding biopsy/therapy event)",
+          "paths": [
+            "events[*]"
+          ],
+          "note": "corresponding biopsy/therapy event"
+        },
+        {
+          "raw": "ebus_stations/tblb_sites/etc",
+          "paths": [
+            "ebus_stations/tblb_sites/etc"
+          ]
+        }
+      ],
+      "companion_type": "Recommended",
+      "schema_status": "Existing/Proposed",
+      "tier": "Tier 3",
+      "notes": "Linking findings to actions improves traceability.",
+      "tier_number": 3
+    },
+    {
+      "id": "rule_040_45c5c0adb3",
+      "domain": "Complications",
+      "layer": "Entry schema (IPRegistryV3)",
+      "trigger": {
+        "raw": "complications[*]",
+        "expression": {
+          "op": "exists",
+          "path": "complications[*]"
+        }
+      },
+      "condition_text": "Any complication is entered",
+      "companions": [
+        {
+          "raw": "any_complications (derived=True)",
+          "paths": [
+            "any_complications"
+          ],
+          "derived": true,
+          "note": "derived=True"
+        },
+        {
+          "raw": "complications[*].type",
+          "paths": [
+            "complications[*].type"
+          ]
+        },
+        {
+          "raw": "complications[*].severity",
+          "paths": [
+            "complications[*].severity"
+          ]
+        },
+        {
+          "raw": "complications[*].onset",
+          "paths": [
+            "complications[*].onset"
+          ]
+        },
+        {
+          "raw": "complications[*].intervention",
+          "paths": [
+            "complications[*].intervention"
+          ]
+        },
+        {
+          "raw": "complications[*].related_to",
+          "paths": [
+            "complications[*].related_to"
+          ]
+        },
+        {
+          "raw": "complications[*].resolved",
+          "paths": [
+            "complications[*].resolved"
+          ]
+        }
+      ],
+      "companion_type": "Required",
+      "schema_status": "Existing",
+      "tier": "Tier 0",
+      "notes": "Complication objects are structured; ensure severity + intervention are captured.",
+      "tier_number": 0
+    },
+    {
+      "id": "rule_041_564a874063",
+      "domain": "Complications",
+      "layer": "Entry schema (IPRegistryV3)",
+      "trigger": {
+        "raw": "any_complications",
+        "expression": {
+          "op": "exists",
+          "path": "any_complications"
+        }
+      },
+      "condition_text": "any_complications=True",
+      "companions": [
+        {
+          "raw": "complications[*] (must not be empty)",
+          "paths": [
+            "complications[*]"
+          ],
+          "note": "must not be empty"
+        }
+      ],
+      "companion_type": "Required",
+      "schema_status": "Existing",
+      "tier": "Tier 0",
+      "notes": "Consistency check.",
+      "tier_number": 0
+    },
+    {
+      "id": "rule_042_ab637a1d5c",
+      "domain": "Safety & Quality",
+      "layer": "Entry schema (IPRegistryV3)",
+      "trigger": {
+        "raw": "complications[*].type='bleeding'",
+        "expression": {
+          "op": "eq",
+          "path": "complications[*].type",
+          "value": "bleeding"
+        }
+      },
+      "condition_text": "Bleeding complication recorded",
+      "companions": [
+        {
+          "raw": "complications[*].severity",
+          "paths": [
+            "complications[*].severity"
+          ]
+        },
+        {
+          "raw": "complications[*].intervention",
+          "paths": [
+            "complications[*].intervention"
+          ]
+        },
+        {
+          "raw": "(new) bleeding.nashville_grade (0-4)",
+          "paths": [
+            "bleeding.nashville_grade"
+          ],
+          "proposed": true,
+          "note": "0-4"
+        },
+        {
+          "raw": "(new) bleeding.hemostasis_methods (suction, wedge, cold saline, topical epi, APC, blocker, transfusion)",
+          "paths": [
+            "bleeding.hemostasis_methods"
+          ],
+          "proposed": true,
+          "note": "suction, wedge, cold saline, topical epi, APC, blocker, transfusion"
+        }
+      ],
+      "companion_type": "Required + Recommended",
+      "schema_status": "Existing + Proposed",
+      "tier": "Tier 1",
+      "notes": "Binary bleeding is insufficient; add standardized Nashville bleeding severity grading mapped from intervention.",
+      "tier_number": 1
+    },
+    {
+      "id": "rule_043_1c95a75bdf",
+      "domain": "Safety & Quality",
+      "layer": "Entry schema (IPRegistryV3)",
+      "trigger": {
+        "raw": "complications[*].type='pneumothorax'",
+        "expression": {
+          "op": "eq",
+          "path": "complications[*].type",
+          "value": "pneumothorax"
+        }
+      },
+      "condition_text": "Pneumothorax recorded",
+      "companions": [
+        {
+          "raw": "complications[*].severity",
+          "paths": [
+            "complications[*].severity"
+          ]
+        },
+        {
+          "raw": "complications[*].intervention",
+          "paths": [
+            "complications[*].intervention"
+          ]
+        },
+        {
+          "raw": "(new) pneumothorax.intervention_level (observation/aspiration/chest_tube/surgery)",
+          "paths": [
+            "pneumothorax.intervention_level"
+          ],
+          "proposed": true,
+          "note": "observation/aspiration/chest_tube/surgery"
+        }
+      ],
+      "companion_type": "Required + Recommended",
+      "schema_status": "Existing + Proposed",
+      "tier": "Tier 1",
+      "notes": "Differentiate clinically insignificant vs major pneumothorax for benchmarking.",
+      "tier_number": 1
+    },
+    {
+      "id": "rule_044_665215392a",
+      "domain": "Safety & Quality",
+      "layer": "Entry schema (IPRegistryV3)",
+      "trigger": {
+        "raw": "complications[*].severity='severe' OR outcome.procedure_success_status='aborted'",
+        "expression": {
+          "op": "or",
+          "args": [
+            {
+              "op": "eq",
+              "path": "complications[*].severity",
+              "value": "severe"
+            },
+            {
+              "op": "eq",
+              "path": "outcome.procedure_success_status",
+              "value": "aborted"
+            }
+          ]
+        }
+      },
+      "condition_text": "Severe complication or aborted procedure",
+      "companions": [
+        {
+          "raw": "(new) escalation.unplanned_icu_admission",
+          "paths": [
+            "escalation.unplanned_icu_admission"
+          ],
+          "proposed": true
+        },
+        {
+          "raw": "(new) escalation.unplanned_intubation",
+          "paths": [
+            "escalation.unplanned_intubation"
+          ],
+          "proposed": true
+        },
+        {
+          "raw": "(new) escalation.premature_termination_of_procedure",
+          "paths": [
+            "escalation.premature_termination_of_procedure"
+          ],
+          "proposed": true
+        }
+      ],
+      "companion_type": "Recommended",
+      "schema_status": "Proposed",
+      "tier": "Tier 1",
+      "notes": "Captures escalation of care; useful for safety reporting.",
+      "tier_number": 1
+    },
+    {
+      "id": "rule_045_938c26b225",
+      "domain": "Outcome",
+      "layer": "Entry schema (IPRegistryV3)",
+      "trigger": {
+        "raw": "outcome.aborted",
+        "expression": {
+          "op": "exists",
+          "path": "outcome.aborted"
+        }
+      },
+      "condition_text": "outcome.aborted=True OR procedure_success_status='aborted'",
+      "companions": [
+        {
+          "raw": "outcome.abort_reason / outcome.aborted_reason",
+          "paths": [
+            "outcome.abort_reason",
+            "outcome.aborted_reason"
+          ]
+        },
+        {
+          "raw": "outcome.complication_intervention",
+          "paths": [
+            "outcome.complication_intervention"
+          ]
+        },
+        {
+          "raw": "outcome.complication_duration",
+          "paths": [
+            "outcome.complication_duration"
+          ]
+        }
+      ],
+      "companion_type": "Required",
+      "schema_status": "Existing",
+      "tier": "Tier 0",
+      "notes": "Aborted procedures require reason documentation.",
+      "tier_number": 0
+    },
+    {
+      "id": "rule_046_d8d4ed8999",
+      "domain": "Outcome",
+      "layer": "Entry schema (IPRegistryV3)",
+      "trigger": {
+        "raw": "outcome.follow_up_planned",
+        "expression": {
+          "op": "exists",
+          "path": "outcome.follow_up_planned"
+        }
+      },
+      "condition_text": "follow_up_planned=True",
+      "companions": [
+        {
+          "raw": "outcome.follow_up_notes",
+          "paths": [
+            "outcome.follow_up_notes"
+          ]
+        },
+        {
+          "raw": "recommendations",
+          "paths": [
+            "recommendations"
+          ]
+        }
+      ],
+      "companion_type": "Required + Recommended",
+      "schema_status": "Existing",
+      "tier": "Tier 0",
+      "notes": "Follow-up plan should be captured in either structured notes or recommendations.",
+      "tier_number": 0
+    },
+    {
+      "id": "rule_047_324e3b3f20",
+      "domain": "Disposition",
+      "layer": "Entry schema (IPRegistryV3)",
+      "trigger": {
+        "raw": "disposition",
+        "expression": {
+          "op": "exists",
+          "path": "disposition"
+        }
+      },
+      "condition_text": "disposition is set to 'observation' or 'admit'",
+      "companions": [
+        {
+          "raw": "length_of_stay_hours",
+          "paths": [
+            "length_of_stay_hours"
+          ]
+        },
+        {
+          "raw": "(new) disposition_reason",
+          "paths": [
+            "disposition_reason"
+          ],
+          "proposed": true
+        },
+        {
+          "raw": "(new) icu_admission",
+          "paths": [
+            "icu_admission"
+          ],
+          "proposed": true
+        }
+      ],
+      "companion_type": "Recommended",
+      "schema_status": "Existing + Proposed",
+      "tier": "Tier 2",
+      "notes": "LOS supports resource utilization; reason clarifies planned vs unplanned admission.",
+      "tier_number": 2
+    },
+    {
+      "id": "rule_048_4084dbcc37",
+      "domain": "Registry Procedure Flags",
+      "layer": "Extraction schema (procedures_performed)",
+      "trigger": {
+        "raw": "procedures_performed.diagnostic_bronchoscopy.performed",
+        "expression": {
+          "op": "exists",
+          "path": "procedures_performed.diagnostic_bronchoscopy.performed"
+        }
+      },
+      "condition_text": "diagnostic_bronchoscopy performed=True",
+      "companions": [
+        {
+          "raw": "procedure.procedure_type",
+          "paths": [
+            "procedure.procedure_type"
+          ]
+        },
+        {
+          "raw": "sedation.type",
+          "paths": [
+            "sedation.type"
+          ]
+        },
+        {
+          "raw": "(new) bronchoscopy.scope_type (flexible/rigid)",
+          "paths": [
+            "bronchoscopy.scope_type"
+          ],
+          "proposed": true,
+          "note": "flexible/rigid"
+        },
+        {
+          "raw": "(new) bronchoscopy.airway_route (oral/nasal/trach/ett)",
+          "paths": [
+            "bronchoscopy.airway_route"
+          ],
+          "proposed": true,
+          "note": "oral/nasal/trach/ett"
+        },
+        {
+          "raw": "findings[*]",
+          "paths": [
+            "findings[*]"
+          ]
+        },
+        {
+          "raw": "complications[*]",
+          "paths": [
+            "complications[*]"
+          ]
+        },
+        {
+          "raw": "outcome.*",
+          "paths": [
+            "outcome.*"
+          ]
+        }
+      ],
+      "companion_type": "Recommended",
+      "schema_status": "Existing (flag) + Proposed (details)",
+      "tier": "Tier 0-2",
+      "notes": "Baseline diagnostic bronchoscopy context; route and scope type matter for downstream interventions.",
+      "tier_number": 0
+    },
+    {
+      "id": "rule_049_9143706700",
+      "domain": "Registry Procedure Flags",
+      "layer": "Extraction schema (procedures_performed)",
+      "trigger": {
+        "raw": "procedures_performed.bal.performed",
+        "expression": {
+          "op": "exists",
+          "path": "procedures_performed.bal.performed"
+        }
+      },
+      "condition_text": "bal performed=True",
+      "companions": [
+        {
+          "raw": "bal_performed",
+          "paths": [
+            "bal_performed"
+          ]
+        },
+        {
+          "raw": "bal_sites[*]",
+          "paths": [
+            "bal_sites[*]"
+          ]
+        },
+        {
+          "raw": "bal_volume_ml",
+          "paths": [
+            "bal_volume_ml"
+          ]
+        },
+        {
+          "raw": "bal_return_ml",
+          "paths": [
+            "bal_return_ml"
+          ]
+        },
+        {
+          "raw": "(new) bal.specimen_tests (culture, cytology, differential, AFB, fungal, etc)",
+          "paths": [
+            "bal.specimen_tests"
+          ],
+          "proposed": true,
+          "note": "culture, cytology, differential, AFB, fungal, etc"
+        },
+        {
+          "raw": "complications[*] (hypoxia, bronchospasm)",
+          "paths": [
+            "complications[*]"
+          ],
+          "note": "hypoxia, bronchospasm"
+        },
+        {
+          "raw": "outcome.*",
+          "paths": [
+            "outcome.*"
+          ]
+        }
+      ],
+      "companion_type": "Recommended",
+      "schema_status": "Existing (flag) + Proposed (details)",
+      "tier": "Tier 0-1",
+      "notes": "Quantitative volumes + sites; tests ordered contextualize results.",
+      "tier_number": 0
+    },
+    {
+      "id": "rule_050_3a8f18c19f",
+      "domain": "Registry Procedure Flags",
+      "layer": "Extraction schema (procedures_performed)",
+      "trigger": {
+        "raw": "procedures_performed.bronchial_wash.performed",
+        "expression": {
+          "op": "exists",
+          "path": "procedures_performed.bronchial_wash.performed"
+        }
+      },
+      "condition_text": "bronchial_wash performed=True",
+      "companions": [
+        {
+          "raw": "(new) bronchial_wash.performed",
+          "paths": [
+            "bronchial_wash.performed"
+          ],
+          "proposed": true
+        },
+        {
+          "raw": "(new) bronchial_wash.sites[*]",
+          "paths": [
+            "bronchial_wash.sites[*]"
+          ],
+          "proposed": true
+        },
+        {
+          "raw": "(new) bronchial_wash.volume_ml",
+          "paths": [
+            "bronchial_wash.volume_ml"
+          ],
+          "proposed": true
+        },
+        {
+          "raw": "(new) bronchial_wash.specimen_tests",
+          "paths": [
+            "bronchial_wash.specimen_tests"
+          ],
+          "proposed": true
+        },
+        {
+          "raw": "complications[*]",
+          "paths": [
+            "complications[*]"
+          ]
+        }
+      ],
+      "companion_type": "Recommended",
+      "schema_status": "Existing (flag) + Proposed (details)",
+      "tier": "Tier 2",
+      "notes": "Separate from BAL; common in infection workups.",
+      "tier_number": 2
+    },
+    {
+      "id": "rule_051_c6b8fc4095",
+      "domain": "Registry Procedure Flags",
+      "layer": "Extraction schema (procedures_performed)",
+      "trigger": {
+        "raw": "procedures_performed.brushings.performed",
+        "expression": {
+          "op": "exists",
+          "path": "procedures_performed.brushings.performed"
+        }
+      },
+      "condition_text": "brushings performed=True",
+      "companions": [
+        {
+          "raw": "(new) brushings.performed",
+          "paths": [
+            "brushings.performed"
+          ],
+          "proposed": true
+        },
+        {
+          "raw": "(new) brushings.sites[*]",
+          "paths": [
+            "brushings.sites[*]"
+          ],
+          "proposed": true
+        },
+        {
+          "raw": "(new) brushings.number_of_passes",
+          "paths": [
+            "brushings.number_of_passes"
+          ],
+          "proposed": true
+        },
+        {
+          "raw": "(new) brushings.cytology_result",
+          "paths": [
+            "brushings.cytology_result"
+          ],
+          "proposed": true
+        },
+        {
+          "raw": "(new) brushings.pathology_result",
+          "paths": [
+            "brushings.pathology_result"
+          ],
+          "proposed": true
+        },
+        {
+          "raw": "complications[*] (bleeding)",
+          "paths": [
+            "complications[*]"
+          ],
+          "note": "bleeding"
+        }
+      ],
+      "companion_type": "Recommended",
+      "schema_status": "Existing (flag) + Proposed (details)",
+      "tier": "Tier 2",
+      "notes": "Cytology yield depends on number of brushings and site.",
+      "tier_number": 2
+    },
+    {
+      "id": "rule_052_7563e4f82c",
+      "domain": "Registry Procedure Flags",
+      "layer": "Extraction schema (procedures_performed)",
+      "trigger": {
+        "raw": "procedures_performed.endobronchial_biopsy.performed",
+        "expression": {
+          "op": "exists",
+          "path": "procedures_performed.endobronchial_biopsy.performed"
+        }
+      },
+      "condition_text": "endobronchial_biopsy performed=True",
+      "companions": [
+        {
+          "raw": "(new) endobronchial_biopsy.performed",
+          "paths": [
+            "endobronchial_biopsy.performed"
+          ],
+          "proposed": true
+        },
+        {
+          "raw": "(new) endobronchial_biopsy.lesion_location",
+          "paths": [
+            "endobronchial_biopsy.lesion_location"
+          ],
+          "proposed": true
+        },
+        {
+          "raw": "(new) endobronchial_biopsy.number_of_biopsies",
+          "paths": [
+            "endobronchial_biopsy.number_of_biopsies"
+          ],
+          "proposed": true
+        },
+        {
+          "raw": "(new) endobronchial_biopsy.tool (forceps/snare/cryobiopsy)",
+          "paths": [
+            "endobronchial_biopsy.tool"
+          ],
+          "proposed": true,
+          "note": "forceps/snare/cryobiopsy"
+        },
+        {
+          "raw": "(new) endobronchial_biopsy.rose_result (if done)",
+          "paths": [
+            "endobronchial_biopsy.rose_result"
+          ],
+          "proposed": true,
+          "note": "if done"
+        },
+        {
+          "raw": "(new) endobronchial_biopsy.pathology_result",
+          "paths": [
+            "endobronchial_biopsy.pathology_result"
+          ],
+          "proposed": true
+        },
+        {
+          "raw": "complications[*] (bleeding) + (new) bleeding.nashville_grade",
+          "paths": [
+            "complications[*] (bleeding) + (new) bleeding.nashville_grade"
+          ]
+        }
+      ],
+      "companion_type": "Recommended",
+      "schema_status": "Existing (flag) + Proposed (details)",
+      "tier": "Tier 1-2",
+      "notes": "Count + tool are basic quantification; bleeding grading is critical for endobronchial biopsies.",
+      "tier_number": 1
+    },
+    {
+      "id": "rule_053_9b2f5d9f19",
+      "domain": "Registry Procedure Flags",
+      "layer": "Extraction schema (procedures_performed)",
+      "trigger": {
+        "raw": "procedures_performed.tbna_conventional.performed",
+        "expression": {
+          "op": "exists",
+          "path": "procedures_performed.tbna_conventional.performed"
+        }
+      },
+      "condition_text": "tbna_conventional performed=True",
+      "companions": [
+        {
+          "raw": "(new) tbna.targets[*] (lesion or node)",
+          "paths": [
+            "tbna.targets[*]"
+          ],
+          "proposed": true,
+          "note": "lesion or node"
+        },
+        {
+          "raw": "(new) tbna.needle_gauge",
+          "paths": [
+            "tbna.needle_gauge"
+          ],
+          "proposed": true
+        },
+        {
+          "raw": "(new) tbna.passes_per_target",
+          "paths": [
+            "tbna.passes_per_target"
+          ],
+          "proposed": true
+        },
+        {
+          "raw": "(new) tbna.rose_result_per_target",
+          "paths": [
+            "tbna.rose_result_per_target"
+          ],
+          "proposed": true
+        },
+        {
+          "raw": "(new) tbna.final_pathology_per_target",
+          "paths": [
+            "tbna.final_pathology_per_target"
+          ],
+          "proposed": true
+        },
+        {
+          "raw": "complications[*] (bleeding/pneumothorax)",
+          "paths": [
+            "complications[*]"
+          ],
+          "note": "bleeding/pneumothorax"
+        }
+      ],
+      "companion_type": "Recommended",
+      "schema_status": "Existing (flag) + Proposed (details)",
+      "tier": "Tier 2",
+      "notes": "Conventional TBNA requires target + passes + needle gauge for interpretability.",
+      "tier_number": 2
+    },
+    {
+      "id": "rule_054_8ac74354dc",
+      "domain": "Registry Procedure Flags",
+      "layer": "Extraction schema (procedures_performed)",
+      "trigger": {
+        "raw": "procedures_performed.linear_ebus.performed",
+        "expression": {
+          "op": "exists",
+          "path": "procedures_performed.linear_ebus.performed"
+        }
+      },
+      "condition_text": "linear_ebus performed=True",
+      "companions": [
+        {
+          "raw": "ebus_performed",
+          "paths": [
+            "ebus_performed"
+          ]
+        },
+        {
+          "raw": "ebus_stations[*].location.lymph_node_station",
+          "paths": [
+            "ebus_stations[*].location.lymph_node_station"
+          ]
+        },
+        {
+          "raw": "ebus_stations[*].passes",
+          "paths": [
+            "ebus_stations[*].passes"
+          ]
+        },
+        {
+          "raw": "ebus_stations[*].rose_result",
+          "paths": [
+            "ebus_stations[*].rose_result"
+          ]
+        },
+        {
+          "raw": "ebus_stations[*].pathology_result",
+          "paths": [
+            "ebus_stations[*].pathology_result"
+          ]
+        },
+        {
+          "raw": "(new) ebus_stations[*].node_size_short_axis_mm",
+          "paths": [
+            "ebus_stations[*].node_size_short_axis_mm"
+          ],
+          "proposed": true
+        },
+        {
+          "raw": "(new) ebus_stations[*].node_morphology.*",
+          "paths": [
+            "ebus_stations[*].node_morphology.*"
+          ],
+          "proposed": true
+        },
+        {
+          "raw": "(new) ebus_stations[*].lymphocytes_present",
+          "paths": [
+            "ebus_stations[*].lymphocytes_present"
+          ],
+          "proposed": true
+        },
+        {
+          "raw": "(new) ebus_stations[*].needle_gauge",
+          "paths": [
+            "ebus_stations[*].needle_gauge"
+          ],
+          "proposed": true
+        },
+        {
+          "raw": "(new) ebus_stations[*].rose_concordance",
+          "paths": [
+            "ebus_stations[*].rose_concordance"
+          ],
+          "proposed": true
+        },
+        {
+          "raw": "complications[*] (bleeding) + (new) bleeding.nashville_grade",
+          "paths": [
+            "complications[*] (bleeding) + (new) bleeding.nashville_grade"
+          ]
+        }
+      ],
+      "companion_type": "Recommended",
+      "schema_status": "Existing (flag) + Proposed (details)",
+      "tier": "Tier 1",
+      "notes": "Per-station bundle is required for staging adequacy and quality metrics.",
+      "tier_number": 1
+    },
+    {
+      "id": "rule_055_38532dc8f6",
+      "domain": "Registry Procedure Flags",
+      "layer": "Extraction schema (procedures_performed)",
+      "trigger": {
+        "raw": "procedures_performed.radial_ebus.performed",
+        "expression": {
+          "op": "exists",
+          "path": "procedures_performed.radial_ebus.performed"
+        }
+      },
+      "condition_text": "radial_ebus performed=True",
+      "companions": [
+        {
+          "raw": "radial_ebus_performed",
+          "paths": [
+            "radial_ebus_performed"
+          ]
+        },
+        {
+          "raw": "radial_ebus_findings[*]",
+          "paths": [
+            "radial_ebus_findings[*]"
+          ]
+        },
+        {
+          "raw": "(new) radial_ebus.view_classification",
+          "paths": [
+            "radial_ebus.view_classification"
+          ],
+          "proposed": true
+        },
+        {
+          "raw": "(new) radial_ebus.tool_in_lesion_method",
+          "paths": [
+            "radial_ebus.tool_in_lesion_method"
+          ],
+          "proposed": true
+        }
+      ],
+      "companion_type": "Recommended",
+      "schema_status": "Existing (flag) + Proposed (details)",
+      "tier": "Tier 1",
+      "notes": "View classification and TiL are core predictors of yield.",
+      "tier_number": 1
+    },
+    {
+      "id": "rule_056_17c76fc6b6",
+      "domain": "Registry Procedure Flags",
+      "layer": "Extraction schema (procedures_performed)",
+      "trigger": {
+        "raw": "procedures_performed.navigational_bronchoscopy.performed",
+        "expression": {
+          "op": "exists",
+          "path": "procedures_performed.navigational_bronchoscopy.performed"
+        }
+      },
+      "condition_text": "navigational_bronchoscopy performed=True",
+      "companions": [
+        {
+          "raw": "navigation_performed",
+          "paths": [
+            "navigation_performed"
+          ]
+        },
+        {
+          "raw": "navigation_system",
+          "paths": [
+            "navigation_system"
+          ]
+        },
+        {
+          "raw": "navigation_target_reached",
+          "paths": [
+            "navigation_target_reached"
+          ]
+        },
+        {
+          "raw": "clinical_context.lesion_characteristics",
+          "paths": [
+            "clinical_context.lesion_characteristics"
+          ]
+        },
+        {
+          "raw": "(new) navigation.ct_bronchus_sign",
+          "paths": [
+            "navigation.ct_bronchus_sign"
+          ],
+          "proposed": true
+        },
+        {
+          "raw": "(new) navigation.ct_to_body_divergence",
+          "paths": [
+            "navigation.ct_to_body_divergence"
+          ],
+          "proposed": true
+        },
+        {
+          "raw": "(new) navigation.tool_in_lesion_confirmation_method",
+          "paths": [
+            "navigation.tool_in_lesion_confirmation_method"
+          ],
+          "proposed": true
+        },
+        {
+          "raw": "(new) navigation_targets[*] (location, size, sampling, outcome)",
+          "paths": [
+            "navigation_targets[*]"
+          ],
+          "proposed": true,
+          "note": "location, size, sampling, outcome"
+        },
+        {
+          "raw": "radial_ebus_performed (if used)",
+          "paths": [
+            "radial_ebus_performed"
+          ],
+          "note": "if used"
+        },
+        {
+          "raw": "complications[*] (pneumothorax, bleeding)",
+          "paths": [
+            "complications[*]"
+          ],
+          "note": "pneumothorax, bleeding"
+        }
+      ],
+      "companion_type": "Recommended",
+      "schema_status": "Existing (flag) + Proposed (details)",
+      "tier": "Tier 1",
+      "notes": "Core comparative effectiveness predictors (CT bronchus sign, CTBD, TiL).",
+      "tier_number": 1
+    },
+    {
+      "id": "rule_057_e368cc5a91",
+      "domain": "Registry Procedure Flags",
+      "layer": "Extraction schema (procedures_performed)",
+      "trigger": {
+        "raw": "procedures_performed.transbronchial_biopsy.performed",
+        "expression": {
+          "op": "exists",
+          "path": "procedures_performed.transbronchial_biopsy.performed"
+        }
+      },
+      "condition_text": "transbronchial_biopsy performed=True",
+      "companions": [
+        {
+          "raw": "tblb_performed",
+          "paths": [
+            "tblb_performed"
+          ]
+        },
+        {
+          "raw": "tblb_sites[*].location",
+          "paths": [
+            "tblb_sites[*].location"
+          ]
+        },
+        {
+          "raw": "tblb_sites[*].passes",
+          "paths": [
+            "tblb_sites[*].passes"
+          ]
+        },
+        {
+          "raw": "tblb_sites[*].pathology_result",
+          "paths": [
+            "tblb_sites[*].pathology_result"
+          ]
+        },
+        {
+          "raw": "(new) tblb.fluoroscopy_used",
+          "paths": [
+            "tblb.fluoroscopy_used"
+          ],
+          "proposed": true
+        },
+        {
+          "raw": "complications[*] (pneumothorax) + (new) pneumothorax.intervention_level",
+          "paths": [
+            "complications[*] (pneumothorax) + (new) pneumothorax.intervention_level"
+          ]
+        }
+      ],
+      "companion_type": "Recommended",
+      "schema_status": "Existing (flag) + Proposed (details)",
+      "tier": "Tier 0-1",
+      "notes": "TBLB requires site + count; pneumothorax intervention is a key outcome.",
+      "tier_number": 0
+    },
+    {
+      "id": "rule_058_baefd7191e",
+      "domain": "Registry Procedure Flags",
+      "layer": "Extraction schema (procedures_performed)",
+      "trigger": {
+        "raw": "procedures_performed.transbronchial_cryobiopsy.performed",
+        "expression": {
+          "op": "exists",
+          "path": "procedures_performed.transbronchial_cryobiopsy.performed"
+        }
+      },
+      "condition_text": "transbronchial_cryobiopsy performed=True",
+      "companions": [
+        {
+          "raw": "tblb_performed",
+          "paths": [
+            "tblb_performed"
+          ]
+        },
+        {
+          "raw": "tblb_technique='cryobiopsy'",
+          "paths": [
+            "tblb_technique='cryobiopsy'"
+          ]
+        },
+        {
+          "raw": "tblb_sites[*]",
+          "paths": [
+            "tblb_sites[*]"
+          ]
+        },
+        {
+          "raw": "(new) cryobiopsy.probe_size_mm",
+          "paths": [
+            "cryobiopsy.probe_size_mm"
+          ],
+          "proposed": true
+        },
+        {
+          "raw": "(new) cryobiopsy.freeze_time_seconds",
+          "paths": [
+            "cryobiopsy.freeze_time_seconds"
+          ],
+          "proposed": true
+        },
+        {
+          "raw": "(new) cryobiopsy.number_of_samples",
+          "paths": [
+            "cryobiopsy.number_of_samples"
+          ],
+          "proposed": true
+        },
+        {
+          "raw": "(new) cryobiopsy.airway_blockade_method (balloon/blocker/none)",
+          "paths": [
+            "cryobiopsy.airway_blockade_method"
+          ],
+          "proposed": true,
+          "note": "balloon/blocker/none"
+        },
+        {
+          "raw": "balloon_occlusion.* (if used)",
+          "paths": [
+            "balloon_occlusion.*"
+          ],
+          "note": "if used"
+        },
+        {
+          "raw": "complications[*] (bleeding/pneumothorax) + grading",
+          "paths": [
+            "complications[*] (bleeding/pneumothorax) + grading"
+          ]
+        }
+      ],
+      "companion_type": "Recommended",
+      "schema_status": "Existing (flag) + Proposed (details)",
+      "tier": "Tier 2",
+      "notes": "Cryobiopsy details are essential for safety comparison across centers.",
+      "tier_number": 2
+    },
+    {
+      "id": "rule_059_fd49f22eee",
+      "domain": "Registry Procedure Flags",
+      "layer": "Extraction schema (procedures_performed)",
+      "trigger": {
+        "raw": "procedures_performed.therapeutic_aspiration.performed",
+        "expression": {
+          "op": "exists",
+          "path": "procedures_performed.therapeutic_aspiration.performed"
+        }
+      },
+      "condition_text": "therapeutic_aspiration performed=True",
+      "companions": [
+        {
+          "raw": "(new) aspiration.indication (mucus plug/blood/pus)",
+          "paths": [
+            "aspiration.indication"
+          ],
+          "proposed": true,
+          "note": "mucus plug/blood/pus"
+        },
+        {
+          "raw": "(new) aspiration.volume_estimated_ml",
+          "paths": [
+            "aspiration.volume_estimated_ml"
+          ],
+          "proposed": true
+        },
+        {
+          "raw": "(new) aspiration.secretions_character (thick/purulent/bloody)",
+          "paths": [
+            "aspiration.secretions_character"
+          ],
+          "proposed": true,
+          "note": "thick/purulent/bloody"
+        },
+        {
+          "raw": "(new) aspiration.symptom_response",
+          "paths": [
+            "aspiration.symptom_response"
+          ],
+          "proposed": true
+        },
+        {
+          "raw": "complications[*]",
+          "paths": [
+            "complications[*]"
+          ]
+        }
+      ],
+      "companion_type": "Recommended",
+      "schema_status": "Existing (flag) + Proposed (details)",
+      "tier": "Tier 3",
+      "notes": "Useful for therapeutic bronchoscopy outcomes; often under-documented.",
+      "tier_number": 3
+    },
+    {
+      "id": "rule_060_7a75251a23",
+      "domain": "Registry Procedure Flags",
+      "layer": "Extraction schema (procedures_performed)",
+      "trigger": {
+        "raw": "procedures_performed.foreign_body_removal.performed",
+        "expression": {
+          "op": "exists",
+          "path": "procedures_performed.foreign_body_removal.performed"
+        }
+      },
+      "condition_text": "foreign_body_removal performed=True",
+      "companions": [
+        {
+          "raw": "(new) foreign_body.location",
+          "paths": [
+            "foreign_body.location"
+          ],
+          "proposed": true
+        },
+        {
+          "raw": "(new) foreign_body.object_type",
+          "paths": [
+            "foreign_body.object_type"
+          ],
+          "proposed": true
+        },
+        {
+          "raw": "(new) foreign_body.tools_used",
+          "paths": [
+            "foreign_body.tools_used"
+          ],
+          "proposed": true
+        },
+        {
+          "raw": "(new) foreign_body.removal_successful",
+          "paths": [
+            "foreign_body.removal_successful"
+          ],
+          "proposed": true
+        },
+        {
+          "raw": "complications[*]",
+          "paths": [
+            "complications[*]"
+          ]
+        }
+      ],
+      "companion_type": "Recommended",
+      "schema_status": "Existing (flag) + Proposed (details)",
+      "tier": "Tier 2",
+      "notes": "Object/type/tools are critical for case characterization.",
+      "tier_number": 2
+    },
+    {
+      "id": "rule_061_32b00a5feb",
+      "domain": "Registry Procedure Flags",
+      "layer": "Extraction schema (procedures_performed)",
+      "trigger": {
+        "raw": "procedures_performed.airway_dilation.performed",
+        "expression": {
+          "op": "exists",
+          "path": "procedures_performed.airway_dilation.performed"
+        }
+      },
+      "condition_text": "airway_dilation performed=True",
+      "companions": [
+        {
+          "raw": "dilation_performed",
+          "paths": [
+            "dilation_performed"
+          ]
+        },
+        {
+          "raw": "dilation_sites[*]",
+          "paths": [
+            "dilation_sites[*]"
+          ]
+        },
+        {
+          "raw": "dilation_technique",
+          "paths": [
+            "dilation_technique"
+          ]
+        },
+        {
+          "raw": "(new) dilation.balloon_diameter_mm",
+          "paths": [
+            "dilation.balloon_diameter_mm"
+          ],
+          "proposed": true
+        },
+        {
+          "raw": "(new) dilation.inflations_count",
+          "paths": [
+            "dilation.inflations_count"
+          ],
+          "proposed": true
+        },
+        {
+          "raw": "(new) dilation.max_pressure_atm",
+          "paths": [
+            "dilation.max_pressure_atm"
+          ],
+          "proposed": true
+        },
+        {
+          "raw": "clinical_context.central_airway_obstruction.obstruction_percent_pre/post",
+          "paths": [
+            "clinical_context.central_airway_obstruction.obstruction_percent_pre/post"
+          ]
+        },
+        {
+          "raw": "complications[*]",
+          "paths": [
+            "complications[*]"
+          ]
+        }
+      ],
+      "companion_type": "Recommended",
+      "schema_status": "Existing (flag) + Proposed (details)",
+      "tier": "Tier 0-2",
+      "notes": "Quantify technique and dose; pre/post obstruction supports effectiveness benchmarking.",
+      "tier_number": 0
+    },
+    {
+      "id": "rule_062_abce4faa97",
+      "domain": "Registry Procedure Flags",
+      "layer": "Extraction schema (procedures_performed)",
+      "trigger": {
+        "raw": "procedures_performed.airway_stent.performed",
+        "expression": {
+          "op": "exists",
+          "path": "procedures_performed.airway_stent.performed"
+        }
+      },
+      "condition_text": "airway_stent performed=True",
+      "companions": [
+        {
+          "raw": "stent_placed",
+          "paths": [
+            "stent_placed"
+          ]
+        },
+        {
+          "raw": "stents[*].location",
+          "paths": [
+            "stents[*].location"
+          ]
+        },
+        {
+          "raw": "stents[*].action_type",
+          "paths": [
+            "stents[*].action_type"
+          ]
+        },
+        {
+          "raw": "stents[*].type",
+          "paths": [
+            "stents[*].type"
+          ]
+        },
+        {
+          "raw": "stents[*].subtype",
+          "paths": [
+            "stents[*].subtype"
+          ]
+        },
+        {
+          "raw": "stents[*].size",
+          "paths": [
+            "stents[*].size"
+          ]
+        },
+        {
+          "raw": "stents[*].manufacturer",
+          "paths": [
+            "stents[*].manufacturer"
+          ]
+        },
+        {
+          "raw": "(new) stents[*].covered (Y/N) (if applicable)",
+          "paths": [
+            "stents[*].covered"
+          ],
+          "proposed": true,
+          "note": "Y/N) (if applicable"
+        },
+        {
+          "raw": "clinical_context.central_airway_obstruction.obstruction_percent_pre/post",
+          "paths": [
+            "clinical_context.central_airway_obstruction.obstruction_percent_pre/post"
+          ]
+        },
+        {
+          "raw": "complications[*]",
+          "paths": [
+            "complications[*]"
+          ]
+        }
+      ],
+      "companion_type": "Recommended",
+      "schema_status": "Existing (flag) + Proposed (details)",
+      "tier": "Tier 0-2",
+      "notes": "Stent action + type/size/manufacturer are core device metadata.",
+      "tier_number": 0
+    },
+    {
+      "id": "rule_063_125a0edf81",
+      "domain": "Registry Procedure Flags",
+      "layer": "Extraction schema (procedures_performed)",
+      "trigger": {
+        "raw": "procedures_performed.thermal_ablation.performed",
+        "expression": {
+          "op": "exists",
+          "path": "procedures_performed.thermal_ablation.performed"
+        }
+      },
+      "condition_text": "thermal_ablation performed=True",
+      "companions": [
+        {
+          "raw": "ablation_performed",
+          "paths": [
+            "ablation_performed"
+          ]
+        },
+        {
+          "raw": "ablation_technique",
+          "paths": [
+            "ablation_technique"
+          ]
+        },
+        {
+          "raw": "ablation_sites[*]",
+          "paths": [
+            "ablation_sites[*]"
+          ]
+        },
+        {
+          "raw": "(new) ablation.settings",
+          "paths": [
+            "ablation.settings"
+          ],
+          "proposed": true
+        },
+        {
+          "raw": "(new) ablation.duration_seconds",
+          "paths": [
+            "ablation.duration_seconds"
+          ],
+          "proposed": true
+        },
+        {
+          "raw": "clinical_context.central_airway_obstruction.obstruction_percent_pre/post",
+          "paths": [
+            "clinical_context.central_airway_obstruction.obstruction_percent_pre/post"
+          ]
+        },
+        {
+          "raw": "complications[*] (bleeding, airway fire risk mitigations if relevant)",
+          "paths": [
+            "complications[*]"
+          ],
+          "note": "bleeding, airway fire risk mitigations if relevant"
+        }
+      ],
+      "companion_type": "Recommended",
+      "schema_status": "Existing (flag) + Proposed (details)",
+      "tier": "Tier 2",
+      "notes": "Energy-based interventions require settings for reproducibility.",
+      "tier_number": 2
+    },
+    {
+      "id": "rule_064_d2b40ec2c0",
+      "domain": "Registry Procedure Flags",
+      "layer": "Extraction schema (procedures_performed)",
+      "trigger": {
+        "raw": "procedures_performed.tumor_debulking_non_thermal.performed",
+        "expression": {
+          "op": "exists",
+          "path": "procedures_performed.tumor_debulking_non_thermal.performed"
+        }
+      },
+      "condition_text": "tumor_debulking_non_thermal performed=True",
+      "companions": [
+        {
+          "raw": "(new) debulking.site",
+          "paths": [
+            "debulking.site"
+          ],
+          "proposed": true
+        },
+        {
+          "raw": "(new) debulking.method (forceps/snare/microdebrider/suction/cryodebulking)",
+          "paths": [
+            "debulking.method"
+          ],
+          "proposed": true,
+          "note": "forceps/snare/microdebrider/suction/cryodebulking"
+        },
+        {
+          "raw": "(new) debulking.pre_obstruction_percent",
+          "paths": [
+            "debulking.pre_obstruction_percent"
+          ],
+          "proposed": true
+        },
+        {
+          "raw": "(new) debulking.post_obstruction_percent",
+          "paths": [
+            "debulking.post_obstruction_percent"
+          ],
+          "proposed": true
+        },
+        {
+          "raw": "complications[*] (bleeding) + grading",
+          "paths": [
+            "complications[*] (bleeding) + grading"
+          ]
+        }
+      ],
+      "companion_type": "Recommended",
+      "schema_status": "Existing (flag) + Proposed (details)",
+      "tier": "Tier 2",
+      "notes": "Benchmarks effectiveness via pre/post obstruction and method.",
+      "tier_number": 2
+    },
+    {
+      "id": "rule_065_f5f416189b",
+      "domain": "Registry Procedure Flags",
+      "layer": "Extraction schema (procedures_performed)",
+      "trigger": {
+        "raw": "procedures_performed.cryotherapy.performed",
+        "expression": {
+          "op": "exists",
+          "path": "procedures_performed.cryotherapy.performed"
+        }
+      },
+      "condition_text": "cryotherapy performed=True",
+      "companions": [
+        {
+          "raw": "(new) cryotherapy.site",
+          "paths": [
+            "cryotherapy.site"
+          ],
+          "proposed": true
+        },
+        {
+          "raw": "(new) cryotherapy.mode (contact/spray)",
+          "paths": [
+            "cryotherapy.mode"
+          ],
+          "proposed": true,
+          "note": "contact/spray"
+        },
+        {
+          "raw": "(new) cryotherapy.cycles_count",
+          "paths": [
+            "cryotherapy.cycles_count"
+          ],
+          "proposed": true
+        },
+        {
+          "raw": "(new) cryotherapy.freeze_time_seconds",
+          "paths": [
+            "cryotherapy.freeze_time_seconds"
+          ],
+          "proposed": true
+        },
+        {
+          "raw": "complications[*] (bleeding)",
+          "paths": [
+            "complications[*]"
+          ],
+          "note": "bleeding"
+        }
+      ],
+      "companion_type": "Recommended",
+      "schema_status": "Existing (flag) + Proposed (details)",
+      "tier": "Tier 2",
+      "notes": "Cycle count and freeze time define dose.",
+      "tier_number": 2
+    },
+    {
+      "id": "rule_066_f041502996",
+      "domain": "Registry Procedure Flags",
+      "layer": "Extraction schema (procedures_performed)",
+      "trigger": {
+        "raw": "procedures_performed.blvr.performed",
+        "expression": {
+          "op": "exists",
+          "path": "procedures_performed.blvr.performed"
+        }
+      },
+      "condition_text": "blvr performed=True",
+      "companions": [
+        {
+          "raw": "blvr_performed",
+          "paths": [
+            "blvr_performed"
+          ]
+        },
+        {
+          "raw": "blvr_target_lobe",
+          "paths": [
+            "blvr_target_lobe"
+          ]
+        },
+        {
+          "raw": "blvr_valves",
+          "paths": [
+            "blvr_valves"
+          ]
+        },
+        {
+          "raw": "blvr_chartis_performed",
+          "paths": [
+            "blvr_chartis_performed"
+          ]
+        },
+        {
+          "raw": "blvr_cv_result",
+          "paths": [
+            "blvr_cv_result"
+          ]
+        },
+        {
+          "raw": "(new) blvr.valve_type",
+          "paths": [
+            "blvr.valve_type"
+          ],
+          "proposed": true
+        },
+        {
+          "raw": "(new) blvr.segments_treated",
+          "paths": [
+            "blvr.segments_treated"
+          ],
+          "proposed": true
+        },
+        {
+          "raw": "(new) blvr.valve_sizes",
+          "paths": [
+            "blvr.valve_sizes"
+          ],
+          "proposed": true
+        },
+        {
+          "raw": "complications[*] (pneumothorax) + intervention level",
+          "paths": [
+            "complications[*] (pneumothorax) + intervention level"
+          ]
+        }
+      ],
+      "companion_type": "Recommended",
+      "schema_status": "Existing (flag) + Proposed (details)",
+      "tier": "Tier 2",
+      "notes": "Standard device metadata + pneumothorax severity for outcomes research.",
+      "tier_number": 2
+    },
+    {
+      "id": "rule_067_af3206cd4b",
+      "domain": "Registry Procedure Flags",
+      "layer": "Extraction schema (procedures_performed)",
+      "trigger": {
+        "raw": "procedures_performed.peripheral_ablation.performed",
+        "expression": {
+          "op": "exists",
+          "path": "procedures_performed.peripheral_ablation.performed"
+        }
+      },
+      "condition_text": "peripheral_ablation performed=True",
+      "companions": [
+        {
+          "raw": "(new) peripheral_ablation.target_location",
+          "paths": [
+            "peripheral_ablation.target_location"
+          ],
+          "proposed": true
+        },
+        {
+          "raw": "(new) peripheral_ablation.modality (MWA/RFA/cryo/etc)",
+          "paths": [
+            "peripheral_ablation.modality"
+          ],
+          "proposed": true,
+          "note": "MWA/RFA/cryo/etc"
+        },
+        {
+          "raw": "(new) peripheral_ablation.energy_settings",
+          "paths": [
+            "peripheral_ablation.energy_settings"
+          ],
+          "proposed": true
+        },
+        {
+          "raw": "(new) peripheral_ablation.ablation_cycles",
+          "paths": [
+            "peripheral_ablation.ablation_cycles"
+          ],
+          "proposed": true
+        },
+        {
+          "raw": "clinical_context.lesion_characteristics",
+          "paths": [
+            "clinical_context.lesion_characteristics"
+          ]
+        },
+        {
+          "raw": "complications[*] (pneumothorax, bleeding)",
+          "paths": [
+            "complications[*]"
+          ],
+          "note": "pneumothorax, bleeding"
+        }
+      ],
+      "companion_type": "Recommended",
+      "schema_status": "Existing (flag) + Proposed (details)",
+      "tier": "Tier 2-3",
+      "notes": "Peripheral ablation requires modality and energy details.",
+      "tier_number": 2
+    },
+    {
+      "id": "rule_068_0ac0df5258",
+      "domain": "Registry Procedure Flags",
+      "layer": "Extraction schema (procedures_performed)",
+      "trigger": {
+        "raw": "procedures_performed.bronchial_thermoplasty.performed",
+        "expression": {
+          "op": "exists",
+          "path": "procedures_performed.bronchial_thermoplasty.performed"
+        }
+      },
+      "condition_text": "bronchial_thermoplasty performed=True",
+      "companions": [
+        {
+          "raw": "(new) bronchial_thermoplasty.session_number",
+          "paths": [
+            "bronchial_thermoplasty.session_number"
+          ],
+          "proposed": true
+        },
+        {
+          "raw": "(new) bronchial_thermoplasty.lobes_treated",
+          "paths": [
+            "bronchial_thermoplasty.lobes_treated"
+          ],
+          "proposed": true
+        },
+        {
+          "raw": "(new) bronchial_thermoplasty.activations_count",
+          "paths": [
+            "bronchial_thermoplasty.activations_count"
+          ],
+          "proposed": true
+        },
+        {
+          "raw": "(new) bronchial_thermoplasty.system (Alair etc)",
+          "paths": [
+            "bronchial_thermoplasty.system"
+          ],
+          "proposed": true,
+          "note": "Alair etc"
+        },
+        {
+          "raw": "complications[*] (bronchospasm, hypoxia)",
+          "paths": [
+            "complications[*]"
+          ],
+          "note": "bronchospasm, hypoxia"
+        }
+      ],
+      "companion_type": "Recommended",
+      "schema_status": "Existing (flag) + Proposed (details)",
+      "tier": "Tier 3",
+      "notes": "Thermoplasty effectiveness and safety depend on session/lobe/activations.",
+      "tier_number": 3
+    },
+    {
+      "id": "rule_069_2ef48c9bd1",
+      "domain": "Registry Procedure Flags",
+      "layer": "Extraction schema (procedures_performed)",
+      "trigger": {
+        "raw": "procedures_performed.whole_lung_lavage.performed",
+        "expression": {
+          "op": "exists",
+          "path": "procedures_performed.whole_lung_lavage.performed"
+        }
+      },
+      "condition_text": "whole_lung_lavage performed=True",
+      "companions": [
+        {
+          "raw": "(new) wll.side (left/right)",
+          "paths": [
+            "wll.side"
+          ],
+          "proposed": true,
+          "note": "left/right"
+        },
+        {
+          "raw": "(new) wll.volume_instilled_l",
+          "paths": [
+            "wll.volume_instilled_l"
+          ],
+          "proposed": true
+        },
+        {
+          "raw": "(new) wll.volume_returned_l",
+          "paths": [
+            "wll.volume_returned_l"
+          ],
+          "proposed": true
+        },
+        {
+          "raw": "(new) wll.indication",
+          "paths": [
+            "wll.indication"
+          ],
+          "proposed": true
+        },
+        {
+          "raw": "complications[*]",
+          "paths": [
+            "complications[*]"
+          ]
+        }
+      ],
+      "companion_type": "Recommended",
+      "schema_status": "Existing (flag) + Proposed (details)",
+      "tier": "Tier 3",
+      "notes": "Key quantitative data are instilled/returned volumes per lung.",
+      "tier_number": 3
+    },
+    {
+      "id": "rule_070_fc3c57748c",
+      "domain": "Registry Procedure Flags",
+      "layer": "Extraction schema (procedures_performed)",
+      "trigger": {
+        "raw": "procedures_performed.rigid_bronchoscopy.performed",
+        "expression": {
+          "op": "exists",
+          "path": "procedures_performed.rigid_bronchoscopy.performed"
+        }
+      },
+      "condition_text": "rigid_bronchoscopy performed=True",
+      "companions": [
+        {
+          "raw": "(new) rigid.indication",
+          "paths": [
+            "rigid.indication"
+          ],
+          "proposed": true
+        },
+        {
+          "raw": "(new) rigid.tube_size_mm",
+          "paths": [
+            "rigid.tube_size_mm"
+          ],
+          "proposed": true
+        },
+        {
+          "raw": "sedation.type",
+          "paths": [
+            "sedation.type"
+          ]
+        },
+        {
+          "raw": "events[*] (intubation/rigid start/end)",
+          "paths": [
+            "events[*]"
+          ],
+          "note": "intubation/rigid start/end"
+        },
+        {
+          "raw": "complications[*]",
+          "paths": [
+            "complications[*]"
+          ]
+        }
+      ],
+      "companion_type": "Recommended",
+      "schema_status": "Existing (flag) + Proposed (details)",
+      "tier": "Tier 2",
+      "notes": "Rigid bronchoscopy changes risk profile and available interventions.",
+      "tier_number": 2
+    },
+    {
+      "id": "rule_071_5974f6032e",
+      "domain": "Registry Procedure Flags",
+      "layer": "Extraction schema (pleural_procedures)",
+      "trigger": {
+        "raw": "pleural_procedures.thoracentesis.performed",
+        "expression": {
+          "op": "exists",
+          "path": "pleural_procedures.thoracentesis.performed"
+        }
+      },
+      "condition_text": "thoracentesis performed=True",
+      "companions": [
+        {
+          "raw": "(new) thoracentesis.laterality",
+          "paths": [
+            "thoracentesis.laterality"
+          ],
+          "proposed": true
+        },
+        {
+          "raw": "(new) thoracentesis.volume_removed_ml",
+          "paths": [
+            "thoracentesis.volume_removed_ml"
+          ],
+          "proposed": true
+        },
+        {
+          "raw": "(new) thoracentesis.ultrasound_guidance (Y/N)",
+          "paths": [
+            "thoracentesis.ultrasound_guidance"
+          ],
+          "proposed": true,
+          "note": "Y/N"
+        },
+        {
+          "raw": "(new) thoracentesis.fluid_appearance",
+          "paths": [
+            "thoracentesis.fluid_appearance"
+          ],
+          "proposed": true
+        },
+        {
+          "raw": "(new) thoracentesis.manometry_used (Y/N)",
+          "paths": [
+            "thoracentesis.manometry_used"
+          ],
+          "proposed": true,
+          "note": "Y/N"
+        },
+        {
+          "raw": "(new) pleural.pleural_LDH",
+          "paths": [
+            "pleural.pleural_LDH"
+          ],
+          "proposed": true
+        },
+        {
+          "raw": "(new) pleural.serum_LDH",
+          "paths": [
+            "pleural.serum_LDH"
+          ],
+          "proposed": true
+        },
+        {
+          "raw": "(new) pleural.pleural_protein",
+          "paths": [
+            "pleural.pleural_protein"
+          ],
+          "proposed": true
+        },
+        {
+          "raw": "(new) dyspnea.mMRC_pre",
+          "paths": [
+            "dyspnea.mMRC_pre"
+          ],
+          "proposed": true
+        },
+        {
+          "raw": "(new) dyspnea.mMRC_post",
+          "paths": [
+            "dyspnea.mMRC_post"
+          ],
+          "proposed": true
+        },
+        {
+          "raw": "complications[*] (pneumothorax) + intervention level",
+          "paths": [
+            "complications[*] (pneumothorax) + intervention level"
+          ]
+        }
+      ],
+      "companion_type": "Recommended",
+      "schema_status": "Existing (flag) + Proposed (details)",
+      "tier": "Tier 2",
+      "notes": "Captures inputs for prognostic scores (LENT/RAPID) + symptomatic response.",
+      "tier_number": 2
+    },
+    {
+      "id": "rule_072_69f303ac8d",
+      "domain": "Registry Procedure Flags",
+      "layer": "Extraction schema (pleural_procedures)",
+      "trigger": {
+        "raw": "pleural_procedures.chest_tube.performed",
+        "expression": {
+          "op": "exists",
+          "path": "pleural_procedures.chest_tube.performed"
+        }
+      },
+      "condition_text": "chest_tube performed=True",
+      "companions": [
+        {
+          "raw": "(new) chest_tube.laterality",
+          "paths": [
+            "chest_tube.laterality"
+          ],
+          "proposed": true
+        },
+        {
+          "raw": "(new) chest_tube.size_fr",
+          "paths": [
+            "chest_tube.size_fr"
+          ],
+          "proposed": true
+        },
+        {
+          "raw": "(new) chest_tube.type (pigtail/surgical)",
+          "paths": [
+            "chest_tube.type"
+          ],
+          "proposed": true,
+          "note": "pigtail/surgical"
+        },
+        {
+          "raw": "(new) chest_tube.suction_settings",
+          "paths": [
+            "chest_tube.suction_settings"
+          ],
+          "proposed": true
+        },
+        {
+          "raw": "(new) chest_tube.indication",
+          "paths": [
+            "chest_tube.indication"
+          ],
+          "proposed": true
+        },
+        {
+          "raw": "(new) chest_tube.output_ml_first24h",
+          "paths": [
+            "chest_tube.output_ml_first24h"
+          ],
+          "proposed": true
+        },
+        {
+          "raw": "complications[*]",
+          "paths": [
+            "complications[*]"
+          ]
+        }
+      ],
+      "companion_type": "Recommended",
+      "schema_status": "Existing (flag) + Proposed (details)",
+      "tier": "Tier 2-3",
+      "notes": "Intervention-level for pneumothorax and drainage details.",
+      "tier_number": 2
+    },
+    {
+      "id": "rule_073_b0d3e1f7fd",
+      "domain": "Registry Procedure Flags",
+      "layer": "Extraction schema (pleural_procedures)",
+      "trigger": {
+        "raw": "pleural_procedures.ipc.performed",
+        "expression": {
+          "op": "exists",
+          "path": "pleural_procedures.ipc.performed"
+        }
+      },
+      "condition_text": "ipc performed=True",
+      "companions": [
+        {
+          "raw": "(new) ipc.laterality",
+          "paths": [
+            "ipc.laterality"
+          ],
+          "proposed": true
+        },
+        {
+          "raw": "(new) ipc.action (placement/removal)",
+          "paths": [
+            "ipc.action"
+          ],
+          "proposed": true,
+          "note": "placement/removal"
+        },
+        {
+          "raw": "(new) ipc.catheter_brand",
+          "paths": [
+            "ipc.catheter_brand"
+          ],
+          "proposed": true
+        },
+        {
+          "raw": "(new) ipc.size_fr",
+          "paths": [
+            "ipc.size_fr"
+          ],
+          "proposed": true
+        },
+        {
+          "raw": "(new) ipc.initial_drainage_ml",
+          "paths": [
+            "ipc.initial_drainage_ml"
+          ],
+          "proposed": true
+        },
+        {
+          "raw": "(new) ipc.complications (infection, blockage)",
+          "paths": [
+            "ipc.complications"
+          ],
+          "proposed": true,
+          "note": "infection, blockage"
+        }
+      ],
+      "companion_type": "Recommended",
+      "schema_status": "Existing (flag) + Proposed (details)",
+      "tier": "Tier 3",
+      "notes": "IPC outcomes depend on placement/removal and drainage.",
+      "tier_number": 3
+    },
+    {
+      "id": "rule_074_e88a1cbf53",
+      "domain": "Registry Procedure Flags",
+      "layer": "Extraction schema (pleural_procedures)",
+      "trigger": {
+        "raw": "pleural_procedures.medical_thoracoscopy.performed",
+        "expression": {
+          "op": "exists",
+          "path": "pleural_procedures.medical_thoracoscopy.performed"
+        }
+      },
+      "condition_text": "medical_thoracoscopy performed=True",
+      "companions": [
+        {
+          "raw": "(new) thoracoscopy.laterality",
+          "paths": [
+            "thoracoscopy.laterality"
+          ],
+          "proposed": true
+        },
+        {
+          "raw": "(new) thoracoscopy.findings",
+          "paths": [
+            "thoracoscopy.findings"
+          ],
+          "proposed": true
+        },
+        {
+          "raw": "(new) thoracoscopy.pleural_biopsy_count",
+          "paths": [
+            "thoracoscopy.pleural_biopsy_count"
+          ],
+          "proposed": true
+        },
+        {
+          "raw": "(new) thoracoscopy.pleurodesis_performed",
+          "paths": [
+            "thoracoscopy.pleurodesis_performed"
+          ],
+          "proposed": true
+        },
+        {
+          "raw": "(new) thoracoscopy.complications",
+          "paths": [
+            "thoracoscopy.complications"
+          ],
+          "proposed": true
+        }
+      ],
+      "companion_type": "Recommended",
+      "schema_status": "Existing (flag) + Proposed (details)",
+      "tier": "Tier 3",
+      "notes": "Findings + biopsies + pleurodesis are the typical bundle.",
+      "tier_number": 3
+    },
+    {
+      "id": "rule_075_c6b1e16774",
+      "domain": "Registry Procedure Flags",
+      "layer": "Extraction schema (pleural_procedures)",
+      "trigger": {
+        "raw": "pleural_procedures.pleurodesis.performed",
+        "expression": {
+          "op": "exists",
+          "path": "pleural_procedures.pleurodesis.performed"
+        }
+      },
+      "condition_text": "pleurodesis performed=True",
+      "companions": [
+        {
+          "raw": "(new) pleurodesis.method (slurry/poudrage)",
+          "paths": [
+            "pleurodesis.method"
+          ],
+          "proposed": true,
+          "note": "slurry/poudrage"
+        },
+        {
+          "raw": "(new) pleurodesis.agent (talc/doxy/etc)",
+          "paths": [
+            "pleurodesis.agent"
+          ],
+          "proposed": true,
+          "note": "talc/doxy/etc"
+        },
+        {
+          "raw": "(new) pleurodesis.dose",
+          "paths": [
+            "pleurodesis.dose"
+          ],
+          "proposed": true
+        },
+        {
+          "raw": "(new) pleurodesis.success",
+          "paths": [
+            "pleurodesis.success"
+          ],
+          "proposed": true
+        }
+      ],
+      "companion_type": "Recommended",
+      "schema_status": "Existing (flag) + Proposed (details)",
+      "tier": "Tier 3",
+      "notes": "Agent and method define intervention.",
+      "tier_number": 3
+    },
+    {
+      "id": "rule_076_e37e70d95e",
+      "domain": "Registry Procedure Flags",
+      "layer": "Extraction schema (pleural_procedures)",
+      "trigger": {
+        "raw": "pleural_procedures.pleural_biopsy.performed",
+        "expression": {
+          "op": "exists",
+          "path": "pleural_procedures.pleural_biopsy.performed"
+        }
+      },
+      "condition_text": "pleural_biopsy performed=True",
+      "companions": [
+        {
+          "raw": "(new) pleural_biopsy.method (closed needle/thoracoscopic)",
+          "paths": [
+            "pleural_biopsy.method"
+          ],
+          "proposed": true,
+          "note": "closed needle/thoracoscopic"
+        },
+        {
+          "raw": "(new) pleural_biopsy.laterality",
+          "paths": [
+            "pleural_biopsy.laterality"
+          ],
+          "proposed": true
+        },
+        {
+          "raw": "(new) pleural_biopsy.number_of_biopsies",
+          "paths": [
+            "pleural_biopsy.number_of_biopsies"
+          ],
+          "proposed": true
+        },
+        {
+          "raw": "(new) pleural_biopsy.pathology_result",
+          "paths": [
+            "pleural_biopsy.pathology_result"
+          ],
+          "proposed": true
+        }
+      ],
+      "companion_type": "Recommended",
+      "schema_status": "Existing (flag) + Proposed (details)",
+      "tier": "Tier 3",
+      "notes": "Biopsy method and count are needed for adequacy benchmarking.",
+      "tier_number": 3
+    },
+    {
+      "id": "rule_077_cb47c5efcd",
+      "domain": "Registry Procedure Flags",
+      "layer": "Extraction schema (pleural_procedures)",
+      "trigger": {
+        "raw": "pleural_procedures.fibrinolytic_therapy.performed",
+        "expression": {
+          "op": "exists",
+          "path": "pleural_procedures.fibrinolytic_therapy.performed"
+        }
+      },
+      "condition_text": "fibrinolytic_therapy performed=True",
+      "companions": [
+        {
+          "raw": "(new) fibrinolytic.agent (tPA/DNase/etc)",
+          "paths": [
+            "fibrinolytic.agent"
+          ],
+          "proposed": true,
+          "note": "tPA/DNase/etc"
+        },
+        {
+          "raw": "(new) fibrinolytic.dose",
+          "paths": [
+            "fibrinolytic.dose"
+          ],
+          "proposed": true
+        },
+        {
+          "raw": "(new) fibrinolytic.number_of_doses",
+          "paths": [
+            "fibrinolytic.number_of_doses"
+          ],
+          "proposed": true
+        },
+        {
+          "raw": "(new) fibrinolytic.indication (empyema/loculation)",
+          "paths": [
+            "fibrinolytic.indication"
+          ],
+          "proposed": true,
+          "note": "empyema/loculation"
+        },
+        {
+          "raw": "(new) fibrinolytic.response",
+          "paths": [
+            "fibrinolytic.response"
+          ],
+          "proposed": true
+        },
+        {
+          "raw": "complications[*] (bleeding)",
+          "paths": [
+            "complications[*]"
+          ],
+          "note": "bleeding"
+        }
+      ],
+      "companion_type": "Recommended",
+      "schema_status": "Existing (flag) + Proposed (details)",
+      "tier": "Tier 3",
+      "notes": "Dose and number of doses define exposure; bleeding is key.",
+      "tier_number": 3
+    }
+  ],
+  "bundles": {
+    "ebus_station_bundle": {
+      "description": "Suggested per-station fields when an EBUS lymph node station is entered.",
+      "rows": [
+        {
+          "field": {
+            "raw": "ebus_stations[*].location.lymph_node_station",
+            "paths": [
+              "ebus_stations[*].location.lymph_node_station"
+            ]
+          },
+          "what": "Station (e.g., 7)",
+          "status": "Existing"
+        },
+        {
+          "field": {
+            "raw": "ebus_stations[*].technique",
+            "paths": [
+              "ebus_stations[*].technique"
+            ]
+          },
+          "what": "Sampling technique (EBUS-TBNA/FNB/etc)",
+          "status": "Existing"
+        },
+        {
+          "field": {
+            "raw": "(new) ebus_stations[*].needle_gauge",
+            "paths": [
+              "ebus_stations[*].needle_gauge"
+            ],
+            "proposed": true
+          },
+          "what": "Needle gauge per station (override)",
+          "status": "Proposed"
+        },
+        {
+          "field": {
+            "raw": "ebus_stations[*].passes",
+            "paths": [
+              "ebus_stations[*].passes"
+            ]
+          },
+          "what": "Passes per station",
+          "status": "Existing"
+        },
+        {
+          "field": {
+            "raw": "ebus_stations[*].specimens_obtained",
+            "paths": [
+              "ebus_stations[*].specimens_obtained"
+            ]
+          },
+          "what": "Specimens/cassettes/slides count",
+          "status": "Existing"
+        },
+        {
+          "field": {
+            "raw": "(new) ebus_stations[*].node_size_short_axis_mm",
+            "paths": [
+              "ebus_stations[*].node_size_short_axis_mm"
+            ],
+            "proposed": true
+          },
+          "what": "Node short-axis size (mm)",
+          "status": "Proposed"
+        },
+        {
+          "field": {
+            "raw": "(new) ebus_stations[*].node_morphology.shape",
+            "paths": [
+              "ebus_stations[*].node_morphology.shape"
+            ],
+            "proposed": true
+          },
+          "what": "Round vs oval",
+          "status": "Proposed"
+        },
+        {
+          "field": {
+            "raw": "(new) ebus_stations[*].node_morphology.border",
+            "paths": [
+              "ebus_stations[*].node_morphology.border"
+            ],
+            "proposed": true
+          },
+          "what": "Distinct vs indistinct border",
+          "status": "Proposed"
+        },
+        {
+          "field": {
+            "raw": "(new) ebus_stations[*].node_morphology.echogenicity",
+            "paths": [
+              "ebus_stations[*].node_morphology.echogenicity"
+            ],
+            "proposed": true
+          },
+          "what": "Homogeneous vs heterogeneous",
+          "status": "Proposed"
+        },
+        {
+          "field": {
+            "raw": "(new) ebus_stations[*].node_morphology.necrosis",
+            "paths": [
+              "ebus_stations[*].node_morphology.necrosis"
+            ],
+            "proposed": true
+          },
+          "what": "Necrosis present",
+          "status": "Proposed"
+        },
+        {
+          "field": {
+            "raw": "(new) ebus_stations[*].node_morphology.calcification",
+            "paths": [
+              "ebus_stations[*].node_morphology.calcification"
+            ],
+            "proposed": true
+          },
+          "what": "Calcification present",
+          "status": "Proposed"
+        },
+        {
+          "field": {
+            "raw": "ebus_stations[*].rose_result",
+            "paths": [
+              "ebus_stations[*].rose_result"
+            ]
+          },
+          "what": "ROSE result",
+          "status": "Existing"
+        },
+        {
+          "field": {
+            "raw": "ebus_stations[*].pathology_result",
+            "paths": [
+              "ebus_stations[*].pathology_result"
+            ]
+          },
+          "what": "Final pathology",
+          "status": "Existing"
+        },
+        {
+          "field": {
+            "raw": "ebus_stations[*].adequacy",
+            "paths": [
+              "ebus_stations[*].adequacy"
+            ]
+          },
+          "what": "Adequacy (adequate/inadequate/pending)",
+          "status": "Existing"
+        },
+        {
+          "field": {
+            "raw": "(new) ebus_stations[*].lymphocytes_present",
+            "paths": [
+              "ebus_stations[*].lymphocytes_present"
+            ],
+            "proposed": true
+          },
+          "what": "Lymphocytes present (adequacy per station)",
+          "status": "Proposed"
+        },
+        {
+          "field": {
+            "raw": "(new) ebus_stations[*].rose_concordance",
+            "paths": [
+              "ebus_stations[*].rose_concordance"
+            ],
+            "proposed": true
+          },
+          "what": "Derived: ROSE vs final concordance",
+          "status": "Proposed/Derived"
+        }
+      ]
+    },
+    "procedure_flag_bundles": [
+      {
+        "procedure_flag": "diagnostic_bronchoscopy",
+        "bundle_fields": [
+          {
+            "raw": "procedure.procedure_type",
+            "paths": [
+              "procedure.procedure_type"
+            ]
+          },
+          {
+            "raw": "sedation.type",
+            "paths": [
+              "sedation.type"
+            ]
+          },
+          {
+            "raw": "(new) bronchoscopy.scope_type (flexible/rigid)",
+            "paths": [
+              "bronchoscopy.scope_type"
+            ],
+            "proposed": true,
+            "note": "flexible/rigid"
+          },
+          {
+            "raw": "(new) bronchoscopy.airway_route (oral/nasal/trach/ett)",
+            "paths": [
+              "bronchoscopy.airway_route"
+            ],
+            "proposed": true,
+            "note": "oral/nasal/trach/ett"
+          },
+          {
+            "raw": "findings[*]",
+            "paths": [
+              "findings[*]"
+            ]
+          },
+          {
+            "raw": "complications[*]",
+            "paths": [
+              "complications[*]"
+            ]
+          },
+          {
+            "raw": "outcome.*",
+            "paths": [
+              "outcome.*"
+            ]
+          }
+        ],
+        "raw_bundle": "procedure.procedure_type; sedation.type; (new) bronchoscopy.scope_type (flexible/rigid); (new) bronchoscopy.airway_route (oral/nasal/trach/ett); findings[*]; complications[*]; outcome.*"
+      },
+      {
+        "procedure_flag": "bal",
+        "bundle_fields": [
+          {
+            "raw": "bal_performed",
+            "paths": [
+              "bal_performed"
+            ]
+          },
+          {
+            "raw": "bal_sites[*]",
+            "paths": [
+              "bal_sites[*]"
+            ]
+          },
+          {
+            "raw": "bal_volume_ml",
+            "paths": [
+              "bal_volume_ml"
+            ]
+          },
+          {
+            "raw": "bal_return_ml",
+            "paths": [
+              "bal_return_ml"
+            ]
+          },
+          {
+            "raw": "(new) bal.specimen_tests (culture, cytology, differential, AFB, fungal, etc)",
+            "paths": [
+              "bal.specimen_tests"
+            ],
+            "proposed": true,
+            "note": "culture, cytology, differential, AFB, fungal, etc"
+          },
+          {
+            "raw": "complications[*] (hypoxia, bronchospasm)",
+            "paths": [
+              "complications[*]"
+            ],
+            "note": "hypoxia, bronchospasm"
+          },
+          {
+            "raw": "outcome.*",
+            "paths": [
+              "outcome.*"
+            ]
+          }
+        ],
+        "raw_bundle": "bal_performed; bal_sites[*]; bal_volume_ml; bal_return_ml; (new) bal.specimen_tests (culture, cytology, differential, AFB, fungal, etc); complications[*] (hypoxia, bronchospasm); outcome.*"
+      },
+      {
+        "procedure_flag": "bronchial_wash",
+        "bundle_fields": [
+          {
+            "raw": "(new) bronchial_wash.performed",
+            "paths": [
+              "bronchial_wash.performed"
+            ],
+            "proposed": true
+          },
+          {
+            "raw": "(new) bronchial_wash.sites[*]",
+            "paths": [
+              "bronchial_wash.sites[*]"
+            ],
+            "proposed": true
+          },
+          {
+            "raw": "(new) bronchial_wash.volume_ml",
+            "paths": [
+              "bronchial_wash.volume_ml"
+            ],
+            "proposed": true
+          },
+          {
+            "raw": "(new) bronchial_wash.specimen_tests",
+            "paths": [
+              "bronchial_wash.specimen_tests"
+            ],
+            "proposed": true
+          },
+          {
+            "raw": "complications[*]",
+            "paths": [
+              "complications[*]"
+            ]
+          }
+        ],
+        "raw_bundle": "(new) bronchial_wash.performed; (new) bronchial_wash.sites[*]; (new) bronchial_wash.volume_ml; (new) bronchial_wash.specimen_tests; complications[*]"
+      },
+      {
+        "procedure_flag": "brushings",
+        "bundle_fields": [
+          {
+            "raw": "(new) brushings.performed",
+            "paths": [
+              "brushings.performed"
+            ],
+            "proposed": true
+          },
+          {
+            "raw": "(new) brushings.sites[*]",
+            "paths": [
+              "brushings.sites[*]"
+            ],
+            "proposed": true
+          },
+          {
+            "raw": "(new) brushings.number_of_passes",
+            "paths": [
+              "brushings.number_of_passes"
+            ],
+            "proposed": true
+          },
+          {
+            "raw": "(new) brushings.cytology_result",
+            "paths": [
+              "brushings.cytology_result"
+            ],
+            "proposed": true
+          },
+          {
+            "raw": "(new) brushings.pathology_result",
+            "paths": [
+              "brushings.pathology_result"
+            ],
+            "proposed": true
+          },
+          {
+            "raw": "complications[*] (bleeding)",
+            "paths": [
+              "complications[*]"
+            ],
+            "note": "bleeding"
+          }
+        ],
+        "raw_bundle": "(new) brushings.performed; (new) brushings.sites[*]; (new) brushings.number_of_passes; (new) brushings.cytology_result; (new) brushings.pathology_result; complications[*] (bleeding)"
+      },
+      {
+        "procedure_flag": "endobronchial_biopsy",
+        "bundle_fields": [
+          {
+            "raw": "(new) endobronchial_biopsy.performed",
+            "paths": [
+              "endobronchial_biopsy.performed"
+            ],
+            "proposed": true
+          },
+          {
+            "raw": "(new) endobronchial_biopsy.lesion_location",
+            "paths": [
+              "endobronchial_biopsy.lesion_location"
+            ],
+            "proposed": true
+          },
+          {
+            "raw": "(new) endobronchial_biopsy.number_of_biopsies",
+            "paths": [
+              "endobronchial_biopsy.number_of_biopsies"
+            ],
+            "proposed": true
+          },
+          {
+            "raw": "(new) endobronchial_biopsy.tool (forceps/snare/cryobiopsy)",
+            "paths": [
+              "endobronchial_biopsy.tool"
+            ],
+            "proposed": true,
+            "note": "forceps/snare/cryobiopsy"
+          },
+          {
+            "raw": "(new) endobronchial_biopsy.rose_result (if done)",
+            "paths": [
+              "endobronchial_biopsy.rose_result"
+            ],
+            "proposed": true,
+            "note": "if done"
+          },
+          {
+            "raw": "(new) endobronchial_biopsy.pathology_result",
+            "paths": [
+              "endobronchial_biopsy.pathology_result"
+            ],
+            "proposed": true
+          },
+          {
+            "raw": "complications[*] (bleeding) + (new) bleeding.nashville_grade",
+            "paths": [
+              "complications[*] (bleeding) + (new) bleeding.nashville_grade"
+            ]
+          }
+        ],
+        "raw_bundle": "(new) endobronchial_biopsy.performed; (new) endobronchial_biopsy.lesion_location; (new) endobronchial_biopsy.number_of_biopsies; (new) endobronchial_biopsy.tool (forceps/snare/cryobiopsy); (new) endobronchial_biopsy.rose_result (if done); (new) endobronchial_biopsy.pathology_result; complications[*] (bleeding) + (new) bleeding.nashville_grade"
+      },
+      {
+        "procedure_flag": "tbna_conventional",
+        "bundle_fields": [
+          {
+            "raw": "(new) tbna.targets[*] (lesion or node)",
+            "paths": [
+              "tbna.targets[*]"
+            ],
+            "proposed": true,
+            "note": "lesion or node"
+          },
+          {
+            "raw": "(new) tbna.needle_gauge",
+            "paths": [
+              "tbna.needle_gauge"
+            ],
+            "proposed": true
+          },
+          {
+            "raw": "(new) tbna.passes_per_target",
+            "paths": [
+              "tbna.passes_per_target"
+            ],
+            "proposed": true
+          },
+          {
+            "raw": "(new) tbna.rose_result_per_target",
+            "paths": [
+              "tbna.rose_result_per_target"
+            ],
+            "proposed": true
+          },
+          {
+            "raw": "(new) tbna.final_pathology_per_target",
+            "paths": [
+              "tbna.final_pathology_per_target"
+            ],
+            "proposed": true
+          },
+          {
+            "raw": "complications[*] (bleeding/pneumothorax)",
+            "paths": [
+              "complications[*]"
+            ],
+            "note": "bleeding/pneumothorax"
+          }
+        ],
+        "raw_bundle": "(new) tbna.targets[*] (lesion or node); (new) tbna.needle_gauge; (new) tbna.passes_per_target; (new) tbna.rose_result_per_target; (new) tbna.final_pathology_per_target; complications[*] (bleeding/pneumothorax)"
+      },
+      {
+        "procedure_flag": "linear_ebus",
+        "bundle_fields": [
+          {
+            "raw": "ebus_performed",
+            "paths": [
+              "ebus_performed"
+            ]
+          },
+          {
+            "raw": "ebus_stations[*].location.lymph_node_station",
+            "paths": [
+              "ebus_stations[*].location.lymph_node_station"
+            ]
+          },
+          {
+            "raw": "ebus_stations[*].passes",
+            "paths": [
+              "ebus_stations[*].passes"
+            ]
+          },
+          {
+            "raw": "ebus_stations[*].rose_result",
+            "paths": [
+              "ebus_stations[*].rose_result"
+            ]
+          },
+          {
+            "raw": "ebus_stations[*].pathology_result",
+            "paths": [
+              "ebus_stations[*].pathology_result"
+            ]
+          },
+          {
+            "raw": "(new) ebus_stations[*].node_size_short_axis_mm",
+            "paths": [
+              "ebus_stations[*].node_size_short_axis_mm"
+            ],
+            "proposed": true
+          },
+          {
+            "raw": "(new) ebus_stations[*].node_morphology.*",
+            "paths": [
+              "ebus_stations[*].node_morphology.*"
+            ],
+            "proposed": true
+          },
+          {
+            "raw": "(new) ebus_stations[*].lymphocytes_present",
+            "paths": [
+              "ebus_stations[*].lymphocytes_present"
+            ],
+            "proposed": true
+          },
+          {
+            "raw": "(new) ebus_stations[*].needle_gauge",
+            "paths": [
+              "ebus_stations[*].needle_gauge"
+            ],
+            "proposed": true
+          },
+          {
+            "raw": "(new) ebus_stations[*].rose_concordance",
+            "paths": [
+              "ebus_stations[*].rose_concordance"
+            ],
+            "proposed": true
+          },
+          {
+            "raw": "complications[*] (bleeding) + (new) bleeding.nashville_grade",
+            "paths": [
+              "complications[*] (bleeding) + (new) bleeding.nashville_grade"
+            ]
+          }
+        ],
+        "raw_bundle": "ebus_performed; ebus_stations[*].location.lymph_node_station; ebus_stations[*].passes; ebus_stations[*].rose_result; ebus_stations[*].pathology_result; (new) ebus_stations[*].node_size_short_axis_mm; (new) ebus_stations[*].node_morphology.*; (new) ebus_stations[*].lymphocytes_present; (new) ebus_stations[*].needle_gauge; (new) ebus_stations[*].rose_concordance; complications[*] (bleeding) + (new) bleeding.nashville_grade"
+      },
+      {
+        "procedure_flag": "radial_ebus",
+        "bundle_fields": [
+          {
+            "raw": "radial_ebus_performed",
+            "paths": [
+              "radial_ebus_performed"
+            ]
+          },
+          {
+            "raw": "radial_ebus_findings[*]",
+            "paths": [
+              "radial_ebus_findings[*]"
+            ]
+          },
+          {
+            "raw": "(new) radial_ebus.view_classification",
+            "paths": [
+              "radial_ebus.view_classification"
+            ],
+            "proposed": true
+          },
+          {
+            "raw": "(new) radial_ebus.tool_in_lesion_method",
+            "paths": [
+              "radial_ebus.tool_in_lesion_method"
+            ],
+            "proposed": true
+          }
+        ],
+        "raw_bundle": "radial_ebus_performed; radial_ebus_findings[*]; (new) radial_ebus.view_classification; (new) radial_ebus.tool_in_lesion_method"
+      },
+      {
+        "procedure_flag": "navigational_bronchoscopy",
+        "bundle_fields": [
+          {
+            "raw": "navigation_performed",
+            "paths": [
+              "navigation_performed"
+            ]
+          },
+          {
+            "raw": "navigation_system",
+            "paths": [
+              "navigation_system"
+            ]
+          },
+          {
+            "raw": "navigation_target_reached",
+            "paths": [
+              "navigation_target_reached"
+            ]
+          },
+          {
+            "raw": "clinical_context.lesion_characteristics",
+            "paths": [
+              "clinical_context.lesion_characteristics"
+            ]
+          },
+          {
+            "raw": "(new) navigation.ct_bronchus_sign",
+            "paths": [
+              "navigation.ct_bronchus_sign"
+            ],
+            "proposed": true
+          },
+          {
+            "raw": "(new) navigation.ct_to_body_divergence",
+            "paths": [
+              "navigation.ct_to_body_divergence"
+            ],
+            "proposed": true
+          },
+          {
+            "raw": "(new) navigation.tool_in_lesion_confirmation_method",
+            "paths": [
+              "navigation.tool_in_lesion_confirmation_method"
+            ],
+            "proposed": true
+          },
+          {
+            "raw": "(new) navigation_targets[*] (location, size, sampling, outcome)",
+            "paths": [
+              "navigation_targets[*]"
+            ],
+            "proposed": true,
+            "note": "location, size, sampling, outcome"
+          },
+          {
+            "raw": "radial_ebus_performed (if used)",
+            "paths": [
+              "radial_ebus_performed"
+            ],
+            "note": "if used"
+          },
+          {
+            "raw": "complications[*] (pneumothorax, bleeding)",
+            "paths": [
+              "complications[*]"
+            ],
+            "note": "pneumothorax, bleeding"
+          }
+        ],
+        "raw_bundle": "navigation_performed; navigation_system; navigation_target_reached; clinical_context.lesion_characteristics; (new) navigation.ct_bronchus_sign; (new) navigation.ct_to_body_divergence; (new) navigation.tool_in_lesion_confirmation_method; (new) navigation_targets[*] (location, size, sampling, outcome); radial_ebus_performed (if used); complications[*] (pneumothorax, bleeding)"
+      },
+      {
+        "procedure_flag": "transbronchial_biopsy",
+        "bundle_fields": [
+          {
+            "raw": "tblb_performed",
+            "paths": [
+              "tblb_performed"
+            ]
+          },
+          {
+            "raw": "tblb_sites[*].location",
+            "paths": [
+              "tblb_sites[*].location"
+            ]
+          },
+          {
+            "raw": "tblb_sites[*].passes",
+            "paths": [
+              "tblb_sites[*].passes"
+            ]
+          },
+          {
+            "raw": "tblb_sites[*].pathology_result",
+            "paths": [
+              "tblb_sites[*].pathology_result"
+            ]
+          },
+          {
+            "raw": "(new) tblb.fluoroscopy_used",
+            "paths": [
+              "tblb.fluoroscopy_used"
+            ],
+            "proposed": true
+          },
+          {
+            "raw": "complications[*] (pneumothorax) + (new) pneumothorax.intervention_level",
+            "paths": [
+              "complications[*] (pneumothorax) + (new) pneumothorax.intervention_level"
+            ]
+          }
+        ],
+        "raw_bundle": "tblb_performed; tblb_sites[*].location; tblb_sites[*].passes; tblb_sites[*].pathology_result; (new) tblb.fluoroscopy_used; complications[*] (pneumothorax) + (new) pneumothorax.intervention_level"
+      },
+      {
+        "procedure_flag": "transbronchial_cryobiopsy",
+        "bundle_fields": [
+          {
+            "raw": "tblb_performed",
+            "paths": [
+              "tblb_performed"
+            ]
+          },
+          {
+            "raw": "tblb_technique='cryobiopsy'",
+            "paths": [
+              "tblb_technique='cryobiopsy'"
+            ]
+          },
+          {
+            "raw": "tblb_sites[*]",
+            "paths": [
+              "tblb_sites[*]"
+            ]
+          },
+          {
+            "raw": "(new) cryobiopsy.probe_size_mm",
+            "paths": [
+              "cryobiopsy.probe_size_mm"
+            ],
+            "proposed": true
+          },
+          {
+            "raw": "(new) cryobiopsy.freeze_time_seconds",
+            "paths": [
+              "cryobiopsy.freeze_time_seconds"
+            ],
+            "proposed": true
+          },
+          {
+            "raw": "(new) cryobiopsy.number_of_samples",
+            "paths": [
+              "cryobiopsy.number_of_samples"
+            ],
+            "proposed": true
+          },
+          {
+            "raw": "(new) cryobiopsy.airway_blockade_method (balloon/blocker/none)",
+            "paths": [
+              "cryobiopsy.airway_blockade_method"
+            ],
+            "proposed": true,
+            "note": "balloon/blocker/none"
+          },
+          {
+            "raw": "balloon_occlusion.* (if used)",
+            "paths": [
+              "balloon_occlusion.*"
+            ],
+            "note": "if used"
+          },
+          {
+            "raw": "complications[*] (bleeding/pneumothorax) + grading",
+            "paths": [
+              "complications[*] (bleeding/pneumothorax) + grading"
+            ]
+          }
+        ],
+        "raw_bundle": "tblb_performed; tblb_technique='cryobiopsy'; tblb_sites[*]; (new) cryobiopsy.probe_size_mm; (new) cryobiopsy.freeze_time_seconds; (new) cryobiopsy.number_of_samples; (new) cryobiopsy.airway_blockade_method (balloon/blocker/none); balloon_occlusion.* (if used); complications[*] (bleeding/pneumothorax) + grading"
+      },
+      {
+        "procedure_flag": "therapeutic_aspiration",
+        "bundle_fields": [
+          {
+            "raw": "(new) aspiration.indication (mucus plug/blood/pus)",
+            "paths": [
+              "aspiration.indication"
+            ],
+            "proposed": true,
+            "note": "mucus plug/blood/pus"
+          },
+          {
+            "raw": "(new) aspiration.volume_estimated_ml",
+            "paths": [
+              "aspiration.volume_estimated_ml"
+            ],
+            "proposed": true
+          },
+          {
+            "raw": "(new) aspiration.secretions_character (thick/purulent/bloody)",
+            "paths": [
+              "aspiration.secretions_character"
+            ],
+            "proposed": true,
+            "note": "thick/purulent/bloody"
+          },
+          {
+            "raw": "(new) aspiration.symptom_response",
+            "paths": [
+              "aspiration.symptom_response"
+            ],
+            "proposed": true
+          },
+          {
+            "raw": "complications[*]",
+            "paths": [
+              "complications[*]"
+            ]
+          }
+        ],
+        "raw_bundle": "(new) aspiration.indication (mucus plug/blood/pus); (new) aspiration.volume_estimated_ml; (new) aspiration.secretions_character (thick/purulent/bloody); (new) aspiration.symptom_response; complications[*]"
+      },
+      {
+        "procedure_flag": "foreign_body_removal",
+        "bundle_fields": [
+          {
+            "raw": "(new) foreign_body.location",
+            "paths": [
+              "foreign_body.location"
+            ],
+            "proposed": true
+          },
+          {
+            "raw": "(new) foreign_body.object_type",
+            "paths": [
+              "foreign_body.object_type"
+            ],
+            "proposed": true
+          },
+          {
+            "raw": "(new) foreign_body.tools_used",
+            "paths": [
+              "foreign_body.tools_used"
+            ],
+            "proposed": true
+          },
+          {
+            "raw": "(new) foreign_body.removal_successful",
+            "paths": [
+              "foreign_body.removal_successful"
+            ],
+            "proposed": true
+          },
+          {
+            "raw": "complications[*]",
+            "paths": [
+              "complications[*]"
+            ]
+          }
+        ],
+        "raw_bundle": "(new) foreign_body.location; (new) foreign_body.object_type; (new) foreign_body.tools_used; (new) foreign_body.removal_successful; complications[*]"
+      },
+      {
+        "procedure_flag": "airway_dilation",
+        "bundle_fields": [
+          {
+            "raw": "dilation_performed",
+            "paths": [
+              "dilation_performed"
+            ]
+          },
+          {
+            "raw": "dilation_sites[*]",
+            "paths": [
+              "dilation_sites[*]"
+            ]
+          },
+          {
+            "raw": "dilation_technique",
+            "paths": [
+              "dilation_technique"
+            ]
+          },
+          {
+            "raw": "(new) dilation.balloon_diameter_mm",
+            "paths": [
+              "dilation.balloon_diameter_mm"
+            ],
+            "proposed": true
+          },
+          {
+            "raw": "(new) dilation.inflations_count",
+            "paths": [
+              "dilation.inflations_count"
+            ],
+            "proposed": true
+          },
+          {
+            "raw": "(new) dilation.max_pressure_atm",
+            "paths": [
+              "dilation.max_pressure_atm"
+            ],
+            "proposed": true
+          },
+          {
+            "raw": "clinical_context.central_airway_obstruction.obstruction_percent_pre/post",
+            "paths": [
+              "clinical_context.central_airway_obstruction.obstruction_percent_pre/post"
+            ]
+          },
+          {
+            "raw": "complications[*]",
+            "paths": [
+              "complications[*]"
+            ]
+          }
+        ],
+        "raw_bundle": "dilation_performed; dilation_sites[*]; dilation_technique; (new) dilation.balloon_diameter_mm; (new) dilation.inflations_count; (new) dilation.max_pressure_atm; clinical_context.central_airway_obstruction.obstruction_percent_pre/post; complications[*]"
+      },
+      {
+        "procedure_flag": "airway_stent",
+        "bundle_fields": [
+          {
+            "raw": "stent_placed",
+            "paths": [
+              "stent_placed"
+            ]
+          },
+          {
+            "raw": "stents[*].location",
+            "paths": [
+              "stents[*].location"
+            ]
+          },
+          {
+            "raw": "stents[*].action_type",
+            "paths": [
+              "stents[*].action_type"
+            ]
+          },
+          {
+            "raw": "stents[*].type",
+            "paths": [
+              "stents[*].type"
+            ]
+          },
+          {
+            "raw": "stents[*].subtype",
+            "paths": [
+              "stents[*].subtype"
+            ]
+          },
+          {
+            "raw": "stents[*].size",
+            "paths": [
+              "stents[*].size"
+            ]
+          },
+          {
+            "raw": "stents[*].manufacturer",
+            "paths": [
+              "stents[*].manufacturer"
+            ]
+          },
+          {
+            "raw": "(new) stents[*].covered (Y/N) (if applicable)",
+            "paths": [
+              "stents[*].covered"
+            ],
+            "proposed": true,
+            "note": "Y/N) (if applicable"
+          },
+          {
+            "raw": "clinical_context.central_airway_obstruction.obstruction_percent_pre/post",
+            "paths": [
+              "clinical_context.central_airway_obstruction.obstruction_percent_pre/post"
+            ]
+          },
+          {
+            "raw": "complications[*]",
+            "paths": [
+              "complications[*]"
+            ]
+          }
+        ],
+        "raw_bundle": "stent_placed; stents[*].location; stents[*].action_type; stents[*].type; stents[*].subtype; stents[*].size; stents[*].manufacturer; (new) stents[*].covered (Y/N) (if applicable); clinical_context.central_airway_obstruction.obstruction_percent_pre/post; complications[*]"
+      },
+      {
+        "procedure_flag": "thermal_ablation",
+        "bundle_fields": [
+          {
+            "raw": "ablation_performed",
+            "paths": [
+              "ablation_performed"
+            ]
+          },
+          {
+            "raw": "ablation_technique",
+            "paths": [
+              "ablation_technique"
+            ]
+          },
+          {
+            "raw": "ablation_sites[*]",
+            "paths": [
+              "ablation_sites[*]"
+            ]
+          },
+          {
+            "raw": "(new) ablation.settings",
+            "paths": [
+              "ablation.settings"
+            ],
+            "proposed": true
+          },
+          {
+            "raw": "(new) ablation.duration_seconds",
+            "paths": [
+              "ablation.duration_seconds"
+            ],
+            "proposed": true
+          },
+          {
+            "raw": "clinical_context.central_airway_obstruction.obstruction_percent_pre/post",
+            "paths": [
+              "clinical_context.central_airway_obstruction.obstruction_percent_pre/post"
+            ]
+          },
+          {
+            "raw": "complications[*] (bleeding, airway fire risk mitigations if relevant)",
+            "paths": [
+              "complications[*]"
+            ],
+            "note": "bleeding, airway fire risk mitigations if relevant"
+          }
+        ],
+        "raw_bundle": "ablation_performed; ablation_technique; ablation_sites[*]; (new) ablation.settings; (new) ablation.duration_seconds; clinical_context.central_airway_obstruction.obstruction_percent_pre/post; complications[*] (bleeding, airway fire risk mitigations if relevant)"
+      },
+      {
+        "procedure_flag": "tumor_debulking_non_thermal",
+        "bundle_fields": [
+          {
+            "raw": "(new) debulking.site",
+            "paths": [
+              "debulking.site"
+            ],
+            "proposed": true
+          },
+          {
+            "raw": "(new) debulking.method (forceps/snare/microdebrider/suction/cryodebulking)",
+            "paths": [
+              "debulking.method"
+            ],
+            "proposed": true,
+            "note": "forceps/snare/microdebrider/suction/cryodebulking"
+          },
+          {
+            "raw": "(new) debulking.pre_obstruction_percent",
+            "paths": [
+              "debulking.pre_obstruction_percent"
+            ],
+            "proposed": true
+          },
+          {
+            "raw": "(new) debulking.post_obstruction_percent",
+            "paths": [
+              "debulking.post_obstruction_percent"
+            ],
+            "proposed": true
+          },
+          {
+            "raw": "complications[*] (bleeding) + grading",
+            "paths": [
+              "complications[*] (bleeding) + grading"
+            ]
+          }
+        ],
+        "raw_bundle": "(new) debulking.site; (new) debulking.method (forceps/snare/microdebrider/suction/cryodebulking); (new) debulking.pre_obstruction_percent; (new) debulking.post_obstruction_percent; complications[*] (bleeding) + grading"
+      },
+      {
+        "procedure_flag": "cryotherapy",
+        "bundle_fields": [
+          {
+            "raw": "(new) cryotherapy.site",
+            "paths": [
+              "cryotherapy.site"
+            ],
+            "proposed": true
+          },
+          {
+            "raw": "(new) cryotherapy.mode (contact/spray)",
+            "paths": [
+              "cryotherapy.mode"
+            ],
+            "proposed": true,
+            "note": "contact/spray"
+          },
+          {
+            "raw": "(new) cryotherapy.cycles_count",
+            "paths": [
+              "cryotherapy.cycles_count"
+            ],
+            "proposed": true
+          },
+          {
+            "raw": "(new) cryotherapy.freeze_time_seconds",
+            "paths": [
+              "cryotherapy.freeze_time_seconds"
+            ],
+            "proposed": true
+          },
+          {
+            "raw": "complications[*] (bleeding)",
+            "paths": [
+              "complications[*]"
+            ],
+            "note": "bleeding"
+          }
+        ],
+        "raw_bundle": "(new) cryotherapy.site; (new) cryotherapy.mode (contact/spray); (new) cryotherapy.cycles_count; (new) cryotherapy.freeze_time_seconds; complications[*] (bleeding)"
+      },
+      {
+        "procedure_flag": "blvr",
+        "bundle_fields": [
+          {
+            "raw": "blvr_performed",
+            "paths": [
+              "blvr_performed"
+            ]
+          },
+          {
+            "raw": "blvr_target_lobe",
+            "paths": [
+              "blvr_target_lobe"
+            ]
+          },
+          {
+            "raw": "blvr_valves",
+            "paths": [
+              "blvr_valves"
+            ]
+          },
+          {
+            "raw": "blvr_chartis_performed",
+            "paths": [
+              "blvr_chartis_performed"
+            ]
+          },
+          {
+            "raw": "blvr_cv_result",
+            "paths": [
+              "blvr_cv_result"
+            ]
+          },
+          {
+            "raw": "(new) blvr.valve_type",
+            "paths": [
+              "blvr.valve_type"
+            ],
+            "proposed": true
+          },
+          {
+            "raw": "(new) blvr.segments_treated",
+            "paths": [
+              "blvr.segments_treated"
+            ],
+            "proposed": true
+          },
+          {
+            "raw": "(new) blvr.valve_sizes",
+            "paths": [
+              "blvr.valve_sizes"
+            ],
+            "proposed": true
+          },
+          {
+            "raw": "complications[*] (pneumothorax) + intervention level",
+            "paths": [
+              "complications[*] (pneumothorax) + intervention level"
+            ]
+          }
+        ],
+        "raw_bundle": "blvr_performed; blvr_target_lobe; blvr_valves; blvr_chartis_performed; blvr_cv_result; (new) blvr.valve_type; (new) blvr.segments_treated; (new) blvr.valve_sizes; complications[*] (pneumothorax) + intervention level"
+      },
+      {
+        "procedure_flag": "peripheral_ablation",
+        "bundle_fields": [
+          {
+            "raw": "(new) peripheral_ablation.target_location",
+            "paths": [
+              "peripheral_ablation.target_location"
+            ],
+            "proposed": true
+          },
+          {
+            "raw": "(new) peripheral_ablation.modality (MWA/RFA/cryo/etc)",
+            "paths": [
+              "peripheral_ablation.modality"
+            ],
+            "proposed": true,
+            "note": "MWA/RFA/cryo/etc"
+          },
+          {
+            "raw": "(new) peripheral_ablation.energy_settings",
+            "paths": [
+              "peripheral_ablation.energy_settings"
+            ],
+            "proposed": true
+          },
+          {
+            "raw": "(new) peripheral_ablation.ablation_cycles",
+            "paths": [
+              "peripheral_ablation.ablation_cycles"
+            ],
+            "proposed": true
+          },
+          {
+            "raw": "clinical_context.lesion_characteristics",
+            "paths": [
+              "clinical_context.lesion_characteristics"
+            ]
+          },
+          {
+            "raw": "complications[*] (pneumothorax, bleeding)",
+            "paths": [
+              "complications[*]"
+            ],
+            "note": "pneumothorax, bleeding"
+          }
+        ],
+        "raw_bundle": "(new) peripheral_ablation.target_location; (new) peripheral_ablation.modality (MWA/RFA/cryo/etc); (new) peripheral_ablation.energy_settings; (new) peripheral_ablation.ablation_cycles; clinical_context.lesion_characteristics; complications[*] (pneumothorax, bleeding)"
+      },
+      {
+        "procedure_flag": "bronchial_thermoplasty",
+        "bundle_fields": [
+          {
+            "raw": "(new) bronchial_thermoplasty.session_number",
+            "paths": [
+              "bronchial_thermoplasty.session_number"
+            ],
+            "proposed": true
+          },
+          {
+            "raw": "(new) bronchial_thermoplasty.lobes_treated",
+            "paths": [
+              "bronchial_thermoplasty.lobes_treated"
+            ],
+            "proposed": true
+          },
+          {
+            "raw": "(new) bronchial_thermoplasty.activations_count",
+            "paths": [
+              "bronchial_thermoplasty.activations_count"
+            ],
+            "proposed": true
+          },
+          {
+            "raw": "(new) bronchial_thermoplasty.system (Alair etc)",
+            "paths": [
+              "bronchial_thermoplasty.system"
+            ],
+            "proposed": true,
+            "note": "Alair etc"
+          },
+          {
+            "raw": "complications[*] (bronchospasm, hypoxia)",
+            "paths": [
+              "complications[*]"
+            ],
+            "note": "bronchospasm, hypoxia"
+          }
+        ],
+        "raw_bundle": "(new) bronchial_thermoplasty.session_number; (new) bronchial_thermoplasty.lobes_treated; (new) bronchial_thermoplasty.activations_count; (new) bronchial_thermoplasty.system (Alair etc); complications[*] (bronchospasm, hypoxia)"
+      },
+      {
+        "procedure_flag": "whole_lung_lavage",
+        "bundle_fields": [
+          {
+            "raw": "(new) wll.side (left/right)",
+            "paths": [
+              "wll.side"
+            ],
+            "proposed": true,
+            "note": "left/right"
+          },
+          {
+            "raw": "(new) wll.volume_instilled_l",
+            "paths": [
+              "wll.volume_instilled_l"
+            ],
+            "proposed": true
+          },
+          {
+            "raw": "(new) wll.volume_returned_l",
+            "paths": [
+              "wll.volume_returned_l"
+            ],
+            "proposed": true
+          },
+          {
+            "raw": "(new) wll.indication",
+            "paths": [
+              "wll.indication"
+            ],
+            "proposed": true
+          },
+          {
+            "raw": "complications[*]",
+            "paths": [
+              "complications[*]"
+            ]
+          }
+        ],
+        "raw_bundle": "(new) wll.side (left/right); (new) wll.volume_instilled_l; (new) wll.volume_returned_l; (new) wll.indication; complications[*]"
+      },
+      {
+        "procedure_flag": "rigid_bronchoscopy",
+        "bundle_fields": [
+          {
+            "raw": "(new) rigid.indication",
+            "paths": [
+              "rigid.indication"
+            ],
+            "proposed": true
+          },
+          {
+            "raw": "(new) rigid.tube_size_mm",
+            "paths": [
+              "rigid.tube_size_mm"
+            ],
+            "proposed": true
+          },
+          {
+            "raw": "sedation.type",
+            "paths": [
+              "sedation.type"
+            ]
+          },
+          {
+            "raw": "events[*] (intubation/rigid start/end)",
+            "paths": [
+              "events[*]"
+            ],
+            "note": "intubation/rigid start/end"
+          },
+          {
+            "raw": "complications[*]",
+            "paths": [
+              "complications[*]"
+            ]
+          }
+        ],
+        "raw_bundle": "(new) rigid.indication; (new) rigid.tube_size_mm; sedation.type; events[*] (intubation/rigid start/end); complications[*]"
+      },
+      {
+        "procedure_flag": "thoracentesis",
+        "bundle_fields": [
+          {
+            "raw": "(new) thoracentesis.laterality",
+            "paths": [
+              "thoracentesis.laterality"
+            ],
+            "proposed": true
+          },
+          {
+            "raw": "(new) thoracentesis.volume_removed_ml",
+            "paths": [
+              "thoracentesis.volume_removed_ml"
+            ],
+            "proposed": true
+          },
+          {
+            "raw": "(new) thoracentesis.ultrasound_guidance (Y/N)",
+            "paths": [
+              "thoracentesis.ultrasound_guidance"
+            ],
+            "proposed": true,
+            "note": "Y/N"
+          },
+          {
+            "raw": "(new) thoracentesis.fluid_appearance",
+            "paths": [
+              "thoracentesis.fluid_appearance"
+            ],
+            "proposed": true
+          },
+          {
+            "raw": "(new) thoracentesis.manometry_used (Y/N)",
+            "paths": [
+              "thoracentesis.manometry_used"
+            ],
+            "proposed": true,
+            "note": "Y/N"
+          },
+          {
+            "raw": "(new) pleural.pleural_LDH",
+            "paths": [
+              "pleural.pleural_LDH"
+            ],
+            "proposed": true
+          },
+          {
+            "raw": "(new) pleural.serum_LDH",
+            "paths": [
+              "pleural.serum_LDH"
+            ],
+            "proposed": true
+          },
+          {
+            "raw": "(new) pleural.pleural_protein",
+            "paths": [
+              "pleural.pleural_protein"
+            ],
+            "proposed": true
+          },
+          {
+            "raw": "(new) dyspnea.mMRC_pre",
+            "paths": [
+              "dyspnea.mMRC_pre"
+            ],
+            "proposed": true
+          },
+          {
+            "raw": "(new) dyspnea.mMRC_post",
+            "paths": [
+              "dyspnea.mMRC_post"
+            ],
+            "proposed": true
+          },
+          {
+            "raw": "complications[*] (pneumothorax) + intervention level",
+            "paths": [
+              "complications[*] (pneumothorax) + intervention level"
+            ]
+          }
+        ],
+        "raw_bundle": "(new) thoracentesis.laterality; (new) thoracentesis.volume_removed_ml; (new) thoracentesis.ultrasound_guidance (Y/N); (new) thoracentesis.fluid_appearance; (new) thoracentesis.manometry_used (Y/N); (new) pleural.pleural_LDH; (new) pleural.serum_LDH; (new) pleural.pleural_protein; (new) dyspnea.mMRC_pre; (new) dyspnea.mMRC_post; complications[*] (pneumothorax) + intervention level"
+      },
+      {
+        "procedure_flag": "chest_tube",
+        "bundle_fields": [
+          {
+            "raw": "(new) chest_tube.laterality",
+            "paths": [
+              "chest_tube.laterality"
+            ],
+            "proposed": true
+          },
+          {
+            "raw": "(new) chest_tube.size_fr",
+            "paths": [
+              "chest_tube.size_fr"
+            ],
+            "proposed": true
+          },
+          {
+            "raw": "(new) chest_tube.type (pigtail/surgical)",
+            "paths": [
+              "chest_tube.type"
+            ],
+            "proposed": true,
+            "note": "pigtail/surgical"
+          },
+          {
+            "raw": "(new) chest_tube.suction_settings",
+            "paths": [
+              "chest_tube.suction_settings"
+            ],
+            "proposed": true
+          },
+          {
+            "raw": "(new) chest_tube.indication",
+            "paths": [
+              "chest_tube.indication"
+            ],
+            "proposed": true
+          },
+          {
+            "raw": "(new) chest_tube.output_ml_first24h",
+            "paths": [
+              "chest_tube.output_ml_first24h"
+            ],
+            "proposed": true
+          },
+          {
+            "raw": "complications[*]",
+            "paths": [
+              "complications[*]"
+            ]
+          }
+        ],
+        "raw_bundle": "(new) chest_tube.laterality; (new) chest_tube.size_fr; (new) chest_tube.type (pigtail/surgical); (new) chest_tube.suction_settings; (new) chest_tube.indication; (new) chest_tube.output_ml_first24h; complications[*]"
+      },
+      {
+        "procedure_flag": "ipc",
+        "bundle_fields": [
+          {
+            "raw": "(new) ipc.laterality",
+            "paths": [
+              "ipc.laterality"
+            ],
+            "proposed": true
+          },
+          {
+            "raw": "(new) ipc.action (placement/removal)",
+            "paths": [
+              "ipc.action"
+            ],
+            "proposed": true,
+            "note": "placement/removal"
+          },
+          {
+            "raw": "(new) ipc.catheter_brand",
+            "paths": [
+              "ipc.catheter_brand"
+            ],
+            "proposed": true
+          },
+          {
+            "raw": "(new) ipc.size_fr",
+            "paths": [
+              "ipc.size_fr"
+            ],
+            "proposed": true
+          },
+          {
+            "raw": "(new) ipc.initial_drainage_ml",
+            "paths": [
+              "ipc.initial_drainage_ml"
+            ],
+            "proposed": true
+          },
+          {
+            "raw": "(new) ipc.complications (infection, blockage)",
+            "paths": [
+              "ipc.complications"
+            ],
+            "proposed": true,
+            "note": "infection, blockage"
+          }
+        ],
+        "raw_bundle": "(new) ipc.laterality; (new) ipc.action (placement/removal); (new) ipc.catheter_brand; (new) ipc.size_fr; (new) ipc.initial_drainage_ml; (new) ipc.complications (infection, blockage)"
+      },
+      {
+        "procedure_flag": "medical_thoracoscopy",
+        "bundle_fields": [
+          {
+            "raw": "(new) thoracoscopy.laterality",
+            "paths": [
+              "thoracoscopy.laterality"
+            ],
+            "proposed": true
+          },
+          {
+            "raw": "(new) thoracoscopy.findings",
+            "paths": [
+              "thoracoscopy.findings"
+            ],
+            "proposed": true
+          },
+          {
+            "raw": "(new) thoracoscopy.pleural_biopsy_count",
+            "paths": [
+              "thoracoscopy.pleural_biopsy_count"
+            ],
+            "proposed": true
+          },
+          {
+            "raw": "(new) thoracoscopy.pleurodesis_performed",
+            "paths": [
+              "thoracoscopy.pleurodesis_performed"
+            ],
+            "proposed": true
+          },
+          {
+            "raw": "(new) thoracoscopy.complications",
+            "paths": [
+              "thoracoscopy.complications"
+            ],
+            "proposed": true
+          }
+        ],
+        "raw_bundle": "(new) thoracoscopy.laterality; (new) thoracoscopy.findings; (new) thoracoscopy.pleural_biopsy_count; (new) thoracoscopy.pleurodesis_performed; (new) thoracoscopy.complications"
+      },
+      {
+        "procedure_flag": "pleurodesis",
+        "bundle_fields": [
+          {
+            "raw": "(new) pleurodesis.method (slurry/poudrage)",
+            "paths": [
+              "pleurodesis.method"
+            ],
+            "proposed": true,
+            "note": "slurry/poudrage"
+          },
+          {
+            "raw": "(new) pleurodesis.agent (talc/doxy/etc)",
+            "paths": [
+              "pleurodesis.agent"
+            ],
+            "proposed": true,
+            "note": "talc/doxy/etc"
+          },
+          {
+            "raw": "(new) pleurodesis.dose",
+            "paths": [
+              "pleurodesis.dose"
+            ],
+            "proposed": true
+          },
+          {
+            "raw": "(new) pleurodesis.success",
+            "paths": [
+              "pleurodesis.success"
+            ],
+            "proposed": true
+          }
+        ],
+        "raw_bundle": "(new) pleurodesis.method (slurry/poudrage); (new) pleurodesis.agent (talc/doxy/etc); (new) pleurodesis.dose; (new) pleurodesis.success"
+      },
+      {
+        "procedure_flag": "pleural_biopsy",
+        "bundle_fields": [
+          {
+            "raw": "(new) pleural_biopsy.method (closed needle/thoracoscopic)",
+            "paths": [
+              "pleural_biopsy.method"
+            ],
+            "proposed": true,
+            "note": "closed needle/thoracoscopic"
+          },
+          {
+            "raw": "(new) pleural_biopsy.laterality",
+            "paths": [
+              "pleural_biopsy.laterality"
+            ],
+            "proposed": true
+          },
+          {
+            "raw": "(new) pleural_biopsy.number_of_biopsies",
+            "paths": [
+              "pleural_biopsy.number_of_biopsies"
+            ],
+            "proposed": true
+          },
+          {
+            "raw": "(new) pleural_biopsy.pathology_result",
+            "paths": [
+              "pleural_biopsy.pathology_result"
+            ],
+            "proposed": true
+          }
+        ],
+        "raw_bundle": "(new) pleural_biopsy.method (closed needle/thoracoscopic); (new) pleural_biopsy.laterality; (new) pleural_biopsy.number_of_biopsies; (new) pleural_biopsy.pathology_result"
+      },
+      {
+        "procedure_flag": "fibrinolytic_therapy",
+        "bundle_fields": [
+          {
+            "raw": "(new) fibrinolytic.agent (tPA/DNase/etc)",
+            "paths": [
+              "fibrinolytic.agent"
+            ],
+            "proposed": true,
+            "note": "tPA/DNase/etc"
+          },
+          {
+            "raw": "(new) fibrinolytic.dose",
+            "paths": [
+              "fibrinolytic.dose"
+            ],
+            "proposed": true
+          },
+          {
+            "raw": "(new) fibrinolytic.number_of_doses",
+            "paths": [
+              "fibrinolytic.number_of_doses"
+            ],
+            "proposed": true
+          },
+          {
+            "raw": "(new) fibrinolytic.indication (empyema/loculation)",
+            "paths": [
+              "fibrinolytic.indication"
+            ],
+            "proposed": true,
+            "note": "empyema/loculation"
+          },
+          {
+            "raw": "(new) fibrinolytic.response",
+            "paths": [
+              "fibrinolytic.response"
+            ],
+            "proposed": true
+          },
+          {
+            "raw": "complications[*] (bleeding)",
+            "paths": [
+              "complications[*]"
+            ],
+            "note": "bleeding"
+          }
+        ],
+        "raw_bundle": "(new) fibrinolytic.agent (tPA/DNase/etc); (new) fibrinolytic.dose; (new) fibrinolytic.number_of_doses; (new) fibrinolytic.indication (empyema/loculation); (new) fibrinolytic.response; complications[*] (bleeding)"
+      }
+    ]
+  }
+}

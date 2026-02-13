@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -271,23 +272,86 @@ async def report_seed_from_text(
     debug_enabled = bool(req.debug or req.include_debug)
     debug_notes: list[dict[str, Any]] | None = [] if debug_enabled else None
 
-    redaction = apply_phi_redaction(req.text, phi_scrubber)
+    redaction = apply_phi_redaction(req.text, phi_scrubber, already_scrubbed=bool(req.already_scrubbed))
     note_text = redaction.text
 
-    extraction_result = await run_cpu(request.app, registry_service.extract_fields, note_text)
-    bundle = build_procedure_bundle_from_extraction(extraction_result.record, source_text=note_text)
+    seed_strategy = os.getenv("REPORTER_SEED_STRATEGY", "registry_extract_fields").strip().lower()
+    llm_strict = os.getenv("REPORTER_SEED_LLM_STRICT", "0").strip().lower() in {"1", "true", "yes", "y"}
+
+    seed_warnings: list[str] = []
+    seed_record_for_completeness = None
+    seed_text_for_bundle = note_text
+    extraction_source: Any = None
+
+    if debug_notes is not None:
+        debug_notes.append(
+            {
+                "type": "seed_strategy",
+                "strategy": seed_strategy,
+                "already_scrubbed": bool(req.already_scrubbed),
+                "redaction": {
+                    "was_scrubbed": bool(redaction.was_scrubbed),
+                    "entity_count": int(redaction.entity_count),
+                    "warning": redaction.warning,
+                },
+            }
+        )
+
+    if seed_strategy == "llm_findings":
+        try:
+            from app.reporting.llm_findings import (
+                ReporterFindingsError,
+                build_record_payload_for_reporting,
+                seed_registry_record_from_llm_findings,
+            )
+
+            seed = seed_registry_record_from_llm_findings(note_text)
+            seed_warnings.extend(list(seed.warnings or []))
+            seed_record_for_completeness = seed.record
+            seed_text_for_bundle = seed.masked_prompt_text
+            extraction_source = build_record_payload_for_reporting(seed)
+            if debug_notes is not None:
+                debug_notes.append(
+                    {
+                        "type": "llm_findings_seed",
+                        "accepted_findings": int(seed.accepted_findings),
+                        "dropped_findings": int(seed.dropped_findings),
+                        "needs_review": bool(seed.needs_review),
+                        "derived_cpt_count": int(len(seed.cpt_codes or [])),
+                    }
+                )
+        except ReporterFindingsError as exc:
+            seed_warnings.append(f"REPORTER_SEED_FALLBACK: llm_findings_failed ({type(exc).__name__})")
+            if llm_strict:
+                raise HTTPException(status_code=502, detail="LLM findings seeding failed") from exc
+            seed_strategy = "registry_extract_fields"
+        except Exception as exc:  # noqa: BLE001
+            seed_warnings.append(f"REPORTER_SEED_FALLBACK: llm_findings_failed ({type(exc).__name__})")
+            if llm_strict:
+                raise HTTPException(status_code=502, detail="LLM findings seeding failed") from exc
+            seed_strategy = "registry_extract_fields"
+
+    extraction_result = None
+    if seed_strategy != "llm_findings":
+        extraction_result = await run_cpu(request.app, registry_service.extract_fields, note_text)
+        extraction_source = extraction_result.record
+        seed_record_for_completeness = extraction_result.record
+        seed_text_for_bundle = note_text
+
+    bundle = build_procedure_bundle_from_extraction(extraction_source, source_text=seed_text_for_bundle)
     bundle = _apply_seed_metadata(bundle, req.metadata)
     if not bundle.free_text_hint:
         bundle_payload = bundle.model_dump(exclude_none=False)
-        bundle_payload["free_text_hint"] = note_text
+        bundle_payload["free_text_hint"] = seed_text_for_bundle
         bundle = ProcedureBundle.model_validate(bundle_payload)
 
     bundle, issues, warnings, suggestions, notes = _verify_bundle(bundle, debug_notes=debug_notes)
+    warnings = list(seed_warnings) + list(warnings or [])
     missing_field_prompts: list[dict[str, object]] = []
     try:
         from app.registry.completeness import generate_missing_field_prompts
 
-        completeness_prompts = generate_missing_field_prompts(extraction_result.record)
+        completeness_prompts = generate_missing_field_prompts(seed_record_for_completeness)
         if completeness_prompts:
             missing_field_prompts = [
                 {

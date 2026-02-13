@@ -34,6 +34,9 @@ class ProcedureExtractionResult:
 
 # Mapping from keyword patterns to procedure field names
 PROCEDURE_MAPPINGS: Dict[str, Tuple[Set[str], str]] = {
+    # NOTE: These keys are used as the procedure_key allowlist for reporter LLM findings.
+    # Keep keys aligned with RegistryRecord field names (or provide explicit field paths).
+
     # EBUS procedures
     "linear_ebus": (
         {"ebus", "convex ebus", "linear ebus", "endobronchial ultrasound"},
@@ -102,6 +105,23 @@ PROCEDURE_MAPPINGS: Dict[str, Tuple[Set[str], str]] = {
         "procedures_performed.airway_stent.performed",
     ),
 
+    # Balloon occlusion / endobronchial blockers (often Chartis/BLVR or bleeding control)
+    "balloon_occlusion": (
+        {
+            "balloon occlusion",
+            "serial occlusion",
+            "endobronchial blocker",
+            "bronchial blocker",
+            "balloon blocker",
+            "uniblocker",
+            "arndt",
+            "ardnt",
+            "fogarty",
+            "cohen flexitip",
+        },
+        "procedures_performed.balloon_occlusion.performed",
+    ),
+
     # Ablation procedures
     "thermal_ablation": (
         {"apc", "argon plasma", "electrocautery", "laser", "thermal ablation"},
@@ -113,7 +133,7 @@ PROCEDURE_MAPPINGS: Dict[str, Tuple[Set[str], str]] = {
     ),
     "tumor_debulking": (
         {"debulking", "tumor debulking", "mechanical debridement"},
-        "procedures_performed.tumor_debulking_non_thermal.performed",
+        "procedures_performed.mechanical_debulking.performed",
     ),
 
     # BLVR
@@ -142,6 +162,12 @@ PROCEDURE_MAPPINGS: Dict[str, Tuple[Set[str], str]] = {
     "pleurodesis": (
         {"pleurodesis", "talc", "chemical pleurodesis"},
         "pleural_procedures.pleurodesis.performed",
+    ),
+
+    # Imaging
+    "chest_ultrasound": (
+        {"chest ultrasound", "thoracic ultrasound", "pleural ultrasound"},
+        "procedures_performed.chest_ultrasound.performed",
     ),
 
     # Tracheostomy

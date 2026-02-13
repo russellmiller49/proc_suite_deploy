@@ -170,6 +170,7 @@ class QuestionsResponse(BaseModel):
 
 class SeedFromTextRequest(BaseModel):
     text: str
+    already_scrubbed: bool = False
     metadata: dict[str, Any] = Field(default_factory=dict)
     strict: bool = False
     debug: bool = False

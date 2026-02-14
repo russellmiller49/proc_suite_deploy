@@ -1889,8 +1889,9 @@ def _add_compat_flat_fields(raw: dict[str, Any]) -> dict[str, Any]:
 
         bpf_context = bool(note_text and re.search(r"(?i)\bair\s*leak\b|\bairleak\b|\bfistula\b|\bbronchopleural\b|\bpleurovac\b", note_text))
         if bpf_context and raw.get("bpf_localization") in (None, "", [], {}):
+            occlusion_location = balloon.get("occlusion_location") if isinstance(balloon, dict) else None
             raw["bpf_localization"] = {
-                "culprit_segment": _first_nonempty_str(segment_hint, location_hint, "target airway"),
+                "culprit_segment": _first_nonempty_str(occlusion_location, location_hint, segment_hint, "target airway"),
                 "balloon_type": balloon_type,
                 "balloon_size_mm": None,
                 "leak_reduction": None,

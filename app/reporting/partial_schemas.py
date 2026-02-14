@@ -15,6 +15,16 @@ from typing import List
 from pydantic import BaseModel, ConfigDict, Field
 
 
+class AirwayDilationPartial(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    airway_segment: str | None = None
+    technique: str | None = None
+    dilation_sizes_mm: List[int] = Field(default_factory=list)
+    post_dilation_diameter_mm: int | None = None
+    notes: str | None = None
+
+
 class TransbronchialNeedleAspirationPartial(BaseModel):
     model_config = ConfigDict(extra="ignore")
 

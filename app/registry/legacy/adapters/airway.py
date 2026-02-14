@@ -4,6 +4,12 @@ from typing import Any
 
 from proc_schemas.clinical import airway as airway_schemas
 
+from app.reporting.partial_schemas import (
+    AirwayDilationPartial,
+    AirwayStentPlacementPartial,
+    EndobronchialTumorDestructionPartial,
+)
+
 from .base import DictPayloadAdapter, ExtractionAdapter
 
 
@@ -73,7 +79,13 @@ class EMNAdapter(ExtractionAdapter):
     @classmethod
     def matches(cls, source: dict[str, Any]) -> bool:
         platform = _nav_platform(source)
-        return platform == "emn" and (source.get("nav_registration_method") or source.get("nav_rebus_used"))
+        if platform != "emn":
+            return False
+        if source.get("nav_registration_method") or source.get("nav_rebus_used"):
+            return True
+        procs = source.get("procedures_performed") or {}
+        nav = procs.get("navigational_bronchoscopy") if isinstance(procs, dict) else None
+        return isinstance(nav, dict) and nav.get("performed") is True
 
     @classmethod
     def build_payload(cls, source: dict[str, Any]) -> dict[str, Any]:
@@ -157,7 +169,13 @@ class RoboticNavigationAdapter(ExtractionAdapter):
             or source.get("nav_rebus_used")
             or source.get("nav_notes")
         )
-        return platform_match and has_nav_details
+        if not platform_match:
+            return False
+        if has_nav_details:
+            return True
+        procs = source.get("procedures_performed") or {}
+        nav = procs.get("navigational_bronchoscopy") if isinstance(procs, dict) else None
+        return isinstance(nav, dict) and nav.get("performed") is True
 
     @classmethod
     def build_payload(cls, source: dict[str, Any]) -> dict[str, Any]:
@@ -456,9 +474,13 @@ class TransbronchialBiopsyAdapter(ExtractionAdapter):
     def matches(cls, source: dict[str, Any]) -> bool:
         num = source.get("bronch_num_tbbx")
         try:
-            return num is not None and int(num) > 0
+            if num is not None and int(num) > 0:
+                return True
         except Exception:
-            return False
+            pass
+        procs = source.get("procedures_performed") or {}
+        tbbx = procs.get("transbronchial_biopsy") if isinstance(procs, dict) else None
+        return isinstance(tbbx, dict) and tbbx.get("performed") is True
 
     @classmethod
     def build_payload(cls, source: dict[str, Any]) -> dict[str, Any]:
@@ -491,6 +513,27 @@ class TherapeuticAspirationAdapter(DictPayloadAdapter):
     schema_model = airway_schemas.TherapeuticAspiration
     schema_id = "therapeutic_aspiration_v1"
     source_key = "therapeutic_aspiration"
+
+
+class AirwayDilationAdapter(DictPayloadAdapter):
+    proc_type = "airway_dilation"
+    schema_model = AirwayDilationPartial
+    schema_id = "airway_dilation_v1"
+    source_key = "airway_dilation"
+
+
+class EndobronchialTumorDestructionAdapter(DictPayloadAdapter):
+    proc_type = "endobronchial_tumor_destruction"
+    schema_model = EndobronchialTumorDestructionPartial
+    schema_id = "endobronchial_tumor_destruction_v1"
+    source_key = "endobronchial_tumor_destruction"
+
+
+class AirwayStentPlacementAdapter(DictPayloadAdapter):
+    proc_type = "airway_stent_placement"
+    schema_model = AirwayStentPlacementPartial
+    schema_id = "airway_stent_placement_v1"
+    source_key = "airway_stent_placement"
 
 
 class RigidBronchoscopyAdapter(DictPayloadAdapter):
@@ -579,6 +622,8 @@ class StentSurveillanceAdapter(DictPayloadAdapter):
 
 __all__ = [
     "AwakeFOIAdapter",
+    "AirwayDilationAdapter",
+    "AirwayStentPlacementAdapter",
     "BALAdapter",
     "BALVariantAdapter",
     "BLVRValvePlacementAdapter",
@@ -593,6 +638,7 @@ __all__ = [
     "DLTPlacementAdapter",
     "EBUSTBNAAdapter",
     "EMNAdapter",
+    "EndobronchialTumorDestructionAdapter",
     "EndobronchialBiopsyAdapter",
     "EndobronchialBlockerAdapter",
     "EndobronchialCryoablationAdapter",

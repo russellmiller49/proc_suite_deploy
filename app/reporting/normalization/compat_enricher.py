@@ -1670,23 +1670,186 @@ def _add_compat_flat_fields(raw: dict[str, Any]) -> dict[str, Any]:
             "radial_vessel_check": radial_vessel_check,
         }
 
-    if raw.get("endobronchial_blocker") in (None, "", [], {}) and source_text and re.search(r"(?i)\bfogarty\b", source_text):
-        side = None
-        if location_hint and location_hint.upper().startswith("R"):
-            side = "right"
-        elif location_hint and location_hint.upper().startswith("L"):
-            side = "left"
-        if not side and source_text:
-            if re.search(r"(?i)\bleft\b", source_text):
-                side = "left"
-            elif re.search(r"(?i)\bright\b", source_text):
-                side = "right"
-        raw["endobronchial_blocker"] = {
-            "blocker_type": "Fogarty",
-            "side": side or "unspecified",
-            "location": _first_nonempty_str(location_hint, segment_hint, "target airway"),
-            "indication": "Prophylaxis",
+    # --- Airway therapeutics compat (performed flags -> reporter adapters) ---
+    note_text = source_text if isinstance(source_text, str) else ""
+
+    aspiration = procs.get("therapeutic_aspiration")
+    if raw.get("therapeutic_aspiration") in (None, "", [], {}) and isinstance(aspiration, dict) and aspiration.get("performed") is True:
+        aspirate_type = _first_nonempty_str(aspiration.get("material"))
+        if not aspirate_type and note_text:
+            if re.search(r"(?i)\bmucus(?:\s*plug)?\b|\bmucous\b", note_text):
+                aspirate_type = "mucus"
+            elif re.search(r"(?i)\bclot\b|\bblood\s*clot\b", note_text):
+                aspirate_type = "blood clot"
+            elif re.search(r"(?i)\bblood\b", note_text):
+                aspirate_type = "blood"
+        raw["therapeutic_aspiration"] = {
+            "airway_segment": _first_nonempty_str(aspiration.get("location"), segment_hint, location_hint, "airways"),
+            "aspirate_type": aspirate_type or "secretions",
         }
+
+    dilation = procs.get("airway_dilation")
+    if raw.get("airway_dilation") in (None, "", [], {}) and isinstance(dilation, dict) and dilation.get("performed") is True:
+        technique = None
+        if note_text and re.search(r"(?i)\bballoon\b", note_text):
+            technique = "Balloon dilation"
+        elif note_text and re.search(r"(?i)\bbougie\b", note_text):
+            technique = "Bougie dilation"
+        sizes: list[int] = []
+        if note_text:
+            for match in re.finditer(r"(?i)\b(\d{1,2})\s*mm\b", note_text):
+                try:
+                    sizes.append(int(match.group(1)))
+                except Exception:
+                    continue
+        if sizes:
+            seen_sizes: set[int] = set()
+            deduped_sizes: list[int] = []
+            for val in sizes:
+                if val in seen_sizes:
+                    continue
+                seen_sizes.add(val)
+                deduped_sizes.append(val)
+            sizes = deduped_sizes
+        raw["airway_dilation"] = {
+            "airway_segment": _first_nonempty_str(dilation.get("location"), segment_hint, location_hint),
+            "technique": technique,
+            "dilation_sizes_mm": sizes,
+            "post_dilation_diameter_mm": None,
+            "notes": None,
+        }
+
+    cryo = procs.get("cryotherapy")
+    if isinstance(cryo, dict) and cryo.get("performed") is True and note_text:
+        airway_target = _first_nonempty_str(segment_hint, location_hint, "target airway")
+        mucus_context = bool(re.search(r"(?i)\b(mucus(?:\s*plug)?|clot|cast|plug|secretions)\b", note_text))
+        if mucus_context:
+            if raw.get("cryo_extraction_mucus") in (None, "", [], {}):
+                raw["cryo_extraction_mucus"] = {
+                    "airway_segment": airway_target,
+                    "probe_size_mm": None,
+                    "freeze_seconds": None,
+                    "num_casts": None,
+                    "ventilation_result": None,
+                    "notes": None,
+                }
+        else:
+            if raw.get("endobronchial_cryoablation") in (None, "", [], {}):
+                raw["endobronchial_cryoablation"] = {
+                    "site": airway_target,
+                    "cryoprobe_size_mm": None,
+                    "freeze_seconds": None,
+                    "thaw_seconds": None,
+                    "cycles": None,
+                    "pattern": None,
+                    "post_patency": None,
+                    "notes": None,
+                }
+
+    thermal = procs.get("thermal_ablation")
+    if raw.get("endobronchial_tumor_destruction") in (None, "", [], {}) and isinstance(thermal, dict) and thermal.get("performed") is True:
+        modality = None
+        if note_text:
+            if re.search(r"(?i)\bapc\b|argon\s+plasma", note_text):
+                modality = "APC"
+            elif re.search(r"(?i)\blaser\b", note_text):
+                modality = "Laser"
+            elif re.search(r"(?i)\belectrocautery\b|\bcautery\b", note_text):
+                modality = "Electrocautery"
+            elif re.search(r"(?i)\bthermal\s+ablation\b", note_text):
+                modality = "Thermal ablation"
+        raw["endobronchial_tumor_destruction"] = {
+            "modality": modality or "Thermal ablation",
+            "airway_segment": _first_nonempty_str(segment_hint, location_hint),
+            "notes": None,
+        }
+
+    stent = procs.get("airway_stent")
+    if isinstance(stent, dict) and stent.get("performed") is True:
+        action_type = stent.get("action_type")
+        if not action_type and stent.get("action") not in (None, "", [], {}):
+            action_raw = str(stent.get("action") or "").strip().lower()
+            if action_raw.startswith("assessment"):
+                action_type = "assessment_only"
+            elif action_raw.startswith("placement"):
+                action_type = "placement"
+            elif action_raw.startswith("removal"):
+                action_type = "removal"
+            elif action_raw.startswith("revision"):
+                action_type = "revision"
+
+        def _coerce_int(value: Any) -> int | None:
+            if value in (None, "", [], {}):
+                return None
+            try:
+                return int(float(value))
+            except Exception:
+                return None
+
+        stent_type = _first_nonempty_str(stent.get("stent_type"), stent.get("stent_brand"))
+        stent_location = _first_nonempty_str(stent.get("location"), segment_hint, location_hint, "target airway")
+        if str(action_type or "").strip().lower() in {"assessment_only", "assessment only"}:
+            if raw.get("stent_surveillance") in (None, "", [], {}):
+                raw["stent_surveillance"] = {
+                    "stent_type": stent_type or "airway stent",
+                    "location": stent_location,
+                    "findings": None,
+                    "interventions": None,
+                    "final_patency_pct": None,
+                }
+        else:
+            if raw.get("airway_stent_placement") in (None, "", [], {}):
+                raw["airway_stent_placement"] = {
+                    "stent_type": stent_type,
+                    "diameter_mm": _coerce_int(stent.get("diameter_mm")),
+                    "length_mm": _coerce_int(stent.get("length_mm")),
+                    "airway_segment": stent_location if stent_location != "target airway" else None,
+                    "notes": None,
+                }
+
+    balloon = procs.get("balloon_occlusion")
+    balloon_performed = isinstance(balloon, dict) and balloon.get("performed") is True
+    # Preserve legacy behavior: allow Fogarty-triggered blocker even when V3 flags are missing.
+    balloon_mentioned = bool(note_text and re.search(r"(?i)\bfogarty\b", note_text))
+    if balloon_performed or balloon_mentioned:
+        balloon_type = None
+        if note_text:
+            if re.search(r"(?i)\barndt\b|\bardnt\b", note_text):
+                balloon_type = "Arndt"
+            elif re.search(r"(?i)\bfogarty\b", note_text):
+                balloon_type = "Fogarty"
+            elif re.search(r"(?i)\bcohen\s+flexitip\b", note_text):
+                balloon_type = "Cohen Flexitip"
+
+        bpf_context = bool(note_text and re.search(r"(?i)\bair\s*leak\b|\bairleak\b|\bfistula\b|\bbronchopleural\b|\bpleurovac\b", note_text))
+        if bpf_context and raw.get("bpf_localization") in (None, "", [], {}):
+            raw["bpf_localization"] = {
+                "culprit_segment": _first_nonempty_str(segment_hint, location_hint, "target airway"),
+                "balloon_type": balloon_type,
+                "balloon_size_mm": None,
+                "leak_reduction": None,
+                "methylene_blue_used": None,
+                "contrast_used": None,
+                "instillation_findings": None,
+                "notes": None,
+            }
+        elif raw.get("endobronchial_blocker") in (None, "", [], {}):
+            side = None
+            if location_hint and location_hint.upper().startswith("R"):
+                side = "right"
+            elif location_hint and location_hint.upper().startswith("L"):
+                side = "left"
+            if not side and note_text:
+                if re.search(r"(?i)\bleft\b", note_text):
+                    side = "left"
+                elif re.search(r"(?i)\bright\b", note_text):
+                    side = "right"
+            raw["endobronchial_blocker"] = {
+                "blocker_type": balloon_type or "Endobronchial blocker",
+                "side": side or "unspecified",
+                "location": _first_nonempty_str(location_hint, segment_hint, "target airway"),
+                "indication": "Prophylaxis",
+            }
 
     # bronch_num_tbbx from transbronchial_biopsy.number_of_samples
     if "bronch_num_tbbx" not in raw:

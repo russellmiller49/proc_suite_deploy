@@ -2873,6 +2873,30 @@ def extract_peripheral_ablation(note_text: str) -> Dict[str, Any]:
     if not (has_mwa or has_rfa or has_cryo):
         return {}
 
+    peripheral_context = bool(
+        re.search(
+            r"\b(?:peripheral|nodule|lesion|mass|parenchym|target\s+lesion|lung\s+nodule|pulmonary\s+nodule|"
+            r"navigation|navigational|robotic|ion|cbct|cone\s*beam|tool[- ]?in[- ]?lesion)\b",
+            text_lower,
+            re.IGNORECASE,
+        )
+    )
+    endobronchial_context = bool(
+        re.search(
+            r"\b(?:endobronch|airway|trachea|carina|main(?:\s*|-)?stem|bronch(?:us|ial)|stenos|stricture)\b",
+            text_lower,
+            re.IGNORECASE,
+        )
+    )
+
+    # "Endobronchial cryoablation"/cryotherapy for CAO should map to thermal/airway
+    # interventions, not peripheral nodule ablation.
+    if has_cryo and not (has_mwa or has_rfa):
+        if re.search(r"\bendobronchial\s+cryoablation\b", text_lower, re.IGNORECASE):
+            return {}
+        if endobronchial_context and not peripheral_context:
+            return {}
+
     proc: dict[str, Any] = {"performed": True}
     if has_mwa:
         proc["modality"] = "Microwave"

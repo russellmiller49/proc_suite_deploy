@@ -1,1 +1,10 @@
-Argon Plasma Coagulation (APC): Endobronchial obstruction was treated with Argon Plasma Coagulation (APC) for tumor ablation and hemostasis{% if proc.airway_segment %}. Performed at the {{ proc.airway_segment }}{% endif %}.{% if proc.notes %} Notes: {{ proc.notes }}.{% endif %}
+{% set _mod_raw = (proc.modality or "") | trim %}
+{% set _mod_lower = _mod_raw | lower %}
+{% if not _mod_raw %}
+{% set modality = "Argon Plasma Coagulation (APC)" %}
+{% elif "apc" in _mod_lower or "argon" in _mod_lower %}
+{% set modality = "Argon Plasma Coagulation (APC)" %}
+{% else %}
+{% set modality = _mod_raw %}
+{% endif %}
+{{ modality }}: Endobronchial obstruction was treated with {{ modality }} for tumor ablation and hemostasis{% if proc.airway_segment %}. Performed at the {{ proc.airway_segment }}{% endif %}.{% if proc.notes %} Notes: {{ proc.notes }}.{% endif %}

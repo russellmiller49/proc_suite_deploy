@@ -1,0 +1,16 @@
+id: airway_dilation
+label: Airway Dilation
+category: airway_therapy
+cpt_hints: ["31630", "31631"]
+schema_id: airway_dilation_v1
+output_section: PROCEDURE_DETAILS
+template_path: airway_dilation.j2
+required_fields: []
+optional_fields:
+  - airway_segment
+  - technique
+  - dilation_sizes_mm
+  - post_dilation_diameter_mm
+  - notes
+proc_types:
+  - airway_dilation

@@ -64,6 +64,7 @@ from app.reporting.macro_engine import (
     CATEGORY_MACROS,
 )
 from app.reporting.partial_schemas import (
+    AirwayDilationPartial,
     AirwayStentPlacementPartial,
     BALPartial,
     BronchialBrushingPartial,
@@ -1036,6 +1037,7 @@ def default_schema_registry() -> SchemaRegistry:
         "transbronchial_biopsy_v1": airway_schemas.TransbronchialBiopsyBasic,
         "therapeutic_aspiration_v1": airway_schemas.TherapeuticAspiration,
         "rigid_bronchoscopy_v1": RigidBronchoscopyPartial,
+        "airway_dilation_v1": AirwayDilationPartial,
         "bronchoscopy_shell_v1": airway_schemas.BronchoscopyShell,
         "endobronchial_catheter_placement_v1": EndobronchialCatheterPlacementPartial,
         "microdebrider_debridement_v1": MicrodebriderDebridementPartial,

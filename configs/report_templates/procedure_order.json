@@ -10,6 +10,7 @@
   "transbronchial_needle_aspiration": 150,
   "therapeutic_aspiration": 160,
   "rigid_bronchoscopy": 180,
+  "airway_dilation": 181,
   "microdebrider_debridement": 182,
   "endobronchial_tumor_destruction": 183,
   "airway_stent_placement": 184,

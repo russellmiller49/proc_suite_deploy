@@ -19,6 +19,11 @@ const phiRedactProvidersToggleEl = document.getElementById("phiRedactProvidersTo
 const phiStatusTextEl = document.getElementById("phiStatusText");
 const phiProgressTextEl = document.getElementById("phiProgressText");
 const phiSummaryTextEl = document.getElementById("phiSummaryText");
+const phiDetectionsListEl = document.getElementById("phiDetectionsList");
+const phiDetectionsCountEl = document.getElementById("phiDetectionsCount");
+const phiEntityTypeSelectEl = document.getElementById("phiEntityTypeSelect");
+const phiAddRedactionBtn = document.getElementById("phiAddRedactionBtn");
+const phiConfirmAckEl = document.getElementById("phiConfirmAck");
 
 const summaryQuestionsEl = document.getElementById("summaryQuestions");
 const summaryIssuesEl = document.getElementById("summaryIssues");
@@ -73,6 +78,8 @@ let phiHasRunDetection = false;
 let phiScrubbedConfirmed = false;
 let phiDetections = [];
 let phiOriginalText = "";
+let phiExcludedDetections = new Set();
+let phiSelection = null;
 
 function setStatus(text) {
   statusTextEl.textContent = text;
@@ -91,6 +98,135 @@ function setPhiProgress(text) {
 function setPhiSummary(text) {
   if (!phiSummaryTextEl) return;
   phiSummaryTextEl.textContent = String(text || "");
+}
+
+function setPhiConfirmAck(value) {
+  if (!phiConfirmAckEl) return;
+  phiConfirmAckEl.checked = Boolean(value);
+}
+
+function formatScore(score) {
+  if (typeof score !== "number") return "—";
+  return score.toFixed(2);
+}
+
+function clamp(n, min, max) {
+  return Math.max(min, Math.min(max, n));
+}
+
+function safeSnippet(text, start, end, radius = 30) {
+  const source = String(text || "");
+  const s = clamp(Number(start) || 0, 0, source.length);
+  const e = clamp(Number(end) || 0, 0, source.length);
+  if (e <= s) return "";
+  const left = clamp(s - radius, 0, source.length);
+  const right = clamp(e + radius, 0, source.length);
+  const prefix = left > 0 ? "…" : "";
+  const suffix = right < source.length ? "…" : "";
+  return `${prefix}${source.slice(left, right)}${suffix}`;
+}
+
+function ensurePhiDetectionIds(list) {
+  const seen = new Map();
+  const input = Array.isArray(list) ? list : [];
+  return input.map((d) => {
+    if (d && typeof d.id === "string" && d.id) return d;
+    const label = String(d?.label ?? "OTHER");
+    const source = String(d?.source ?? "unknown");
+    const start = Number.isFinite(d?.start) ? Number(d.start) : -1;
+    const end = Number.isFinite(d?.end) ? Number(d.end) : -1;
+    const base = `${label}:${source}:${start}:${end}`;
+    const n = (seen.get(base) || 0) + 1;
+    seen.set(base, n);
+    const id = n === 1 ? base : `${base}:${n}`;
+    return { ...d, id };
+  });
+}
+
+function getIncludedPhiDetections() {
+  return (Array.isArray(phiDetections) ? phiDetections : []).filter((d) => !phiExcludedDetections.has(d.id));
+}
+
+function renderPhiDetections() {
+  if (!phiDetectionsListEl || !phiDetectionsCountEl) return;
+
+  const sourceText = String(phiOriginalText || seedTextEl?.value || "");
+  const list = Array.isArray(phiDetections) ? phiDetections : [];
+  phiDetectionsCountEl.textContent = String(list.length);
+  phiDetectionsListEl.innerHTML = "";
+
+  const sorted = [...list].sort((a, b) => {
+    if (a.start !== b.start) return a.start - b.start;
+    return (b.score ?? 0) - (a.score ?? 0);
+  });
+
+  sorted.forEach((d) => {
+    const row = document.createElement("div");
+    row.className = "detRow";
+
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.checked = !phiExcludedDetections.has(d.id);
+    checkbox.addEventListener("change", () => {
+      if (checkbox.checked) phiExcludedDetections.delete(d.id);
+      else phiExcludedDetections.add(d.id);
+    });
+
+    const body = document.createElement("div");
+    const meta = document.createElement("div");
+    meta.className = "detMeta";
+
+    const labelPill = document.createElement("span");
+    labelPill.className = "pill label";
+    labelPill.textContent = String(d.label || "PHI");
+    meta.appendChild(labelPill);
+
+    const sourcePill = document.createElement("span");
+    sourcePill.className = d.source === "manual" ? "pill source source-manual" : "pill source";
+    sourcePill.textContent = String(d.source || "unknown");
+    meta.appendChild(sourcePill);
+
+    const scorePill = document.createElement("span");
+    scorePill.className = "pill score";
+    scorePill.textContent = d.source === "manual" ? "Manual" : `score ${formatScore(d.score)}`;
+    meta.appendChild(scorePill);
+
+    const rangePill = document.createElement("span");
+    rangePill.className = "pill";
+    rangePill.textContent = `${d.start}-${d.end}`;
+    meta.appendChild(rangePill);
+
+    const snippet = document.createElement("div");
+    snippet.className = "snippet";
+    snippet.textContent = safeSnippet(sourceText, d.start, d.end);
+
+    body.appendChild(meta);
+    body.appendChild(snippet);
+    row.appendChild(checkbox);
+    row.appendChild(body);
+    phiDetectionsListEl.appendChild(row);
+  });
+
+  if (!list.length) {
+    const empty = document.createElement("div");
+    empty.className = "subtle";
+    empty.style.padding = "1rem";
+    empty.style.textAlign = "center";
+    empty.textContent =
+      phiHasRunDetection && !phiRunning
+        ? 'No PHI detected. Click "Apply Redactions" to continue.'
+        : 'Run detection to populate this panel. Use "Manual → Add" for missed spans.';
+    phiDetectionsListEl.appendChild(empty);
+  }
+}
+
+function updatePhiSelectionFromTextarea() {
+  if (!seedTextEl) return;
+  const start = seedTextEl.selectionStart;
+  const end = seedTextEl.selectionEnd;
+  const hasSelection = Number.isFinite(start) && Number.isFinite(end) && end > start;
+  phiSelection = hasSelection ? { start: Number(start), end: Number(end) } : null;
+  updateControls();
 }
 
 function showBanner(level, text) {
@@ -258,18 +394,26 @@ function attachPhiWorkerHandlers(activeWorker) {
     if (msg.type === "done") {
       phiRunning = false;
       const detections = Array.isArray(msg.detections) ? msg.detections : [];
-      phiDetections = detections
-        .filter((d) => Number.isFinite(d?.start) && Number.isFinite(d?.end) && d.end > d.start)
-        .map((d) => ({
-          start: Number(d.start),
-          end: Number(d.end),
-          label: String(d.label || "PHI"),
-        }));
+      phiDetections = ensurePhiDetectionIds(
+        detections
+          .filter((d) => Number.isFinite(d?.start) && Number.isFinite(d?.end) && d.end > d.start)
+          .map((d) => ({
+            id: typeof d?.id === "string" ? d.id : undefined,
+            start: Number(d.start),
+            end: Number(d.end),
+            label: String(d.label || "PHI"),
+            score: typeof d?.score === "number" ? d.score : null,
+            source: typeof d?.source === "string" ? d.source : "auto",
+          })),
+      );
+      phiExcludedDetections = new Set();
       phiHasRunDetection = true;
       phiScrubbedConfirmed = false;
+      setPhiConfirmAck(false);
       setPhiStatus("Detection complete. Apply redactions to confirm scrubbed text.");
       setPhiProgress("");
       setPhiSummary(`${phiDetections.length} PHI span${phiDetections.length === 1 ? "" : "s"} detected`);
+      renderPhiDetections();
       updateControls();
       return;
     }
@@ -571,9 +715,13 @@ function updateControls() {
   const hasQuestions = Array.isArray(state.questions) && state.questions.length > 0;
   const hasTransferNote = buildTransferNoteText().length > 0;
   const requiresPhi = Boolean(phiRunBtn && phiApplyBtn && phiStatusTextEl);
-  const phiOk = !requiresPhi || phiScrubbedConfirmed;
+  const ackChecked = !phiConfirmAckEl || Boolean(phiConfirmAckEl.checked);
+  const phiOk = !requiresPhi || (phiScrubbedConfirmed && ackChecked);
   seedBtn.disabled = state.busy || !phiOk;
-  seedBtn.title = !phiOk ? "Run PHI detection and apply redactions first" : "";
+  if (state.busy) seedBtn.title = "";
+  else if (!requiresPhi || phiOk) seedBtn.title = "";
+  else if (!phiScrubbedConfirmed) seedBtn.title = "Run PHI detection and apply redactions first";
+  else seedBtn.title = "Confirm PHI removal before seeding";
   refreshBtn.disabled = state.busy || !hasBundle;
   clearBtn.disabled = state.busy;
   applyPatchBtn.disabled = state.busy || !hasBundle || !hasQuestions;
@@ -585,6 +733,8 @@ function updateControls() {
   if (phiRunBtn) phiRunBtn.disabled = state.busy || phiRunning || !phiWorkerReady;
   if (phiApplyBtn) phiApplyBtn.disabled = state.busy || phiRunning || !phiHasRunDetection;
   if (phiRevertBtn) phiRevertBtn.disabled = state.busy || phiRunning || !phiOriginalText;
+  if (phiAddRedactionBtn) phiAddRedactionBtn.disabled = state.busy || phiRunning || !phiSelection;
+  if (phiConfirmAckEl) phiConfirmAckEl.disabled = state.busy || phiRunning || !phiScrubbedConfirmed;
 }
 
 function renderSummary() {
@@ -1083,6 +1233,16 @@ async function seedBundleFromText() {
     return;
   }
 
+  if (phiRunBtn && !phiScrubbedConfirmed) {
+    showBanner("warning", "Run PHI detection and apply redactions before seeding.");
+    return;
+  }
+
+  if (phiConfirmAckEl && !phiConfirmAckEl.checked) {
+    showBanner("warning", "Confirm PHI removal before seeding.");
+    return;
+  }
+
   await withBusy("Seeding bundle...", async () => {
     const strict = Boolean(strictToggleEl.checked);
     const seed = await postJSON("/report/seed_from_text", {
@@ -1208,12 +1368,16 @@ function clearState() {
   completenessValuesByPath = new Map();
   seedTextEl.value = "";
   phiDetections = [];
+  phiExcludedDetections = new Set();
   phiHasRunDetection = false;
   phiScrubbedConfirmed = false;
   phiOriginalText = "";
+  phiSelection = null;
+  setPhiConfirmAck(false);
   setPhiSummary("");
   setPhiProgress("");
   if (phiWorkerReady) setPhiStatus("Ready (local model loaded)");
+  renderPhiDetections();
   hideBanner();
   renderAll();
 }
@@ -1269,18 +1433,70 @@ seedTextEl.addEventListener("input", () => {
   }
 
   // Any text edit invalidates prior detection + scrub confirmation.
-  if (phiHasRunDetection || phiScrubbedConfirmed) {
+  if (phiHasRunDetection || phiScrubbedConfirmed || phiDetections.length) {
     phiHasRunDetection = false;
     phiScrubbedConfirmed = false;
     phiDetections = [];
+    phiExcludedDetections = new Set();
     phiOriginalText = "";
+    setPhiConfirmAck(false);
     setPhiSummary("");
     setPhiProgress("");
     setPhiStatus("Text changed. Run detection to confirm redactions.");
+    renderPhiDetections();
   }
 
-  updateControls();
+  updatePhiSelectionFromTextarea();
 });
+
+if (seedTextEl) {
+  ["select", "mouseup", "keyup"].forEach((eventName) => {
+    seedTextEl.addEventListener(eventName, updatePhiSelectionFromTextarea);
+  });
+}
+
+if (phiAddRedactionBtn) {
+  phiAddRedactionBtn.addEventListener("click", () => {
+    if (!phiSelection) return;
+
+    const text = String(seedTextEl?.value || "");
+    const start = clamp(Number(phiSelection.start) || 0, 0, text.length);
+    const end = clamp(Number(phiSelection.end) || 0, 0, text.length);
+    if (end <= start) return;
+
+    const label = String(phiEntityTypeSelectEl?.value || "OTHER");
+    const newDetection = {
+      id: `manual_${Date.now()}_${Math.random().toString(36).slice(2)}`,
+      label,
+      start,
+      end,
+      score: 1.0,
+      source: "manual",
+    };
+
+    phiDetections = [...phiDetections, newDetection];
+    phiExcludedDetections.delete(newDetection.id);
+    phiScrubbedConfirmed = false;
+    setPhiConfirmAck(false);
+
+    setPhiSummary(`${phiDetections.length} PHI span${phiDetections.length === 1 ? "" : "s"} detected`);
+    setPhiStatus(`Added manual redaction: ${label}`);
+    renderPhiDetections();
+
+    if (seedTextEl) {
+      seedTextEl.focus();
+      seedTextEl.setSelectionRange(0, 0);
+    }
+    phiSelection = null;
+    updateControls();
+  });
+}
+
+if (phiConfirmAckEl) {
+  phiConfirmAckEl.addEventListener("change", () => {
+    updateControls();
+  });
+}
 
 if (phiRunBtn) {
   const forceLegacy = shouldForceLegacyPhiWorker();
@@ -1293,10 +1509,13 @@ if (phiRunBtn) {
     phiHasRunDetection = false;
     phiScrubbedConfirmed = false;
     phiDetections = [];
+    phiExcludedDetections = new Set();
     phiOriginalText = String(seedTextEl.value || "");
+    setPhiConfirmAck(false);
     setPhiStatus("Detecting… (client-side)");
     setPhiProgress("");
     setPhiSummary("");
+    renderPhiDetections();
     updateControls();
     try {
       phiWorker.postMessage({
@@ -1316,7 +1535,7 @@ if (phiApplyBtn) {
   phiApplyBtn.addEventListener("click", () => {
     if (!phiHasRunDetection) return;
 
-    const spans = (Array.isArray(phiDetections) ? phiDetections : [])
+    const spans = getIncludedPhiDetections()
       .filter((d) => Number.isFinite(d.start) && Number.isFinite(d.end) && d.end > d.start)
       .sort((a, b) => b.start - a.start);
 
@@ -1329,9 +1548,12 @@ if (phiApplyBtn) {
     }
     seedTextEl.value = text;
     phiScrubbedConfirmed = true;
+    setPhiConfirmAck(false);
     setPhiStatus("Redactions applied (scrubbed text ready to seed)");
     setPhiProgress("");
     setPhiSummary(`${spans.length} span${spans.length === 1 ? "" : "s"} redacted`);
+    phiSelection = null;
+    renderPhiDetections();
     updateControls();
   });
 }
@@ -1341,12 +1563,16 @@ if (phiRevertBtn) {
     if (!phiOriginalText) return;
     seedTextEl.value = phiOriginalText;
     phiDetections = [];
+    phiExcludedDetections = new Set();
     phiHasRunDetection = false;
     phiScrubbedConfirmed = false;
     phiOriginalText = "";
+    phiSelection = null;
+    setPhiConfirmAck(false);
     setPhiSummary("");
     setPhiProgress("");
     setPhiStatus("Reverted. Run detection to confirm redactions.");
+    renderPhiDetections();
     updateControls();
   });
 }
@@ -1356,14 +1582,20 @@ if (dashboardTransfer?.note) {
   seedTextEl.value = dashboardTransfer.note;
   if (phiRunBtn) {
     phiDetections = [];
+    phiExcludedDetections = new Set();
     phiHasRunDetection = false;
     phiScrubbedConfirmed = false;
     phiOriginalText = "";
+    phiSelection = null;
+    setPhiConfirmAck(false);
     setPhiSummary("");
     setPhiProgress("");
     setPhiStatus("Note loaded. Run detection and apply redactions before seeding.");
+    renderPhiDetections();
   }
   showBanner("success", "Loaded note from dashboard. Run PHI detection, apply redactions, then seed.");
 }
 
+updatePhiSelectionFromTextarea();
+renderPhiDetections();
 renderAll();

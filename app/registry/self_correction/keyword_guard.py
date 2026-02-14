@@ -609,6 +609,13 @@ _MUCUS_CUE_RE = re.compile(r"(?i)\b(?:mucous|mucus|secretions?|clot|plug|mucosta
 _TISSUE_DEBULKING_CUE_RE = re.compile(
     r"(?i)\b(?:tumou?r|mass|lesion|mycetoma|granulation|neoplasm|endobronchial\s+(?:tumou?r|mass|lesion))\b"
 )
+_PERIPHERAL_ABLATION_PERIPHERAL_CUE_RE = re.compile(
+    r"(?i)\b(?:peripheral|nodule|lesion|mass|parenchym|target\s+lesion|lung\s+nodule|pulmonary\s+nodule|"
+    r"navigation|navigational|robotic|ion|cbct|cone\s*beam|tool[- ]?in[- ]?lesion)\b"
+)
+_PERIPHERAL_ABLATION_ENDOBRONCHIAL_CUE_RE = re.compile(
+    r"(?i)\b(?:endobronch|airway|trachea|carina|main(?:\s*|-)?stem|bronch(?:us|ial)|stenos|stricture)\b"
+)
 
 
 def _sentence_window(note_text: str, *, start: int, end: int) -> str:
@@ -698,6 +705,31 @@ def _looks_like_ebus_nodal_context(note_text: str, match: re.Match[str]) -> bool
     return False
 
 
+def _looks_like_endobronchial_ablation_context(note_text: str, match: re.Match[str]) -> bool:
+    """Return True when ablation language is airway/endobronchial (not peripheral nodule ablation)."""
+    if not note_text:
+        return False
+
+    local_start = max(0, match.start() - 260)
+    local_end = min(len(note_text), match.end() + 260)
+    window = note_text[local_start:local_end]
+
+    if not _PERIPHERAL_ABLATION_ENDOBRONCHIAL_CUE_RE.search(window):
+        return False
+
+    peripheral_positive = False
+    for peripheral_match in _PERIPHERAL_ABLATION_PERIPHERAL_CUE_RE.finditer(window):
+        lead = window[max(0, peripheral_match.start() - 24) : peripheral_match.start()]
+        if re.search(r"(?i)\b(?:no|not|without|absent)\b[^.\n]{0,20}$", lead):
+            continue
+        peripheral_positive = True
+        break
+
+    if peripheral_positive:
+        return False
+    return True
+
+
 def _match_is_negated(note_text: str, match: re.Match[str], *, field_path: str | None = None) -> bool:
     """Return True when a keyword match is negated in local context."""
     if not note_text:
@@ -778,6 +810,9 @@ def scan_for_omissions(note_text: str, record: RegistryRecord) -> list[str]:
                 if field_path == "procedures_performed.mechanical_debulking.performed":
                     if _looks_like_mucus_debulking_only(note_text or "", match):
                         continue
+                if field_path == "procedures_performed.peripheral_ablation.performed":
+                    if _looks_like_endobronchial_ablation_context(note_text or "", match):
+                        continue
                 warning = f"SILENT_FAILURE: {msg} (Pattern: '{pattern}')"
                 warnings.append(warning)
                 logger.warning(warning, extra={"field": field_path, "pattern": pattern})
@@ -825,6 +860,9 @@ def apply_required_overrides(note_text: str, record: RegistryRecord) -> tuple[Re
                     continue
             if field_path == "procedures_performed.mechanical_debulking.performed":
                 if _looks_like_mucus_debulking_only(note_text or "", match):
+                    continue
+            if field_path == "procedures_performed.peripheral_ablation.performed":
+                if _looks_like_endobronchial_ablation_context(note_text or "", match):
                     continue
 
             if field_path == "pleural_procedures.fibrinolytic_therapy.performed":

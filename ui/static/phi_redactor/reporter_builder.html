@@ -36,6 +36,36 @@
         flex: 1;
       }
 
+      .reporter-manual-group {
+        margin-left: 0;
+        padding-left: 0;
+        border-left: none;
+      }
+
+      .phi-confirm-check {
+        font-weight: 600;
+      }
+
+      .seed-editor-split {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 340px;
+        gap: 12px;
+        align-items: stretch;
+      }
+
+      .seed-editor-split .builder-textarea {
+        min-height: 260px;
+      }
+
+      .phi-side-pane {
+        border: 1px solid var(--border-color);
+        border-radius: var(--radius-md);
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+        min-height: 260px;
+      }
+
       .inline-check {
         display: inline-flex;
         align-items: center;
@@ -189,6 +219,16 @@
           grid-template-columns: repeat(2, minmax(0, 1fr));
         }
       }
+
+      @media (max-width: 1100px) {
+        .seed-editor-split {
+          grid-template-columns: 1fr;
+        }
+
+        .phi-side-pane {
+          min-height: 180px;
+        }
+      }
     </style>
     <script type="module" src="./reporter_builder.js"></script>
   </head>
@@ -232,6 +272,25 @@
             Redact clinician names
           </label>
         </div>
+        <div class="builder-toolbar">
+          <div class="manual-redaction-group reporter-manual-group">
+            <label class="manual-label">Manual:</label>
+            <select id="phiEntityTypeSelect" class="param-select">
+              <option value="PATIENT">Patient Name</option>
+              <option value="ID">MRN / ID</option>
+              <option value="DATE">Date</option>
+              <option value="PHONE">Phone</option>
+              <option value="GEO">Location</option>
+              <option value="OTHER">Other</option>
+            </select>
+            <button id="phiAddRedactionBtn" class="secondary" type="button" disabled>Add</button>
+          </div>
+          <div class="spacer"></div>
+          <label class="inline-check phi-confirm-check" title="Required before sending text to the server.">
+            <input id="phiConfirmAck" type="checkbox" disabled />
+            Confirm PHI removal
+          </label>
+        </div>
         <div class="builder-section">
           <div class="subtle">
             <span id="phiStatusText">Loading local PHI model…</span>
@@ -249,11 +308,26 @@
         <label class="subtle" for="seedText">
           Procedure details (use scrubbed text when possible)
         </label>
-        <textarea
-          id="seedText"
-          class="builder-textarea"
-          placeholder="Example: EBUS biopsied station 7"
-        >EBUS biopsied station 7</textarea>
+        <div class="seed-editor-split">
+          <textarea
+            id="seedText"
+            class="builder-textarea"
+            placeholder="Example: EBUS biopsied station 7"
+          >EBUS biopsied station 7</textarea>
+          <aside class="phi-side-pane">
+            <div class="sideHeader">
+              <div class="sideTitle">Detections</div>
+              <div class="sideMeta">
+                <span id="phiDetectionsCount">0</span>
+                <span class="subtle">items</span>
+              </div>
+            </div>
+            <div id="phiDetectionsList" class="detectionsList"></div>
+            <div class="sideFooter">
+              Uncheck items to exclude from redaction. Select text and use <strong>Manual → Add</strong> for misses.
+            </div>
+          </aside>
+        </div>
         <div class="builder-toolbar">
           <button id="seedBtn" class="primary">Seed Bundle</button>
           <button id="refreshBtn" class="secondary" disabled>Refresh Questions</button>

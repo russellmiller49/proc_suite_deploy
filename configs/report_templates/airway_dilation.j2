@@ -1,0 +1,4 @@
+Airway dilation was performed{% if proc.airway_segment %} at the {{ proc.airway_segment }}{% endif %}{% if proc.technique %} using {{ proc.technique }}{% endif %}.
+{% if proc.dilation_sizes_mm %}Dilation sizes: {{ proc.dilation_sizes_mm | join(', ') }} mm.{% endif %}
+{% if proc.post_dilation_diameter_mm is not none %}Post-dilation diameter: {{ proc.post_dilation_diameter_mm }} mm.{% endif %}
+{% if proc.notes %}Notes: {{ proc.notes }}.{% endif %}

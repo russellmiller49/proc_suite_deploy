@@ -383,6 +383,7 @@ class ForeignBodyRemoval(BaseModel):
     bleeding: str | None = None
     hemostasis_method: str | None = None
     cxr_ordered: bool | None = None
+    notes: str | None = None
 
 
 class AwakeFiberopticIntubation(BaseModel):

@@ -1161,7 +1161,9 @@ def _add_compat_flat_fields(raw: dict[str, Any]) -> dict[str, Any]:
             raw["ebus_rose_available"] = True
 
         derived_size_mm = raw.get("nav_lesion_size_mm")
-        if derived_size_mm in (None, "", [], {}) and source_text:
+        peripheral_target_context = False
+        search_text = ""
+        if source_text:
             search_text = " ".join(
                 [
                     text_fields.get("target") or "",
@@ -1170,9 +1172,41 @@ def _add_compat_flat_fields(raw: dict[str, Any]) -> dict[str, Any]:
                     source_text,
                 ]
             )
+            peripheral_target_context = bool(
+                re.search(r"(?i)\b(nodule|lesion|mass|target|spiculat|ground[-\s]?glass|ggo)\b", search_text)
+            )
+            if not peripheral_target_context:
+                peripheral_procs = (
+                    procs.get("navigational_bronchoscopy"),
+                    procs.get("radial_ebus"),
+                    procs.get("peripheral_tbna"),
+                    procs.get("transbronchial_biopsy"),
+                    procs.get("peripheral_ablation"),
+                )
+                peripheral_target_context = any(
+                    isinstance(proc, dict) and proc.get("performed") is True for proc in peripheral_procs
+                )
+
+        if derived_size_mm in (None, "", [], {}) and source_text and peripheral_target_context:
             for match in re.finditer(r"(?i)\b(\d+(?:\.\d+)?)\s*(mm|cm)\b", search_text):
                 ctx = search_text[max(0, match.start() - 18) : min(len(search_text), match.end() + 18)].lower()
-                if any(token in ctx for token in ("cryo", "probe", "ett", "lma", "fogarty", "divergence")):
+                if any(
+                    token in ctx
+                    for token in (
+                        "cryo",
+                        "probe",
+                        "ett",
+                        "lma",
+                        "fogarty",
+                        "divergence",
+                        "balloon",
+                        "dilat",
+                        "stent",
+                        "apc",
+                        "pulse",
+                        "effect",
+                    )
+                ):
                     continue
                 try:
                     num = float(match.group(1))
@@ -1194,7 +1228,14 @@ def _add_compat_flat_fields(raw: dict[str, Any]) -> dict[str, Any]:
             return str(int(num)) if num.is_integer() else str(num)
 
         # Synthesize a compact primary indication for common nodule dictations when missing.
-        if raw.get("primary_indication") in (None, "", [], {}) and location_hint and derived_size_mm not in (None, "", [], {}):
+        # Guard: do not misread non-target measurements (balloon dilation sizes, APC probe size, stent revision distance)
+        # as a peripheral nodule when the note lacks peripheral-target context.
+        if (
+            raw.get("primary_indication") in (None, "", [], {})
+            and location_hint
+            and derived_size_mm not in (None, "", [], {})
+            and peripheral_target_context
+        ):
             density = None
             if re.search(r"(?i)\bground[-\s]?glass\b|\bgroundglass\b|\bggo\b", source_text):
                 density = "ground-glass"
@@ -1259,7 +1300,7 @@ def _add_compat_flat_fields(raw: dict[str, Any]) -> dict[str, Any]:
                 target = target.split(",", 1)[0].strip()
                 staging = dx_hint or "Lung Cancer Staging"
                 raw["preop_diagnosis_text"] = "\n".join([line for line in [f"Lung Nodule ({target})", staging] if line])
-            elif location_hint and derived_size_mm not in (None, "", [], {}):
+            elif location_hint and derived_size_mm not in (None, "", [], {}) and peripheral_target_context:
                 rad = None
                 match = re.search(r"(?i)\bLung-RADS\s*[0-9A-Z]+\b", dx_hint)
                 if match:
@@ -1760,7 +1801,7 @@ def _add_compat_flat_fields(raw: dict[str, Any]) -> dict[str, Any]:
                 modality = "Thermal ablation"
         raw["endobronchial_tumor_destruction"] = {
             "modality": modality or "Thermal ablation",
-            "airway_segment": _first_nonempty_str(segment_hint, location_hint),
+            "airway_segment": _first_nonempty_str(thermal.get("location"), segment_hint, location_hint),
             "notes": None,
         }
 
@@ -1787,8 +1828,10 @@ def _add_compat_flat_fields(raw: dict[str, Any]) -> dict[str, Any]:
                 return None
 
         stent_type = _first_nonempty_str(stent.get("stent_type"), stent.get("stent_brand"))
-        stent_location = _first_nonempty_str(stent.get("location"), segment_hint, location_hint, "target airway")
-        if str(action_type or "").strip().lower() in {"assessment_only", "assessment only"}:
+        # Avoid anatomy contagion: do not use global segment_hint (often from BAL) as a stent location fallback.
+        stent_location = _first_nonempty_str(stent.get("location"), location_hint, "target airway")
+        action_norm = str(action_type or "").strip().lower()
+        if action_norm in {"assessment_only", "assessment only"}:
             if raw.get("stent_surveillance") in (None, "", [], {}):
                 raw["stent_surveillance"] = {
                     "stent_type": stent_type or "airway stent",
@@ -1796,6 +1839,29 @@ def _add_compat_flat_fields(raw: dict[str, Any]) -> dict[str, Any]:
                     "findings": None,
                     "interventions": None,
                     "final_patency_pct": None,
+                }
+        elif action_norm == "removal":
+            if raw.get("foreign_body_removal") in (None, "", [], {}):
+                tools: list[str] = []
+                lowered = (note_text or "").lower()
+                if "forceps" in lowered:
+                    tools.append("Forceps")
+                if "snare" in lowered:
+                    tools.append("Snare")
+                if "basket" in lowered:
+                    tools.append("Basket")
+                if "cryo" in lowered:
+                    tools.append("Cryoprobe")
+                raw["foreign_body_removal"] = {
+                    "airway_segment": stent_location,
+                    "tools_used": tools or ["Forceps"],
+                    "passes": None,
+                    "removed_intact": None,
+                    "mucosal_trauma": None,
+                    "bleeding": None,
+                    "hemostasis_method": None,
+                    "cxr_ordered": None,
+                    "notes": None,
                 }
         else:
             if raw.get("airway_stent_placement") in (None, "", [], {}):
@@ -1850,6 +1916,40 @@ def _add_compat_flat_fields(raw: dict[str, Any]) -> dict[str, Any]:
                 "location": _first_nonempty_str(location_hint, segment_hint, "target airway"),
                 "indication": "Prophylaxis",
             }
+
+    sealant = procs.get("bpf_sealant")
+    if (
+        raw.get("bpf_sealant_application") in (None, "", [], {})
+        and isinstance(sealant, dict)
+        and sealant.get("performed") is True
+    ):
+        sealant_type = _first_nonempty_str(sealant.get("sealant_type"))
+        if not sealant_type and note_text:
+            if re.search(r"(?i)\btisseel\b|\btissel\b", note_text):
+                sealant_type = "Tisseel"
+            elif re.search(r"(?i)\bsealant\b|\bglue\b|\bfibrin\b", note_text):
+                sealant_type = "Sealant"
+
+        volume_ml = None
+        if note_text:
+            match = re.search(
+                r"(?i)(?:tisseel|tissel|sealant|glue|fibrin)[^\n]{0,60}?\b(\d+(?:\.\d+)?)\s*(?:cc|ml)\b",
+                note_text,
+            )
+            if match:
+                try:
+                    volume_ml = float(match.group(1))
+                except Exception:
+                    volume_ml = None
+
+        raw["bpf_sealant_application"] = {
+            "sealant_type": sealant_type or "Sealant",
+            "volume_ml": volume_ml,
+            "dwell_minutes": None,
+            "leak_reduction": None,
+            "applications": None,
+            "notes": sealant.get("notes"),
+        }
 
     # bronch_num_tbbx from transbronchial_biopsy.number_of_samples
     if "bronch_num_tbbx" not in raw:

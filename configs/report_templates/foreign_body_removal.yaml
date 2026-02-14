@@ -15,5 +15,6 @@ optional_fields:
   - bleeding
   - hemostasis_method
   - cxr_ordered
+  - notes
 proc_types:
   - foreign_body_removal

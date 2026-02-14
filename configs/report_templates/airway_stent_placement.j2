@@ -1,6 +1,5 @@
-Airway Stent Placement The airway was measured to determine appropriate stent sizing. A stent was deployed across the target stenosis under bronchoscopic guidance.
+Airway Stent Placement {% if proc.notes %}{{ proc.notes }}{% else %}The airway was measured to determine appropriate stent sizing. A stent was deployed across the target stenosis under bronchoscopic guidance.{% endif %}
 
 {% if proc.stent_type %}Stent Type: {{ proc.stent_type }}{% endif %}
 {% if proc.diameter_mm is not none and proc.length_mm is not none %}Dimensions: {{ proc.diameter_mm }}mm x {{ proc.length_mm }}mm{% endif %}
 {% if proc.airway_segment %}Location: {{ proc.airway_segment }}{% endif %}
-{% if proc.notes %}Notes: {{ proc.notes }}.{% endif %}

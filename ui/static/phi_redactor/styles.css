@@ -471,6 +471,107 @@ button.secondary:hover:not(:disabled) {
   gap: 8px;
 }
 
+/* Bundle / ZK timeline panel */
+.bundle-panel {
+  margin: 10px 16px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  background: var(--bg-card);
+  overflow: hidden;
+}
+
+.bundle-panel > summary {
+  cursor: pointer;
+  padding: 10px 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+  background: var(--bg-input);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.bundle-panel-body {
+  padding: 12px;
+}
+
+.bundle-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px;
+}
+
+.bundle-field label {
+  display: block;
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-bottom: 4px;
+}
+
+.bundle-field input[type="text"],
+.bundle-field input[type="date"],
+.bundle-field input[type="number"],
+.bundle-field select {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px 10px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--bg-input);
+  color: var(--text-primary);
+  font-size: 13px;
+}
+
+.bundle-field-wide {
+  display: flex;
+  align-items: flex-end;
+}
+
+.bundle-actions {
+  margin-top: 10px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.bundle-divider {
+  border: none;
+  border-top: 1px solid var(--border-color);
+  margin: 12px 0;
+}
+
+.bundle-docs-host {
+  margin-top: 10px;
+}
+
+.bundle-doc-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--bg-input);
+  margin-bottom: 8px;
+}
+
+.bundle-doc-meta {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.bundle-summary {
+  margin: 10px 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  background: var(--bg-card);
+}
+
+.bundle-summary.hidden {
+  display: none;
+}
+
 /* Editor Container */
 .editor {
   flex: 0 0 auto;
@@ -1730,6 +1831,19 @@ dialog.modal {
   background: var(--bg-card);
   color: var(--text-primary);
   box-shadow: var(--shadow-lg);
+}
+
+dialog.modal.modal-wide {
+  max-width: 920px;
+}
+
+.chrono-preview-body {
+  max-height: 60vh;
+  overflow: auto;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 10px;
+  background: var(--bg-input);
 }
 
 dialog.modal::backdrop {

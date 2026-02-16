@@ -315,6 +315,69 @@ class ProcedureExtractor:
             r"\b(?:ion|robotic|navigation|navigational|target|lesion|nodule|mass|cone\s+beam|cbct|tool[- ]?in[- ]?lesion|extended\s+working\s+channel)\b",
             re.IGNORECASE,
         )
+        stent_size_entities = ner_result.entities_by_type.get("DEV_STENT_SIZE", [])
+        stent_material_entities = ner_result.entities_by_type.get("DEV_STENT_MATERIAL", [])
+        stent_device_entities = ner_result.entities_by_type.get("DEV_STENT", [])
+        stent_brand_entities = ner_result.entities_by_type.get("DEV_DEVICE", [])
+
+        def _normalize_stent_type(raw: str | None) -> str | None:
+            if not raw:
+                return None
+            t = raw.strip().lower()
+            if not t:
+                return None
+            if re.search(r"\by-?\s*stent\b|\by\s+stent\b|\by-?shaped\b", t):
+                return "Y-Stent"
+            if "dumon" in t:
+                return "Silicone - Dumon"
+            if "novatech" in t:
+                return "Silicone - Novatech"
+            if "hood" in t:
+                return "Silicone - Hood"
+            if "hybrid" in t:
+                return "Hybrid"
+            if "partially" in t and "cover" in t:
+                return "SEMS - Partially covered"
+            if "cover" in t:
+                return "SEMS - Covered"
+            if "bare" in t or "uncovered" in t or "metal" in t or "metallic" in t:
+                return "SEMS - Uncovered"
+            return None
+
+        def _select_stent_size() -> str | None:
+            if not stent_size_entities:
+                return None
+            # Prefer the longest/most specific size span.
+            best = max(stent_size_entities, key=lambda e: len((e.text or "")))
+            return (best.text or "").strip() or None
+
+        def _select_stent_brand() -> str | None:
+            candidates = []
+            generic = {"stent", "airway stent", "y-stent", "y stent"}
+            for ent in stent_brand_entities + stent_device_entities:
+                text = (ent.text or "").strip()
+                if not text:
+                    continue
+                lower = text.lower()
+                if lower in generic:
+                    continue
+                if "stent" in lower and "self" in lower and "expand" in lower:
+                    continue
+                if lower in {"self-expandable airway stent", "self expandable airway stent", "self-expanding airway stent", "self expanding airway stent"}:
+                    continue
+                if "stent" in lower and lower in generic:
+                    continue
+                candidates.append(ent)
+            if not candidates:
+                return None
+            if stent_device_entities:
+                # Prefer device mentions closest to a stent entity.
+                def _distance(ent):
+                    return min(abs(ent.start_char - s.start_char) for s in stent_device_entities)
+                best = min(candidates, key=_distance)
+            else:
+                best = candidates[0]
+            return (best.text or "").strip() or None
 
         for entity in all_proc_entities:
             text_lower = entity.text.lower()
@@ -378,6 +441,26 @@ class ProcedureExtractor:
                                 attrs["airway_stent_removal"] = attrs.get("action") == "Removal"
 
                         break  # Only match first keyword per entity
+
+        # Backfill airway stent attributes from NER device entities.
+        if procedure_flags.get("airway_stent"):
+            attrs = procedure_attributes.setdefault("airway_stent", {})
+            if not attrs.get("device_size"):
+                size_val = _select_stent_size()
+                if size_val:
+                    attrs["device_size"] = size_val
+            if not attrs.get("stent_type"):
+                stent_type_val = None
+                for ent in stent_material_entities + stent_device_entities:
+                    stent_type_val = _normalize_stent_type(ent.text)
+                    if stent_type_val:
+                        break
+                if stent_type_val:
+                    attrs["stent_type"] = stent_type_val
+            if not attrs.get("stent_brand"):
+                brand_val = _select_stent_brand()
+                if brand_val:
+                    attrs["stent_brand"] = brand_val
 
         return ProcedureExtractionResult(
             procedure_flags=procedure_flags,

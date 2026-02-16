@@ -5,12 +5,18 @@ This package contains all Pydantic schemas for the FastAPI integration layer.
 
 # Base schemas (legacy compatibility)
 from app.api.schemas.base import (
+    BundleDocResponse,
+    BundleTimepointRole,
     CoderRequest,
     CoderResponse,
     CodeSuggestionSummary,
     HybridPipelineMetadata,
+    JsonPatchOperation,
     KnowledgeMeta,
     MissingFieldPrompt,
+    ParsedDocRequest,
+    ProcessBundleRequest,
+    ProcessBundleResponse,
     QARunRequest,
     QuestionsRequest,
     QuestionsResponse,
@@ -20,7 +26,6 @@ from app.api.schemas.base import (
     RenderResponse,
     SeedFromTextRequest,
     SeedFromTextResponse,
-    JsonPatchOperation,
     UnifiedProcessRequest,
     UnifiedProcessResponse,
     VerifyRequest,
@@ -40,11 +45,16 @@ from app.api.schemas.qa import (
 
 __all__ = [
     # Base schemas
+    "BundleDocResponse",
+    "BundleTimepointRole",
     "CoderRequest",
     "CoderResponse",
     "CodeSuggestionSummary",
     "HybridPipelineMetadata",
     "KnowledgeMeta",
+    "ParsedDocRequest",
+    "ProcessBundleRequest",
+    "ProcessBundleResponse",
     "MissingFieldPrompt",
     "QARunRequest",
     "QuestionsRequest",

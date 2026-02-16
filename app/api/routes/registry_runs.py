@@ -16,7 +16,7 @@ import hashlib
 import json
 import os
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any, Iterator
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
@@ -47,7 +47,7 @@ def _enforce_registry_runs_enabled() -> None:
 
 
 def _utcnow() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def _note_sha256(text: str) -> str:
@@ -112,7 +112,10 @@ _registry_store_db_dep = Depends(get_registry_store_db)
 
 
 class RegistryRunCreateRequest(BaseModel):
-    note: str = Field(..., description="Procedure note text (scrubbed-only when already_scrubbed=true)")
+    note: str = Field(
+        ...,
+        description="Procedure note text (scrubbed-only when already_scrubbed=true)",
+    )
     already_scrubbed: bool = Field(
         False, description="If true, server will skip PHI scrubbing and treat note as scrubbed."
     )

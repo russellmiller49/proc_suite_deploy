@@ -152,7 +152,10 @@ async def run_unified_pipeline_logic(
                     code=code,
                     description=description,
                     confidence=0.40,
-                    rationale="Header explicitly documents this code; deterministic derivation did not support it.",
+                    rationale=(
+                        "Header explicitly documents this code; deterministic derivation did not "
+                        "support it."
+                    ),
                     review_flag="required",
                 )
             )
@@ -162,8 +165,8 @@ async def run_unified_pipeline_logic(
     per_code_billing: list[dict[str, Any]] = []
 
     if payload.include_financials and codes:
-        from config.settings import CoderSettings
         from app.api.services.financials import calculate_financials
+        from config.settings import CoderSettings
 
         settings = CoderSettings()
         conversion_factor = settings.cms_conversion_factor

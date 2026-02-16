@@ -51,6 +51,7 @@ from app.api.routes.metrics import router as metrics_router
 from app.api.routes.phi import router as phi_router
 from app.api.routes.phi_demo_cases import router as phi_demo_router
 from app.api.routes.procedure_codes import router as procedure_codes_router
+from app.api.routes.process_bundle import router as process_bundle_router
 from app.api.routes.qa import router as qa_router
 from app.api.routes.registry_runs import router as registry_runs_router
 from app.api.routes.reporting import router as reporting_router
@@ -135,6 +136,8 @@ app.include_router(registry_extract_router, tags=["registry"])
 app.include_router(registry_runs_router, prefix="/api", tags=["registry-runs"])
 # Unified process router (UI entry point)
 app.include_router(unified_process_router, prefix="/api")
+# Bundle process router (multi-doc ZK ingestion)
+app.include_router(process_bundle_router, prefix="/api")
 # Legacy/API support routers split from this composition root.
 app.include_router(legacy_coder_router)
 app.include_router(legacy_registry_router)

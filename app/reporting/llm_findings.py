@@ -278,6 +278,13 @@ def validate_findings_against_text(
     accepted: list[FindingV1] = []
     warnings: list[str] = []
 
+    def _normalize_for_anatomy_match(value: str) -> str:
+        """Normalize tokens for permissive substring matching.
+
+        Intended to handle minor punctuation/whitespace differences like "Station: 7" vs "Station 7".
+        """
+        return re.sub(r"[^a-z0-9]+", "", (value or "").lower())
+
     for idx, item in enumerate(findings.findings or []):
         proc_key = str(item.procedure_key or "").strip()
         if proc_key not in ALLOWED_PROCEDURE_KEYS:
@@ -301,7 +308,14 @@ def validate_findings_against_text(
         evidence_lower = evidence.lower()
         anatomy_tokens = [str(tok).strip() for tok in (item.anatomy or []) if str(tok).strip()]
         if anatomy_tokens:
-            missing_anatomy = [tok for tok in anatomy_tokens if tok.lower() not in evidence_lower]
+            evidence_norm = _normalize_for_anatomy_match(evidence)
+            missing_anatomy: list[str] = []
+            for tok in anatomy_tokens:
+                tok_norm = _normalize_for_anatomy_match(tok)
+                if not tok_norm:
+                    continue
+                if tok_norm not in evidence_norm:
+                    missing_anatomy.append(tok)
             if missing_anatomy:
                 warnings.append(
                     "LLM_FINDINGS_DROPPED: anatomy_not_in_evidence "

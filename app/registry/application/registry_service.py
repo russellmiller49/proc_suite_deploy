@@ -685,7 +685,29 @@ class RegistryService:
         warnings: list[str] = []
         meta: dict[str, Any] = {"note_id": note_id}
 
-        extraction_engine = os.getenv("REGISTRY_EXTRACTION_ENGINE", "engine").strip().lower()
+        def _env_flag(name: str, default: str = "0") -> bool:
+            return os.getenv(name, default).strip().lower() in {"1", "true", "yes", "y", "on"}
+
+        def _structurer_llm_configured() -> bool:
+            if _env_flag("REGISTRY_USE_STUB_LLM", "0") or _env_flag("GEMINI_OFFLINE", "0"):
+                return False
+
+            provider = os.getenv("LLM_PROVIDER", "gemini").strip().lower()
+            if provider == "openai_compat":
+                if _env_flag("OPENAI_OFFLINE", "0") or not os.getenv("OPENAI_API_KEY"):
+                    return False
+                model = (os.getenv("OPENAI_MODEL_STRUCTURER") or os.getenv("OPENAI_MODEL") or "").strip()
+                return bool(model)
+
+            return bool((os.getenv("GEMINI_API_KEY") or "").strip())
+
+        extraction_engine = os.getenv("REGISTRY_EXTRACTION_ENGINE", "").strip().lower()
+        if not extraction_engine:
+            structured_enabled = _env_flag("STRUCTURED_EXTRACTION_ENABLED", "1")
+            if structured_enabled and _structurer_llm_configured():
+                extraction_engine = "agents_structurer"
+            else:
+                extraction_engine = "engine"
         meta["extraction_engine"] = extraction_engine
 
         raw_note_text = note_text
@@ -892,6 +914,7 @@ class RegistryService:
                             "bronchus_sign",
                             "ecog_score",
                             "ecog_text",
+                            "asa_class",
                         ):
                             val = seed.get(key)
                             if val not in (None, "", [], {}):
@@ -2148,6 +2171,8 @@ class RegistryService:
             enrich_outcomes_complication_details,
             enrich_procedure_success_status,
             populate_ebus_node_events_fallback,
+            reconcile_aborted_targets,
+            reconcile_ebus_inspected_only_stations,
             reconcile_ebus_sampling_from_narrative,
             reconcile_ebus_sampling_from_specimen_log,
             reconcile_peripheral_tbna_against_nodal_context,
@@ -2170,6 +2195,9 @@ class RegistryService:
         ebus_resanitize_warnings = sanitize_ebus_events(record, masked_note_text)
         if ebus_resanitize_warnings:
             extraction_warnings.extend(ebus_resanitize_warnings)
+        ebus_inspection_warnings = reconcile_ebus_inspected_only_stations(record, masked_note_text)
+        if ebus_inspection_warnings:
+            extraction_warnings.extend(ebus_inspection_warnings)
         peripheral_tbna_reconcile_warnings = reconcile_peripheral_tbna_against_nodal_context(
             record, masked_note_text
         )
@@ -2199,6 +2227,9 @@ class RegistryService:
         bal_detail_warnings = enrich_bal_from_procedure_detail(record, masked_note_text)
         if bal_detail_warnings:
             extraction_warnings.extend(bal_detail_warnings)
+        aborted_target_warnings = reconcile_aborted_targets(record, masked_note_text)
+        if aborted_target_warnings:
+            extraction_warnings.extend(aborted_target_warnings)
         outcomes_status_warnings = enrich_procedure_success_status(record, masked_note_text)
         if outcomes_status_warnings:
             extraction_warnings.extend(outcomes_status_warnings)

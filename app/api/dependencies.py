@@ -42,8 +42,9 @@ from app.reporting.engine import (
     default_schema_registry,
     default_template_registry,
 )
-from app.reporting.macro_registry import MacroRegistry, get_macro_registry as _get_reporting_macro_registry
 from app.reporting.inference import InferenceEngine
+from app.reporting.macro_registry import MacroRegistry
+from app.reporting.macro_registry import get_macro_registry as _get_reporting_macro_registry
 from app.reporting.validation import ValidationEngine
 from config.settings import CoderSettings, KnowledgeSettings
 from observability.logging_config import get_logger

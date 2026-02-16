@@ -151,6 +151,208 @@ def _render_bundle_markdown(
     return structured.text
 
 
+def _apply_reporter_completeness_uplift(record: Any, note_text: str) -> Any:
+    """Best-effort uplift for reporter addendum values (age/ASA/ECOG + EBUS detail)."""
+    if not note_text or record is None:
+        return record
+
+    try:
+        from app.registry.schema import RegistryRecord
+    except Exception:
+        return record
+
+    is_dict = isinstance(record, dict)
+    if not isinstance(record, RegistryRecord) and not is_dict:
+        return record
+
+    try:
+        import re
+
+        from app.registry.deterministic_extractors import run_deterministic_extractors
+        from app.registry.heuristics.linear_ebus_station_detail import (
+            apply_linear_ebus_station_detail_heuristics,
+        )
+    except Exception:
+        return record
+
+    seed = run_deterministic_extractors(note_text)
+    if not isinstance(seed, dict):
+        seed = {}
+
+    data = record.model_dump(exclude_none=False) if isinstance(record, RegistryRecord) else record
+    changed = False
+
+    # Patient demographics
+    age = seed.get("patient_age")
+    gender = seed.get("gender")
+    if age is not None or gender:
+        demo = data.get("patient_demographics") or {}
+        if not isinstance(demo, dict):
+            demo = {}
+        if age is not None and demo.get("age_years") is None:
+            demo["age_years"] = age
+            changed = True
+        if gender and not demo.get("gender"):
+            g = str(gender).strip()
+            if g.lower() == "m":
+                g = "Male"
+            elif g.lower() == "f":
+                g = "Female"
+            demo["gender"] = g
+            changed = True
+        if changed:
+            data["patient_demographics"] = demo
+
+        patient = data.get("patient") or {}
+        if not isinstance(patient, dict):
+            patient = {}
+        patient_changed = False
+        if age is not None and patient.get("age") is None:
+            patient["age"] = age
+            patient_changed = True
+        if gender and not patient.get("sex"):
+            g = str(gender).strip()
+            g_lower = g.lower()
+            if g_lower in {"male", "m"}:
+                g = "M"
+            elif g_lower in {"female", "f"}:
+                g = "F"
+            else:
+                g = "O"
+            patient["sex"] = g
+            patient_changed = True
+        if patient_changed:
+            data["patient"] = patient
+            changed = True
+
+    # ASA: explicit-only
+    asa_val = seed.get("asa_class")
+    if asa_val is not None and re.search(r"(?i)\bASA\b", note_text):
+        clinical = data.get("clinical_context") or {}
+        if not isinstance(clinical, dict):
+            clinical = {}
+        if clinical.get("asa_class") is None:
+            clinical["asa_class"] = asa_val
+            data["clinical_context"] = clinical
+            changed = True
+
+        risk = data.get("risk_assessment") or {}
+        if not isinstance(risk, dict):
+            risk = {}
+        if risk.get("asa_class") is None:
+            risk["asa_class"] = asa_val
+            data["risk_assessment"] = risk
+            changed = True
+
+    # ECOG/Zubrod: explicit-only
+    ecog_score = seed.get("ecog_score")
+    ecog_text = seed.get("ecog_text")
+    if (ecog_score is not None or ecog_text) and re.search(r"(?i)\b(?:ECOG|Zubrod)\b", note_text):
+        clinical = data.get("clinical_context") or {}
+        if not isinstance(clinical, dict):
+            clinical = {}
+        if clinical.get("ecog_score") is None and not clinical.get("ecog_text"):
+            if ecog_score is not None:
+                clinical["ecog_score"] = ecog_score
+                changed = True
+            elif isinstance(ecog_text, str) and ecog_text.strip():
+                clinical["ecog_text"] = ecog_text.strip()
+                changed = True
+        if changed:
+            data["clinical_context"] = clinical
+
+    if is_dict:
+        # Also set flat compat fields used by reporter bundle builder.
+        if age is not None and data.get("patient_age") in (None, "", [], {}):
+            data["patient_age"] = age
+        if gender and data.get("gender") in (None, "", [], {}):
+            g = str(gender).strip()
+            if g.lower() == "m":
+                g = "Male"
+            elif g.lower() == "f":
+                g = "Female"
+            data["gender"] = g
+        if asa_val is not None and data.get("asa_class") in (None, "", [], {}):
+            data["asa_class"] = asa_val
+        if ecog_score is not None and data.get("ecog_score") in (None, "", [], {}):
+            data["ecog_score"] = ecog_score
+        if ecog_text and data.get("ecog_text") in (None, "", [], {}):
+            data["ecog_text"] = ecog_text
+
+        # Apply linear EBUS per-station detail extraction to dict payloads.
+        try:
+            from app.registry.processing.linear_ebus_stations_detail import (
+                extract_linear_ebus_stations_detail,
+            )
+
+            parsed = extract_linear_ebus_stations_detail(note_text)
+            if parsed:
+                granular = data.get("granular_data") or {}
+                if not isinstance(granular, dict):
+                    granular = {}
+                existing_raw = granular.get("linear_ebus_stations_detail")
+                existing = (
+                    [dict(item) for item in existing_raw if isinstance(item, dict)]
+                    if isinstance(existing_raw, list)
+                    else []
+                )
+                by_station: dict[str, dict[str, Any]] = {}
+                order: list[str] = []
+                for item in existing:
+                    station = str(item.get("station") or "").strip()
+                    if not station:
+                        continue
+                    if station not in by_station:
+                        order.append(station)
+                    by_station[station] = item
+                for item in parsed:
+                    if not isinstance(item, dict):
+                        continue
+                    station = str(item.get("station") or "").strip()
+                    if not station:
+                        continue
+                    existing_item = by_station.get(station)
+                    if existing_item is None:
+                        by_station[station] = dict(item)
+                        order.append(station)
+                        continue
+                    for key, value in item.items():
+                        if key == "station":
+                            continue
+                        if value in (None, "", [], {}):
+                            continue
+                        if existing_item.get(key) in (None, "", [], {}):
+                            existing_item[key] = value
+                    by_station[station] = existing_item
+                merged = [by_station[s] for s in order if s in by_station]
+                if merged:
+                    granular["linear_ebus_stations_detail"] = merged
+                    stations = [str(item.get("station")) for item in merged if item.get("station")]
+                    if stations and data.get("linear_ebus_stations") in (None, "", [], {}):
+                        data["linear_ebus_stations"] = stations
+                    if stations and data.get("ebus_stations_sampled") in (None, "", [], {}):
+                        data["ebus_stations_sampled"] = stations
+                    data["granular_data"] = granular
+        except Exception:
+            pass
+        return data
+
+    record_out = record
+    if changed:
+        try:
+            record_out = RegistryRecord(**data)
+        except Exception:
+            record_out = record
+
+    # Apply linear EBUS per-station detail extraction (uses note text).
+    try:
+        record_out, _ = apply_linear_ebus_station_detail_heuristics(note_text, record_out)
+    except Exception:
+        pass
+
+    return record_out
+
+
 def _debug_template_selection(bundle: ProcedureBundle) -> dict[str, Any]:
     templates = default_template_registry()
     macros = get_macro_registry()
@@ -272,11 +474,16 @@ async def report_seed_from_text(
     debug_enabled = bool(req.debug or req.include_debug)
     debug_notes: list[dict[str, Any]] | None = [] if debug_enabled else None
 
-    redaction = apply_phi_redaction(req.text, phi_scrubber, already_scrubbed=bool(req.already_scrubbed))
+    redaction = apply_phi_redaction(
+        req.text,
+        phi_scrubber,
+        already_scrubbed=bool(req.already_scrubbed),
+    )
     note_text = redaction.text
 
     seed_strategy = os.getenv("REPORTER_SEED_STRATEGY", "registry_extract_fields").strip().lower()
-    llm_strict = os.getenv("REPORTER_SEED_LLM_STRICT", "0").strip().lower() in {"1", "true", "yes", "y"}
+    llm_strict_raw = os.getenv("REPORTER_SEED_LLM_STRICT", "0").strip().lower()
+    llm_strict = llm_strict_raw in {"1", "true", "yes", "y"}
 
     seed_warnings: list[str] = []
     seed_record_for_completeness = None
@@ -321,12 +528,16 @@ async def report_seed_from_text(
                     }
                 )
         except ReporterFindingsError as exc:
-            seed_warnings.append(f"REPORTER_SEED_FALLBACK: llm_findings_failed ({type(exc).__name__})")
+            seed_warnings.append(
+                f"REPORTER_SEED_FALLBACK: llm_findings_failed ({type(exc).__name__})"
+            )
             if llm_strict:
                 raise HTTPException(status_code=502, detail="LLM findings seeding failed") from exc
             seed_strategy = "registry_extract_fields"
         except Exception as exc:  # noqa: BLE001
-            seed_warnings.append(f"REPORTER_SEED_FALLBACK: llm_findings_failed ({type(exc).__name__})")
+            seed_warnings.append(
+                f"REPORTER_SEED_FALLBACK: llm_findings_failed ({type(exc).__name__})"
+            )
             if llm_strict:
                 raise HTTPException(status_code=502, detail="LLM findings seeding failed") from exc
             seed_strategy = "registry_extract_fields"
@@ -338,7 +549,17 @@ async def report_seed_from_text(
         seed_record_for_completeness = extraction_result.record
         seed_text_for_bundle = note_text
 
-    bundle = build_procedure_bundle_from_extraction(extraction_source, source_text=seed_text_for_bundle)
+    # Apply completeness addendum uplift for reporter flow (age/ASA/ECOG + EBUS detail).
+    seed_record_for_completeness = _apply_reporter_completeness_uplift(
+        seed_record_for_completeness,
+        note_text,
+    )
+    extraction_source = _apply_reporter_completeness_uplift(extraction_source, note_text)
+
+    bundle = build_procedure_bundle_from_extraction(
+        extraction_source,
+        source_text=seed_text_for_bundle,
+    )
     bundle = _apply_seed_metadata(bundle, req.metadata)
     if not bundle.free_text_hint:
         bundle_payload = bundle.model_dump(exclude_none=False)

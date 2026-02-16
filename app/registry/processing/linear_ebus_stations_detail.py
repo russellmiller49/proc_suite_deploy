@@ -28,6 +28,18 @@ _NUMBERED_STATION_HEADER_RE = re.compile(
 )
 
 _GLOBAL_NEEDLE_GAUGE_RE = re.compile(r"(?i)\b(19|21|22|25)\s*[- ]?(?:g|gauge)\b")
+_COMPLETENESS_NEEDLE_GAUGE_RE = re.compile(
+    r"(?i)\bneedle\s+gauge\s*(?:\(\s*per\s+station\s*\))?\s*[:=]\s*(19|21|22|25)\b"
+)
+_COMPLETENESS_PASSES_RE = re.compile(
+    r"(?i)\bpasses?\s*(?:\(\s*per\s+station\s*\))?\s*[:=]\s*(\d{1,2})\b"
+)
+_COMPLETENESS_SHORT_AXIS_RE = re.compile(
+    r"(?i)\b(?:node\s+size\s+short\s+axis|short[-\s]?axis)(?:\s*\(mm\))?\s*[:=]\s*(\d+(?:\.\d+)?)\b"
+)
+_COMPLETENESS_LYMPH_RE = re.compile(
+    r"(?i)\blymphocytes?\s+present\s*[:=]?\s*(yes|no|true|false)\b"
+)
 
 _NON_STATION_STOP_RE = re.compile(
     r"(?im)^\s*(?:"
@@ -412,6 +424,8 @@ def extract_linear_ebus_stations_detail(note_text: str) -> list[dict[str, Any]]:
     global_gauge: int | None = None
     global_gauge_evidence: dict[str, Any] | None = None
     gauge_match = _GLOBAL_NEEDLE_GAUGE_RE.search(text)
+    if not gauge_match:
+        gauge_match = _COMPLETENESS_NEEDLE_GAUGE_RE.search(text)
     if gauge_match:
         global_gauge = _to_int(gauge_match.group(1))
         if global_gauge is not None:
@@ -419,6 +433,46 @@ def extract_linear_ebus_stations_detail(note_text: str) -> list[dict[str, Any]]:
                 "text": (gauge_match.group(0) or "").strip(),
                 "start": int(gauge_match.start()),
                 "end": int(gauge_match.end()),
+            }
+
+    global_passes: int | None = None
+    global_passes_evidence: dict[str, Any] | None = None
+    passes_match = _COMPLETENESS_PASSES_RE.search(text)
+    if passes_match:
+        global_passes = _to_int(passes_match.group(1))
+        if global_passes is not None:
+            global_passes_evidence = {
+                "text": (passes_match.group(0) or "").strip(),
+                "start": int(passes_match.start()),
+                "end": int(passes_match.end()),
+            }
+
+    global_short_axis_mm: float | None = None
+    global_short_axis_evidence: dict[str, Any] | None = None
+    short_match = _COMPLETENESS_SHORT_AXIS_RE.search(text)
+    if short_match:
+        global_short_axis_mm = _to_float(short_match.group(1))
+        if global_short_axis_mm is not None:
+            global_short_axis_evidence = {
+                "text": (short_match.group(0) or "").strip(),
+                "start": int(short_match.start()),
+                "end": int(short_match.end()),
+            }
+
+    global_lymphocytes_present: bool | None = None
+    global_lymph_evidence: dict[str, Any] | None = None
+    lymph_match = _COMPLETENESS_LYMPH_RE.search(text)
+    if lymph_match:
+        raw = (lymph_match.group(1) or "").strip().lower()
+        if raw in {"yes", "true"}:
+            global_lymphocytes_present = True
+        elif raw in {"no", "false"}:
+            global_lymphocytes_present = False
+        if global_lymphocytes_present is not None:
+            global_lymph_evidence = {
+                "text": (lymph_match.group(0) or "").strip(),
+                "start": int(lymph_match.start()),
+                "end": int(lymph_match.end()),
             }
 
     matches = list(_STATION_HEADER_RE.finditer(text))
@@ -565,6 +619,32 @@ def extract_linear_ebus_stations_detail(note_text: str) -> list[dict[str, Any]]:
             _apply_section_to_entry(entry, block, global_gauge=global_gauge)
 
         idx = j if j > idx else idx + 1
+
+    # Apply completeness-style global defaults when station-level detail is missing.
+    if by_station:
+        for entry in by_station.values():
+            sampled_flag = entry.get("sampled")
+            allow_sampling_defaults = sampled_flag is not False
+
+            if allow_sampling_defaults and global_gauge is not None and entry.get("needle_gauge") is None:
+                entry["needle_gauge"] = global_gauge
+                if global_gauge_evidence:
+                    entry.setdefault("_needle_gauge_evidence", global_gauge_evidence)
+
+            if allow_sampling_defaults and global_passes is not None and entry.get("number_of_passes") is None:
+                entry["number_of_passes"] = global_passes
+                if global_passes_evidence:
+                    entry.setdefault("_number_of_passes_evidence", global_passes_evidence)
+
+            if global_short_axis_mm is not None and entry.get("short_axis_mm") is None:
+                entry["short_axis_mm"] = global_short_axis_mm
+                if global_short_axis_evidence:
+                    entry.setdefault("_short_axis_mm_evidence", global_short_axis_evidence)
+
+            if global_lymphocytes_present is not None and entry.get("lymphocytes_present") is None:
+                entry["lymphocytes_present"] = global_lymphocytes_present
+                if global_lymph_evidence:
+                    entry.setdefault("_lymphocytes_present_evidence", global_lymph_evidence)
 
     # Ensure stable ordering.
     return [by_station[s] for s in order if s in by_station]

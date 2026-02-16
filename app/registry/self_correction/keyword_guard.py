@@ -38,6 +38,15 @@ CPT_KEYWORDS: dict[str, list[str]] = {
     # Diagnostic chest ultrasound
     "76604": ["chest ultrasound", "ultrasound findings", "with image documentation", "image saved"],
     # Bronchoscopy add-ons / performed flags
+    "31573": [
+        "therapeutic injection",
+        "therapeutic instillation",
+        "instilled",
+        "instillation",
+        "amphotericin",
+        "antibiotic",
+        "antifungal",
+    ],
     "31623": ["brushing", "brushings", "bronchial brushing"],
     "31624": [
         "bronchoalveolar lavage",
@@ -390,6 +399,17 @@ REQUIRED_PATTERNS: dict[str, list[tuple[str, str]]] = {
         (r"(?i)\bbronchial\s+alveolar\s+lavage\b", "Text contains 'bronchial alveolar lavage' but extraction missed it."),
         (r"(?i)\bbal\b(?!\s*score)", "Text contains 'BAL' but extraction missed it."),
     ],
+    # Fix for missed therapeutic instillation/injection
+    "procedures_performed.therapeutic_injection.performed": [
+        (
+            r"(?is)\binstill(?:ed|ation)?\b[^.\n]{0,120}\b(?:amphotericin|antibiot|antifungal|gentamicin|tobramycin|vancomycin)\b",
+            "Text indicates therapeutic medication instillation but extraction missed it.",
+        ),
+        (
+            r"(?is)\b(?:amphotericin|gentamicin|tobramycin|vancomycin)\b[^.\n]{0,120}\binstill(?:ed|ation)?\b",
+            "Text indicates therapeutic medication instillation but extraction missed it.",
+        ),
+    ],
     # Fix for missed radial EBUS
     "procedures_performed.radial_ebus.performed": [
         (r"(?i)\bradial\s+ebus\b", "Text contains 'radial EBUS' but extraction missed it."),
@@ -562,6 +582,17 @@ REQUIRED_PATTERNS: dict[str, list[tuple[str, str]]] = {
             "Text indicates chest tube placement/insertion but extraction missed it.",
         ),
         (r"(?i)\btube\s+thoracostomy\b", "Text mentions 'tube thoracostomy'."),
+    ],
+    # Pleural: chest tube removal
+    "pleural_procedures.chest_tube_removal.performed": [
+        (
+            r"(?is)\b(?:chest\s+tube|pigtail\s+catheter|pleural\s+catheter|tube)\b[^.\n]{0,120}\b(?:removed|pulled|withdrawn|discontinued|d/c)\b",
+            "Text indicates chest tube removal but extraction missed it.",
+        ),
+        (
+            r"(?is)\b(?:removed|pulled|withdrawn|discontinued|d/c)\b[^.\n]{0,120}\b(?:chest\s+tube|pigtail\s+catheter|pleural\s+catheter|tube)\b",
+            "Text indicates chest tube removal but extraction missed it.",
+        ),
     ],
     # Pleural: intrapleural fibrinolysis via chest tube/catheter (32561/32562)
     "pleural_procedures.fibrinolytic_therapy.performed": [

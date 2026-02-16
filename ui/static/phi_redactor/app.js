@@ -30,6 +30,24 @@ const submitFeedbackBtn = document.getElementById("submitFeedbackBtn");
 const saveCorrectionsBtn = document.getElementById("saveCorrectionsBtn");
 const feedbackStatusEl = document.getElementById("feedbackStatus");
 const phiConfirmModalEl = document.getElementById("phiConfirmModal");
+const bundlePanelEl = document.getElementById("bundlePanel");
+const indexDateInputEl = document.getElementById("indexDateInput");
+const docDateInputEl = document.getElementById("docDateInput");
+const timepointRoleSelectEl = document.getElementById("timepointRoleSelect");
+const docSeqInputEl = document.getElementById("docSeqInput");
+const translateDatesToggleEl = document.getElementById("translateDatesToggle");
+const chronoPreviewBtn = document.getElementById("chronoPreviewBtn");
+const addToBundleBtn = document.getElementById("addToBundleBtn");
+const submitBundleBtn = document.getElementById("submitBundleBtn");
+const clearBundleBtn = document.getElementById("clearBundleBtn");
+const clearCurrentNoteBtn = document.getElementById("clearCurrentNoteBtn");
+const zkPatientIdInputEl = document.getElementById("zkPatientIdInput");
+const episodeIdInputEl = document.getElementById("episodeIdInput");
+const genBundleIdsBtn = document.getElementById("genBundleIdsBtn");
+const bundleDocsHostEl = document.getElementById("bundleDocsHost");
+const bundleSummaryHostEl = document.getElementById("bundleSummaryHost");
+const chronoPreviewModalEl = document.getElementById("chronoPreviewModal");
+const chronoPreviewBodyEl = document.getElementById("chronoPreviewBody");
 const registryGridRootEl = document.getElementById("registryGridRoot");
 const registryLegacyRootEl = document.getElementById("registryLegacyRoot");
 const registryLegacyRightRootEl = document.getElementById("registryLegacyRightRoot");
@@ -822,6 +840,194 @@ function safeHtml(str) {
     .replaceAll(">", "&gt;");
 }
 
+// =============================================================================
+// Zero-knowledge temporal tokens (client-side only)
+// =============================================================================
+
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
+const ZK_BRACKET_TOKEN_RE = /\[[A-Z_ ]{2,32}:[^\]]*\]/g;
+const ZK_ISO_DATE_RE = /\b(?:19|20)\d{2}[-/](?:0?[1-9]|1[0-2])[-/](?:0?[1-9]|[12]\d|3[01])\b/g;
+const ZK_US_NUMERIC_DATE_RE = /\b(?:0?[1-9]|1[0-2])[-/](?:0?[1-9]|[12]\d|3[01])[-/](?:\d{2}|\d{4})\b/g;
+const ZK_MONTH_NAME_DATE_RE = /\b(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t|tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\s+\d{1,2}(?:\s*,?\s*(?:19|20)\d{2})?\b/gi;
+
+function parseIsoDateInput(value) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(value || "").trim());
+  if (!m) return null;
+  return { year: Number(m[1]), month: Number(m[2]), day: Number(m[3]) };
+}
+
+function isValidYmd(ymd) {
+  if (!ymd) return false;
+  const year = Number(ymd.year);
+  const month = Number(ymd.month);
+  const day = Number(ymd.day);
+  if (!Number.isInteger(year) || year < 1800 || year > 2200) return false;
+  if (!Number.isInteger(month) || month < 1 || month > 12) return false;
+  if (!Number.isInteger(day) || day < 1 || day > 31) return false;
+
+  const d = new Date(Date.UTC(year, month - 1, day, 12, 0, 0, 0));
+  return d.getUTCFullYear() === year && d.getUTCMonth() === month - 1 && d.getUTCDate() === day;
+}
+
+function utcNoonMs(ymd) {
+  if (!isValidYmd(ymd)) return null;
+  return Date.UTC(ymd.year, ymd.month - 1, ymd.day, 12, 0, 0, 0);
+}
+
+function diffDaysUtcNoon(indexYmd, targetYmd) {
+  const a = utcNoonMs(indexYmd);
+  const b = utcNoonMs(targetYmd);
+  if (a == null || b == null) return null;
+  return Math.round((b - a) / MS_PER_DAY);
+}
+
+function formatTOffset(days) {
+  const n = Number(days);
+  if (!Number.isFinite(n)) return "T+0";
+  if (n >= 0) return `T+${Math.trunc(n)}`;
+  return `T-${Math.abs(Math.trunc(n))}`;
+}
+
+function buildDateToken(days) {
+  return `[DATE: ${formatTOffset(days)} DAYS]`;
+}
+
+function buildSystemHeaderToken({ role, seq, docOffsetDays }) {
+  const safeRole = String(role || "").toUpperCase() || "UNKNOWN";
+  const safeSeq = Number.isFinite(Number(seq)) ? Math.trunc(Number(seq)) : 0;
+  return `[SYSTEM: ROLE=${safeRole} SEQ=${safeSeq} DOC_OFFSET=${formatTOffset(docOffsetDays)} DAYS]`;
+}
+
+function stripBracketTokensForLeakScan(text) {
+  return String(text || "").replace(ZK_BRACKET_TOKEN_RE, " ");
+}
+
+function countDateLikeStringsForLeakScan(text) {
+  const clean = String(text || "");
+  if (!clean.trim()) return 0;
+  const regexes = [ZK_ISO_DATE_RE, ZK_US_NUMERIC_DATE_RE, ZK_MONTH_NAME_DATE_RE];
+  let count = 0;
+  for (const re of regexes) {
+    // Ensure we don't rely on global regex state
+    const clone = new RegExp(re.source, re.flags);
+    count += Array.from(clean.matchAll(clone)).length;
+  }
+  return count;
+}
+
+function sanitizeDateCandidate(raw) {
+  let s = String(raw || "").trim();
+  s = s.replace(/^_+|_+$/g, ""); // template underscores
+  s = s.replace(/^[\[(]+|[\])]+$/g, ""); // brackets/parens
+  s = s.replace(/[.,;:]+$/g, ""); // trailing punctuation
+  return s.trim();
+}
+
+function monthNameToNumber(name) {
+  const key = String(name || "").toLowerCase().slice(0, 3);
+  const map = {
+    jan: 1,
+    feb: 2,
+    mar: 3,
+    apr: 4,
+    may: 5,
+    jun: 6,
+    jul: 7,
+    aug: 8,
+    sep: 9,
+    oct: 10,
+    nov: 11,
+    dec: 12,
+  };
+  return map[key] ?? null;
+}
+
+function normalizeYear(rawYear) {
+  const y = Number(rawYear);
+  if (!Number.isFinite(y)) return null;
+  if (y >= 1000) return Math.trunc(y);
+  // Pivot: 00-30 => 2000-2030, else 1900-1999
+  if (y >= 0 && y <= 30) return 2000 + Math.trunc(y);
+  if (y >= 31 && y <= 99) return 1900 + Math.trunc(y);
+  return null;
+}
+
+function parseAbsoluteDateCandidate(raw) {
+  const candidate = sanitizeDateCandidate(raw);
+  if (!candidate) return { ymd: null, normalized: "", pattern: "", warning: "empty" };
+
+  // ISO: YYYY-MM-DD or YYYY/MM/DD
+  let m = /^(\d{4})[-/](\d{1,2})[-/](\d{1,2})$/.exec(candidate);
+  if (m) {
+    const ymd = { year: Number(m[1]), month: Number(m[2]), day: Number(m[3]) };
+    if (!isValidYmd(ymd)) return { ymd: null, normalized: "", pattern: "iso", warning: "invalid date" };
+    return { ymd, normalized: `${m[1]}-${String(m[2]).padStart(2, "0")}-${String(m[3]).padStart(2, "0")}`, pattern: "iso", warning: "" };
+  }
+
+  // Numeric: M/D/YYYY or D/M/YYYY (best-effort disambiguation)
+  m = /^(\d{1,2})[-/](\d{1,2})[-/](\d{2,4})$/.exec(candidate);
+  if (m) {
+    const a = Number(m[1]);
+    const b = Number(m[2]);
+    const year = normalizeYear(m[3]);
+    if (!Number.isFinite(a) || !Number.isFinite(b) || year == null) {
+      return { ymd: null, normalized: "", pattern: "numeric", warning: "unparseable numeric date" };
+    }
+    let month = a;
+    let day = b;
+    let warning = "";
+    if (a > 12 && b <= 12) {
+      day = a;
+      month = b;
+      warning = "interpreted as D/M";
+    } else if (a <= 12 && b <= 12) {
+      warning = "ambiguous; interpreted as M/D";
+    }
+    const ymd = { year, month, day };
+    if (!isValidYmd(ymd)) return { ymd: null, normalized: "", pattern: "numeric", warning: "invalid date" };
+    return { ymd, normalized: `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`, pattern: "numeric", warning };
+  }
+
+  // DD-MMM-YYYY, DD MMM YYYY, DDMMMYYYY (month names)
+  m = /^(\d{1,2})[-\s]?([A-Za-z]{3,9})[-\s]?(\d{2,4})$/.exec(candidate);
+  if (m) {
+    const day = Number(m[1]);
+    const month = monthNameToNumber(m[2]);
+    const year = normalizeYear(m[3]);
+    const ymd = { year, month, day };
+    if (!isValidYmd(ymd)) return { ymd: null, normalized: "", pattern: "dd_mmm", warning: "invalid date" };
+    return { ymd, normalized: `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`, pattern: "dd_mmm", warning: "" };
+  }
+
+  // MMM DD, YYYY (year optional)
+  m = /^([A-Za-z]{3,9})\s+(\d{1,2})(?:st|nd|rd|th)?(?:\s*,?\s*(\d{2,4}))?$/.exec(candidate);
+  if (m) {
+    const month = monthNameToNumber(m[1]);
+    const day = Number(m[2]);
+    const year = m[3] ? normalizeYear(m[3]) : null;
+    if (!year) {
+      return { ymd: null, normalized: "", pattern: "mmm_dd", warning: "missing year" };
+    }
+    const ymd = { year, month, day };
+    if (!isValidYmd(ymd)) return { ymd: null, normalized: "", pattern: "mmm_dd", warning: "invalid date" };
+    return { ymd, normalized: `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`, pattern: "mmm_dd", warning: "" };
+  }
+
+  return { ymd: null, normalized: "", pattern: "", warning: "unrecognized date format" };
+}
+
+function buildDateRedactionReplacement(raw, { translateDates, indexYmd }) {
+  if (!translateDates) return "[REDACTED]";
+  if (!indexYmd) return "[DATE: REDACTED]";
+
+  const parsed = parseAbsoluteDateCandidate(raw);
+  if (!parsed.ymd) return "[DATE: REDACTED]";
+  const offsetDays = diffDaysUtcNoon(indexYmd, parsed.ymd);
+  if (offsetDays == null) return "[DATE: REDACTED]";
+  return buildDateToken(offsetDays);
+}
+
 function highlightSpanInEditor(start, end) {
   try {
     // Fallback: if Monaco is still loading/unavailable, highlight in the basic textarea.
@@ -1212,6 +1418,35 @@ function parseYesNo(value) {
   if (s === "yes" || s === "true") return true;
   if (s === "no" || s === "false") return false;
   return null;
+}
+
+function getByPath(obj, path) {
+  const root = obj && typeof obj === "object" ? obj : null;
+  const rawPath = String(path || "").trim();
+  if (!root || !rawPath) return undefined;
+
+  const parts = [];
+  rawPath.split(".").forEach((segment) => {
+    const token = String(segment || "").trim();
+    if (!token) return;
+    const matches = token.matchAll(/([^[\]]+)|\[(\d+)\]/g);
+    for (const match of matches) {
+      if (match[1]) parts.push(match[1]);
+      else if (match[2] !== undefined) parts.push(Number(match[2]));
+    }
+  });
+
+  let curr = root;
+  for (const part of parts) {
+    if (curr === null || curr === undefined) return undefined;
+    if (typeof part === "number") {
+      if (!Array.isArray(curr)) return undefined;
+      curr = curr[part];
+    } else {
+      curr = curr[part];
+    }
+  }
+  return curr;
 }
 
 function ensurePath(obj, path) {
@@ -5430,10 +5665,11 @@ function renderDebugLogs(data) {
  * Render the formatted results from the server response.
  * Shows status banner, CPT codes table, and registry form.
  */
-async function renderResults(data) {
+async function renderResults(data, options = {}) {
   const container = document.getElementById("resultsContainer");
   if (!container) return;
 
+  const rawData = options?.rawData ?? data;
   lastServerResponse = data;
   if (exportBtn) exportBtn.disabled = !data;
   if (exportTablesBtn) exportTablesBtn.disabled = !data;
@@ -5454,7 +5690,7 @@ async function renderResults(data) {
   }
 
   if (serverResponseEl) {
-    serverResponseEl.textContent = JSON.stringify(data, null, 2);
+    serverResponseEl.textContent = JSON.stringify(rawData, null, 2);
   }
 }
 
@@ -5464,6 +5700,10 @@ function clearResultsUi() {
   unmountRegistryGrid();
   showRegistryLegacyUi();
   if (registryGridRootEl) registryGridRootEl.innerHTML = "";
+  if (bundleSummaryHostEl) {
+    bundleSummaryHostEl.classList.add("hidden");
+    bundleSummaryHostEl.innerHTML = "";
+  }
   lastServerResponse = null;
   lastCompletenessPrompts = [];
   if (completenessPromptsCardEl) completenessPromptsCardEl.classList.add("hidden");
@@ -6189,6 +6429,9 @@ async function main() {
 	  let hasRunDetection = false;
 	  let scrubbedConfirmed = false;
 	  let suppressDirtyFlag = false;
+    let bundleDocs = [];
+    let lastBundleResponse = null;
+    let bundleBusy = false;
 
   if (completenessCopyBtn) {
     completenessCopyBtn.disabled = true;
@@ -6284,6 +6527,19 @@ async function main() {
     } else {
       submitBtn.title = "Submit the scrubbed note to the server";
     }
+    updateZkControls();
+  }
+
+  function updateZkControls() {
+    const busy = running || bundleBusy;
+    const hasText = Boolean(model.getValue().trim());
+    if (chronoPreviewBtn) chronoPreviewBtn.disabled = busy || !hasRunDetection;
+    if (clearCurrentNoteBtn) clearCurrentNoteBtn.disabled = busy || !hasText;
+    if (genBundleIdsBtn) genBundleIdsBtn.disabled = busy;
+    if (addToBundleBtn) addToBundleBtn.disabled = busy || !scrubbedConfirmed;
+    const hasBundleDocs = Array.isArray(bundleDocs) && bundleDocs.length > 0;
+    if (submitBundleBtn) submitBundleBtn.disabled = busy || !hasBundleDocs;
+    if (clearBundleBtn) clearBundleBtn.disabled = busy || !hasBundleDocs;
   }
 
   function clearDetections() {
@@ -6302,6 +6558,7 @@ async function main() {
     lastServerResponse = null;
     if (exportBtn) exportBtn.disabled = true;
     clearResultsUi();
+    updateZkControls();
   }
 
   function updateDecorations() {
@@ -6515,6 +6772,7 @@ async function main() {
         cancelBtn.disabled = true;
         runBtn.disabled = true;
         applyBtn.disabled = true;
+        updateZkControls();
         startWorker({ forceLegacy: true });
         return;
       }
@@ -6524,6 +6782,7 @@ async function main() {
       cancelBtn.disabled = true;
       runBtn.disabled = true;
       applyBtn.disabled = true;
+      updateZkControls();
     });
 
     activeWorker.addEventListener("messageerror", () => {
@@ -6534,6 +6793,7 @@ async function main() {
       cancelBtn.disabled = true;
       runBtn.disabled = true;
       applyBtn.disabled = true;
+      updateZkControls();
     });
 
     activeWorker.onmessage = (e) => {
@@ -6601,6 +6861,7 @@ async function main() {
         runBtn.disabled = !workerReady;
         applyBtn.disabled = false; // Enable even with 0 detections
         revertBtn.disabled = originalText === model.getValue();
+        updateZkControls();
 
         detections = ensureDetectionIds(msg.detections);
         detectionsById = new Map(detections.map((d) => [d.id, d]));
@@ -6634,6 +6895,7 @@ async function main() {
         cancelBtn.disabled = true;
         runBtn.disabled = !workerReady;
         applyBtn.disabled = !hasRunDetection;
+        updateZkControls();
         setStatus(`Error: ${msg.message || "unknown"}`);
         setProgress("");
         return;
@@ -6672,6 +6934,7 @@ async function main() {
     applyBtn.disabled = true;
     revertBtn.disabled = false;
     submitBtn.disabled = true;
+    updateZkControls();
 
     setStatus("Detecting… (client-side)");
     setProgress("");
@@ -6691,16 +6954,25 @@ async function main() {
       .filter((d) => Number.isFinite(d.start) && Number.isFinite(d.end) && d.end > d.start)
       .sort((a, b) => b.start - a.start);
 
+    const translateDates = Boolean(translateDatesToggleEl?.checked);
+    const indexYmd = parseIsoDateInput(indexDateInputEl?.value);
+    const baseText = model.getValue();
+
     suppressDirtyFlag = true;
     try {
       if (!usingPlainEditor && editor) {
-        const text = model.getValue();
-        const lineStarts = buildLineStartOffsets(text);
-        const textLength = text.length;
+        const lineStarts = buildLineStartOffsets(baseText);
+        const textLength = baseText.length;
 
         const edits = spans.map((d) => {
           const startPos = offsetToPosition(d.start, lineStarts, textLength);
           const endPos = offsetToPosition(d.end, lineStarts, textLength);
+          const raw = baseText.slice(d.start, d.end);
+          const label = String(d.label || "").toUpperCase().replace(/^[BI]-/, "");
+          const replacement =
+            label === "DATE"
+              ? buildDateRedactionReplacement(raw, { translateDates, indexYmd })
+              : "[REDACTED]";
           return {
             range: new monaco.Range(
               startPos.lineNumber,
@@ -6708,19 +6980,25 @@ async function main() {
               endPos.lineNumber,
               endPos.column
             ),
-            text: "[REDACTED]",
+            text: replacement,
           };
         });
 
         editor.executeEdits("phi-redactor", edits);
       } else {
-        let text = model.getValue();
+        let text = baseText;
         // Apply replacements from the end to preserve offsets.
         for (const d of spans) {
           const start = clamp(d.start, 0, text.length);
           const end = clamp(d.end, 0, text.length);
           if (end <= start) continue;
-          text = `${text.slice(0, start)}[REDACTED]${text.slice(end)}`;
+          const raw = baseText.slice(start, end);
+          const label = String(d.label || "").toUpperCase().replace(/^[BI]-/, "");
+          const replacement =
+            label === "DATE"
+              ? buildDateRedactionReplacement(raw, { translateDates, indexYmd })
+              : "[REDACTED]";
+          text = `${text.slice(0, start)}${replacement}${text.slice(end)}`;
         }
         model.setValue(text);
       }
@@ -6733,25 +7011,471 @@ async function main() {
     revertBtn.disabled = false;
   });
 
-  revertBtn.addEventListener("click", () => {
-    suppressDirtyFlag = true;
-    try {
-      if (!usingPlainEditor && editor) editor.setValue(originalText);
-      else model.setValue(originalText);
+	  revertBtn.addEventListener("click", () => {
+	    suppressDirtyFlag = true;
+	    try {
+	      if (!usingPlainEditor && editor) editor.setValue(originalText);
+	      else model.setValue(originalText);
     } finally {
       suppressDirtyFlag = false;
     }
     clearDetections();
     hasRunDetection = false;
     setScrubbedConfirmed(false);
-    setStatus("Reverted to baseline");
-    setProgress("");
-  });
+	    setStatus("Reverted to baseline");
+	    setProgress("");
+	  });
 
-  // Manual redaction: Add button click handler
-  if (addRedactionBtn) {
-    addRedactionBtn.addEventListener("click", () => {
-      if (!currentSelection) return;
+    function clearCurrentNote() {
+      if (running || bundleBusy) return;
+      suppressDirtyFlag = true;
+      try {
+        if (!usingPlainEditor && editor) editor.setValue("");
+        else model.setValue("");
+      } finally {
+        suppressDirtyFlag = false;
+      }
+      originalText = "";
+      hasRunDetection = false;
+      setScrubbedConfirmed(false);
+      clearDetections();
+      clearResultsUi();
+      resetFeedbackDraft();
+      setStatus("Ready for new note");
+      setProgress("");
+      if (runBtn) runBtn.disabled = !workerReady;
+      updateZkControls();
+    }
+
+    if (clearCurrentNoteBtn) {
+      clearCurrentNoteBtn.addEventListener("click", () => {
+        clearCurrentNote();
+      });
+    }
+
+	    if (chronoPreviewBtn) {
+	      chronoPreviewBtn.addEventListener("click", () => {
+        if (!hasRunDetection) {
+          setStatus("Run detection before previewing chronology");
+          return;
+        }
+
+        const translateDates = Boolean(translateDatesToggleEl?.checked);
+        const indexYmd = parseIsoDateInput(indexDateInputEl?.value);
+        const docYmd = parseIsoDateInput(docDateInputEl?.value);
+        const role = String(timepointRoleSelectEl?.value || "");
+        const seq = Number(docSeqInputEl?.value || "0");
+
+        const docOffsetDays = indexYmd && docYmd ? diffDaysUtcNoon(indexYmd, docYmd) : null;
+        const systemHeader = docOffsetDays == null ? "" : buildSystemHeaderToken({ role, seq, docOffsetDays });
+
+        const currentText = model.getValue();
+        const leakCount = countDateLikeStringsForLeakScan(currentText);
+
+        const included = detections.filter((d) => !excluded.has(d.id));
+        const dateSpans = included
+          .filter((d) => String(d.label || "").toUpperCase().replace(/^[BI]-/, "") === "DATE")
+          .filter((d) => Number.isFinite(d.start) && Number.isFinite(d.end) && d.end > d.start)
+          .sort((a, b) => a.start - b.start);
+
+        const maxRows = 200;
+        const truncated = dateSpans.length > maxRows;
+        const rows = dateSpans.slice(0, maxRows).map((d) => {
+          const raw = currentText.slice(d.start, d.end);
+          const parsed = parseAbsoluteDateCandidate(raw);
+          const replacement = buildDateRedactionReplacement(raw, { translateDates, indexYmd });
+          const parsedText = parsed.ymd ? parsed.normalized : "—";
+          const notes = parsed.warning || "";
+          return `
+            <tr>
+              <td>${safeHtml(raw)}</td>
+              <td>${safeHtml(parsedText)}</td>
+              <td>${safeHtml(replacement)}</td>
+              <td class="subtle">${safeHtml(notes)}</td>
+            </tr>
+          `;
+        });
+
+        const headerHtml = systemHeader
+          ? `<div class="bundle-doc-meta"><strong>Header token:</strong> ${safeHtml(systemHeader)}</div>`
+          : `<div class="bundle-doc-meta"><strong>Header token:</strong> (requires Index date + Document date)</div>`;
+
+        const indexHtml = indexYmd
+          ? `<div class="bundle-doc-meta"><strong>Index date:</strong> ${safeHtml(indexDateInputEl?.value || "")}</div>`
+          : `<div class="bundle-doc-meta"><strong>Index date:</strong> (not set)</div>`;
+
+        const docHtml = docYmd
+          ? `<div class="bundle-doc-meta"><strong>Document date:</strong> ${safeHtml(docDateInputEl?.value || "")}</div>`
+          : `<div class="bundle-doc-meta"><strong>Document date:</strong> (not set)</div>`;
+
+        const translateHtml = `<div class="bundle-doc-meta"><strong>Translate dates:</strong> ${
+          translateDates ? "ON" : "OFF"
+        }</div>`;
+
+        const leakHtml = `<div class="bundle-doc-meta"><strong>Date-like strings detected (pre-submit guardrail):</strong> ${leakCount}</div>`;
+
+        const tableHtml = `
+          <table class="dash-table" style="margin-top:10px;">
+            <thead>
+              <tr>
+                <th width="24%">Detected</th>
+                <th width="18%">Parsed</th>
+                <th width="28%">Replacement</th>
+                <th width="30%">Notes</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rows.join("") || `<tr><td colspan="4" class="subtle">No DATE detections.</td></tr>`}
+            </tbody>
+          </table>
+          ${truncated ? `<div class="subtle" style="margin-top:8px;">Showing first ${maxRows} of ${dateSpans.length} DATE spans.</div>` : ""}
+        `;
+
+        if (!chronoPreviewModalEl || typeof chronoPreviewModalEl.showModal !== "function") {
+          setStatus("Preview unavailable (dialog unsupported)");
+          return;
+        }
+        if (chronoPreviewBodyEl) {
+          chronoPreviewBodyEl.innerHTML = `
+            ${translateHtml}
+            ${indexHtml}
+            ${docHtml}
+            ${headerHtml}
+            ${leakHtml}
+            ${tableHtml}
+          `;
+        }
+	        chronoPreviewModalEl.showModal();
+	      });
+	    }
+
+    function generateClientId(prefix) {
+      const p = String(prefix || "id").replace(/[^a-z0-9_]/gi, "");
+      try {
+        if (globalThis.crypto && typeof globalThis.crypto.randomUUID === "function") {
+          return `${p}_${globalThis.crypto.randomUUID()}`;
+        }
+      } catch {
+        // ignore
+      }
+      return `${p}_${Math.random().toString(36).slice(2)}_${Date.now().toString(36)}`;
+    }
+
+    function hideBundleSummary() {
+      if (!bundleSummaryHostEl) return;
+      bundleSummaryHostEl.classList.add("hidden");
+      bundleSummaryHostEl.innerHTML = "";
+    }
+
+    function renderBundleDocsList() {
+      if (!bundleDocsHostEl) return;
+      if (!Array.isArray(bundleDocs) || bundleDocs.length === 0) {
+        bundleDocsHostEl.textContent = "No bundle docs yet.";
+        return;
+      }
+
+      bundleDocsHostEl.innerHTML = "";
+      const sorted = [...bundleDocs].sort((a, b) => Number(a.seq) - Number(b.seq));
+      for (const doc of sorted) {
+        const offset =
+          Number.isFinite(Number(doc.doc_t_offset_days)) ? formatTOffset(Number(doc.doc_t_offset_days)) : "T?";
+        const meta = el(
+          "div",
+          { className: "bundle-doc-meta" },
+          [
+            el("div", {
+              text: `#${doc.seq} · ${doc.timepoint_role} · ${offset} DAYS · ${String(doc.text || "").length} chars`,
+            }),
+          ]
+        );
+
+        const removeBtn = el("button", {
+          className: "secondary",
+          text: "Remove",
+          onClick: () => {
+            bundleDocs = bundleDocs.filter((d) => d.id !== doc.id);
+            lastBundleResponse = null;
+            hideBundleSummary();
+            renderBundleDocsList();
+            updateZkControls();
+            setStatus("Removed bundle document");
+          },
+        });
+        removeBtn.disabled = running || bundleBusy;
+
+        const row = el("div", { className: "bundle-doc-row" }, [meta, removeBtn]);
+        bundleDocsHostEl.appendChild(row);
+      }
+    }
+
+    function ensureBundleIds() {
+      const zkValue = String(zkPatientIdInputEl?.value || "").trim();
+      const epValue = String(episodeIdInputEl?.value || "").trim();
+      const zk = zkValue || generateClientId("zk");
+      const ep = epValue || generateClientId("ep");
+      if (zkPatientIdInputEl && !zkValue) zkPatientIdInputEl.value = zk;
+      if (episodeIdInputEl && !epValue) episodeIdInputEl.value = ep;
+      return { zk, ep };
+    }
+
+    async function renderBundleSummary(bundleResp) {
+      if (!bundleSummaryHostEl) return;
+      if (!bundleResp) {
+        hideBundleSummary();
+        return;
+      }
+
+      bundleSummaryHostEl.classList.remove("hidden");
+      bundleSummaryHostEl.innerHTML = "";
+
+      const docs = Array.isArray(bundleResp.documents) ? bundleResp.documents : [];
+      const timeline = bundleResp.timeline || {};
+
+      const title = el("div", {
+        text: `Bundle: ${bundleResp.zk_patient_id || "(missing)"} / ${bundleResp.episode_id || "(missing)"} (${docs.length} doc${docs.length === 1 ? "" : "s"})`,
+      });
+      title.style.fontWeight = "600";
+
+      const offsetsByRole = timeline.doc_offsets_by_role || {};
+      const offsetsText = Object.keys(offsetsByRole).length
+        ? Object.entries(offsetsByRole)
+            .map(([role, off]) => `${role}=${formatTOffset(Number(off))}`)
+            .join(" · ")
+        : "(no doc offsets parsed)";
+
+      const offsetsRow = el("div", { className: "bundle-doc-meta", text: `Offsets: ${offsetsText}` });
+
+      const selectLabel = el("div", { className: "bundle-doc-meta", text: "View doc results:" });
+
+      const docSelect = el("select", { className: "param-select" });
+      docs.forEach((doc, idx) => {
+        const off = doc.doc_t_offset_days == null ? "T?" : formatTOffset(Number(doc.doc_t_offset_days));
+        const opt = document.createElement("option");
+        opt.value = String(idx);
+        opt.textContent = `#${doc.seq} · ${doc.timepoint_role} · ${off} DAYS`;
+        docSelect.appendChild(opt);
+      });
+
+      const exportBundleBtn = el("button", {
+        className: "secondary",
+        text: "Export Bundle JSON",
+        onClick: () => {
+          const payload = JSON.stringify(bundleResp, null, 2);
+          const blob = new Blob([payload], { type: "application/json" });
+          const url = URL.createObjectURL(blob);
+          const anchor = document.createElement("a");
+          anchor.href = url;
+          anchor.download = `procedure_suite_bundle_${Date.now()}.json`;
+          document.body.appendChild(anchor);
+          anchor.click();
+          anchor.remove();
+          URL.revokeObjectURL(url);
+          setStatus("Exported bundle JSON");
+        },
+      });
+
+      const controlsRow = el("div", { className: "bundle-actions" }, [selectLabel, docSelect, exportBundleBtn]);
+
+      bundleSummaryHostEl.appendChild(title);
+      bundleSummaryHostEl.appendChild(offsetsRow);
+      bundleSummaryHostEl.appendChild(controlsRow);
+
+      const showDocAt = async (idx) => {
+        const safeIdx = clamp(Number(idx) || 0, 0, Math.max(0, docs.length - 1));
+        const doc = docs[safeIdx];
+        if (!doc || !doc.result) return;
+        await renderResults(doc.result, { rawData: bundleResp });
+      };
+
+      docSelect.addEventListener("change", () => {
+        showDocAt(docSelect.value).catch((err) => {
+          console.error("Failed to render selected bundle doc", err);
+        });
+      });
+
+      // Default to INDEX_PROCEDURE if present, else first doc.
+      const defaultIdx = Math.max(
+        0,
+        docs.findIndex((d) => String(d.timepoint_role || "") === "INDEX_PROCEDURE")
+      );
+      docSelect.value = String(defaultIdx);
+      await showDocAt(defaultIdx);
+    }
+
+    if (genBundleIdsBtn) {
+      genBundleIdsBtn.addEventListener("click", () => {
+        if (bundleBusy) return;
+        const { zk, ep } = ensureBundleIds();
+        setStatus(`Generated IDs: ${zk} / ${ep}`);
+      });
+    }
+
+    if (clearBundleBtn) {
+      clearBundleBtn.addEventListener("click", () => {
+        if (running || bundleBusy) return;
+        bundleDocs = [];
+        lastBundleResponse = null;
+        hideBundleSummary();
+        renderBundleDocsList();
+        updateZkControls();
+        setStatus("Cleared bundle");
+      });
+    }
+
+    if (addToBundleBtn) {
+      addToBundleBtn.addEventListener("click", () => {
+        if (running || bundleBusy) return;
+        if (!scrubbedConfirmed) {
+          setStatus("Apply redactions before adding to bundle");
+          return;
+        }
+
+        const indexYmd = parseIsoDateInput(indexDateInputEl?.value);
+        const docYmd = parseIsoDateInput(docDateInputEl?.value);
+        const role = String(timepointRoleSelectEl?.value || "");
+        const seq = Number(docSeqInputEl?.value || "0");
+
+        if (!indexYmd || !docYmd) {
+          if (bundlePanelEl) bundlePanelEl.open = true;
+          setStatus("Bundle requires Index date (T=0) and Document date");
+          return;
+        }
+
+        const docOffsetDays = diffDaysUtcNoon(indexYmd, docYmd);
+        if (docOffsetDays == null) {
+          setStatus("Failed to compute document offset (check dates)");
+          return;
+        }
+
+        const safeSeq = Number.isFinite(seq) && seq > 0 ? Math.trunc(seq) : null;
+        if (!safeSeq) {
+          setStatus("Seq must be a positive integer");
+          return;
+        }
+        if (bundleDocs.some((d) => Number(d.seq) === safeSeq)) {
+          setStatus(`Seq ${safeSeq} already exists in bundle (remove or choose another seq)`);
+          return;
+        }
+
+        const noteText = model.getValue();
+        const systemHeader = buildSystemHeaderToken({ role, seq: safeSeq, docOffsetDays });
+        const bundledText = `${systemHeader}\n${noteText}`;
+
+        const leaks = countDateLikeStringsForLeakScan(bundledText);
+        if (leaks) {
+          setStatus(
+            `Bundle blocked: found ${leaks} date-like string${leaks === 1 ? "" : "s"} (run detection + apply redactions again, and manually redact remaining dates).`
+          );
+          return;
+        }
+
+        bundleDocs.push({
+          id: generateClientId("doc"),
+          timepoint_role: role,
+          seq: safeSeq,
+          doc_t_offset_days: docOffsetDays,
+          text: bundledText,
+        });
+
+        lastBundleResponse = null;
+        hideBundleSummary();
+        renderBundleDocsList();
+        updateZkControls();
+
+        const nextSeq = Math.max(...bundleDocs.map((d) => Number(d.seq) || 0)) + 1;
+        if (docSeqInputEl) docSeqInputEl.value = String(nextSeq);
+
+        setStatus(`Added doc to bundle: #${safeSeq} · ${role} · ${formatTOffset(docOffsetDays)} DAYS`);
+      });
+    }
+
+    if (submitBundleBtn) {
+      submitBundleBtn.addEventListener("click", async () => {
+        if (running || bundleBusy) return;
+        if (!Array.isArray(bundleDocs) || bundleDocs.length === 0) {
+          setStatus("Add at least one scrubbed doc to the bundle first");
+          return;
+        }
+
+        // Final guardrail: block if any date-like strings remain.
+        const leakCount = bundleDocs.reduce((acc, d) => acc + countDateLikeStringsForLeakScan(d.text), 0);
+        if (leakCount) {
+          setStatus(
+            `Bundle blocked: found ${leakCount} date-like string${leakCount === 1 ? "" : "s"} across documents.`
+          );
+          return;
+        }
+
+        const { zk, ep } = ensureBundleIds();
+        bundleBusy = true;
+        updateZkControls();
+        if (submitBtn) submitBtn.disabled = true;
+        setStatus("Submitting bundle…");
+        if (serverResponseEl) serverResponseEl.textContent = "(submitting bundle...)";
+
+        try {
+          const payload = {
+            zk_patient_id: zk,
+            episode_id: ep,
+            documents: [...bundleDocs]
+              .sort((a, b) => Number(a.seq) - Number(b.seq))
+              .map((d) => ({ timepoint_role: d.timepoint_role, seq: d.seq, text: d.text })),
+            already_scrubbed: true,
+            include_financials: false,
+            explain: true,
+            include_v3_event_log: false,
+          };
+
+          const res = await fetch("/api/v1/process_bundle", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          });
+
+          const bodyText = await res.text();
+          let data;
+          try {
+            data = bodyText ? JSON.parse(bodyText) : null;
+          } catch (parseErr) {
+            console.error("Failed to parse bundle JSON response:", parseErr);
+            data = { error: "Invalid JSON response", raw: bodyText };
+          }
+
+          if (!res.ok) {
+            if (serverResponseEl) serverResponseEl.textContent = JSON.stringify(data, null, 2);
+            setStatus(`Bundle submit failed (${res.status})`);
+            return;
+          }
+
+          lastBundleResponse = data;
+          await renderBundleSummary(lastBundleResponse);
+          setStatus("Bundle submitted (scrubbed-only; not persisted)");
+        } catch (err) {
+          console.error("Bundle submit error:", err);
+          if (serverResponseEl) {
+            serverResponseEl.textContent = JSON.stringify(
+              { error: String(err?.message || err), type: err?.name || "UnknownError" },
+              null,
+              2
+            );
+          }
+          setStatus("Bundle submit error - check console for details");
+        } finally {
+          bundleBusy = false;
+          updateZkControls();
+          if (submitBtn) submitBtn.disabled = !scrubbedConfirmed || running;
+        }
+      });
+    }
+
+    renderBundleDocsList();
+    hideBundleSummary();
+    updateZkControls();
+
+	  // Manual redaction: Add button click handler
+	  if (addRedactionBtn) {
+	    addRedactionBtn.addEventListener("click", () => {
+	      if (!currentSelection) return;
 
       let startOffset = 0;
       let endOffset = 0;

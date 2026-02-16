@@ -68,6 +68,96 @@ def extract_v3_draft(focused_text: str, *, prompt_context: dict[str, Any] | None
     return IPRegistryV3.model_validate(raw)
 
 
+def repair_v3_evidence_quotes(
+    registry: IPRegistryV3,
+    *,
+    note_text: str,
+) -> IPRegistryV3:
+    """Best-effort single-pass evidence quote repair.
+
+    This is intended to address occasional quote drift (whitespace/punctuation
+    normalization, abbreviation expansion, etc.) by asking the model to copy
+    evidence quotes verbatim from the provided note text.
+
+    Safety: Only evidence quote fields are applied from the model output; all
+    other fields remain exactly as in *registry*.
+    """
+
+    if not registry.procedures:
+        return registry
+
+    schema = IPRegistryV3.model_json_schema()
+
+    # Use a timeout profile appropriate for registry extraction (see `_resolve_openai_timeout`).
+    llm = _resolve_llm(task="registry_extraction")
+
+    from app.common.llm import DeterministicStubLLM
+
+    if isinstance(llm, DeterministicStubLLM):
+        return registry
+
+    system_prompt = (
+        "You are a strict evidence quote repair system.\n"
+        "You will be given a procedure note and a JSON extraction.\n"
+        "Your ONLY job is to ensure each procedures[i].evidence.quote is copied verbatim\n"
+        "from the provided note text.\n"
+        "Do NOT change any other fields. Do NOT add/remove/reorder procedures.\n"
+        "If you cannot find a verbatim quote, set that quote to an empty string.\n"
+        "Output JSON only."
+    )
+
+    user_prompt = (
+        "Return ONLY valid JSON that conforms to the provided schema.\n\n"
+        f"Schema:\n{json.dumps(schema, indent=2)}\n\n"
+        f"Procedure note text:\n{note_text}\n\n"
+        "Existing extraction JSON (repair evidence quotes only):\n"
+        f"{registry.model_dump_json(exclude_none=True, indent=2)}\n"
+    )
+
+    repaired_raw = _generate_structured_json(
+        llm=llm,
+        system_prompt=system_prompt,
+        user_prompt=user_prompt,
+        response_model=IPRegistryV3,
+        response_json_schema=schema,
+    )
+    repaired = IPRegistryV3.model_validate(repaired_raw)
+
+    by_id: dict[str, str] = {}
+    for event in repaired.procedures:
+        evidence = getattr(event, "evidence", None)
+        quote = getattr(evidence, "quote", None) if evidence is not None else None
+        q = str(quote or "").strip()
+        if not q:
+            continue
+        event_id = str(getattr(event, "event_id", "") or "").strip()
+        if event_id:
+            by_id[event_id] = q
+
+    if not by_id:
+        return registry
+
+    from app.registry.schema.ip_v3_extraction import EvidenceSpan
+
+    merged = []
+    for event in registry.procedures:
+        event_id = str(getattr(event, "event_id", "") or "").strip()
+        repaired_quote = by_id.get(event_id)
+        if not repaired_quote:
+            merged.append(event)
+            continue
+        updated = event.model_copy(deep=True)
+        if updated.evidence is None:
+            updated.evidence = EvidenceSpan(quote=repaired_quote)
+        else:
+            updated.evidence.quote = repaired_quote
+            updated.evidence.start = None
+            updated.evidence.end = None
+        merged.append(updated)
+
+    return registry.model_copy(update={"procedures": merged})
+
+
 def _resolve_llm(*, task: str | None) -> "GeminiLLM | OpenAILLM | DeterministicStubLLM":
     # Import lazily so `REGISTRY_USE_STUB_LLM=1` can be honored even when the repo's
     # dotenv loader would otherwise override env vars at import time.

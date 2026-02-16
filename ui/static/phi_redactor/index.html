@@ -95,6 +95,71 @@
           Apply redactions before submitting. The server receives only scrubbed text.
         </div>
 
+        <details id="bundlePanel" class="bundle-panel">
+          <summary>Bundle (Zero-Knowledge Timeline)</summary>
+          <div class="bundle-panel-body">
+            <div class="bundle-grid">
+              <div class="bundle-field">
+                <label for="indexDateInput">Index date (T=0)</label>
+                <input id="indexDateInput" type="date" />
+              </div>
+              <div class="bundle-field">
+                <label for="docDateInput">Document date</label>
+                <input id="docDateInput" type="date" />
+              </div>
+              <div class="bundle-field">
+                <label for="timepointRoleSelect">Timepoint role</label>
+                <select id="timepointRoleSelect" class="param-select">
+                  <option value="PREOP_IMAGING">Pre-op imaging</option>
+                  <option value="INDEX_PROCEDURE" selected>Index procedure</option>
+                  <option value="PATHOLOGY">Pathology</option>
+                  <option value="FOLLOW_UP">Follow-up</option>
+                </select>
+              </div>
+              <div class="bundle-field">
+                <label for="docSeqInput">Seq</label>
+                <input id="docSeqInput" type="number" min="1" step="1" value="1" />
+              </div>
+            </div>
+
+            <div class="bundle-actions">
+              <label
+                class="inline-toggle"
+                title="If enabled, detected absolute dates are replaced with [DATE: T±N DAYS] tokens using Index date (UTC-noon math)."
+              >
+                <input id="translateDatesToggle" type="checkbox" checked />
+                Translate dates to T tokens
+              </label>
+              <button id="chronoPreviewBtn" class="secondary" disabled>Chronology Preview</button>
+            </div>
+
+            <hr class="bundle-divider" />
+
+            <div class="bundle-grid">
+              <div class="bundle-field">
+                <label for="zkPatientIdInput">ZK patient id</label>
+                <input id="zkPatientIdInput" type="text" placeholder="zk_..." />
+              </div>
+              <div class="bundle-field">
+                <label for="episodeIdInput">Episode id</label>
+                <input id="episodeIdInput" type="text" placeholder="ep_..." />
+              </div>
+              <div class="bundle-field bundle-field-wide">
+                <button id="genBundleIdsBtn" class="secondary">Generate IDs</button>
+              </div>
+            </div>
+
+            <div class="bundle-actions">
+              <button id="addToBundleBtn" class="secondary" disabled>Add scrubbed note to bundle</button>
+              <button id="submitBundleBtn" class="primary" disabled>Submit bundle</button>
+              <button id="clearBundleBtn" class="secondary" disabled>Clear bundle</button>
+              <button id="clearCurrentNoteBtn" class="secondary" disabled>Clear current note</button>
+            </div>
+
+            <div id="bundleDocsHost" class="bundle-docs-host subtle">No bundle docs yet.</div>
+          </div>
+        </details>
+
         <div id="editor" class="editor">
           <textarea
             id="fallbackTextarea"
@@ -131,6 +196,7 @@
           </div>
 		          <div id="resultsContainer" class="resultsContainer hidden">
 		            <div id="statusBannerHost"></div>
+                <div id="bundleSummaryHost" class="bundle-summary hidden"></div>
 		            <div id="statCards" class="stat-card-container">
 		            </div>
 
@@ -438,6 +504,20 @@
         <div class="modal-actions">
           <button value="cancel" class="secondary">Cancel</button>
           <button value="confirm" class="primary">Confirm PHI removal</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="chronoPreviewModal" class="modal modal-wide">
+      <form method="dialog" class="modal-content">
+        <h3>Chronology Preview (client-side)</h3>
+        <p class="subtle">
+          This preview runs locally. Absolute dates never leave your browser. Verify how detected
+          dates will be tokenized before bundling.
+        </p>
+        <div id="chronoPreviewBody" class="chrono-preview-body"></div>
+        <div class="modal-actions">
+          <button value="close" class="primary">Close</button>
         </div>
       </form>
     </dialog>

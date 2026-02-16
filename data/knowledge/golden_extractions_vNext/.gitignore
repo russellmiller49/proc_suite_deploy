@@ -1,0 +1,10 @@
+# Large/generated migration artifacts
+/pending/
+
+# Allow committing a small, curated subset
+!/approved/
+
+# Reports are regenerated
+/migration_report.html
+/migration_stats.json
+

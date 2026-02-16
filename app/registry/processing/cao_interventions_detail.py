@@ -24,6 +24,11 @@ _CAO_HINT_RE = re.compile(
     r")\b"
 )
 
+_CAO_LOCATION_CONTEXT_RE = re.compile(
+    r"(?i)\b(?:obstruct|occlud|stenos|narrow|lesion|mass|tumou?r|granulation|"
+    r"endobronchial|recanaliz|debulk|ablat|fungating|web|collapse|stent)\w*\b"
+)
+
 _POST_CUE_RE = re.compile(
     r"(?i)\b(?:"
     r"at\s+the\s+end|end\s+of\s+the\s+procedure|at\s+conclusion|finally|"
@@ -86,6 +91,7 @@ _MODALITY_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
         ),
     ),
     ("Laser", re.compile(r"(?i)\blaser\b|nd:yag|yag\b")),
+    ("Microwave", re.compile(r"(?i)\bmicrowave\b|\bmwa\b")),
     ("Microdebrider", re.compile(r"(?i)\bmicrodebrider\b")),
     ("Mechanical debulking", re.compile(r"(?i)\bmechanical\b.{0,30}\bdebulk|\bdebulk\w*\b|\bcore\s*out\b|\brig(?:id)?\s+coring\b")),
     ("Balloon dilation", re.compile(r"(?i)\bcre\s+balloon\b|\bballoon\b[^.\n]{0,80}\bdilat\w*\b|\bdilat\w*\b[^.\n]{0,80}\bballoon\b")),
@@ -246,7 +252,12 @@ def _extract_cao_interventions_detail(
     current_location: str | None = None
     post_context_remaining = 0
     pre_context_remaining = 0
-    fallback_location = "Trachea" if re.search(r"(?i)\btrachea(?:l)?\b", text) else None
+    fallback_location = None
+    if re.search(
+        r"(?i)\btrachea(?:l)?\b[^.\n]{0,80}\b(?:obstruct|stenos|narrow|lesion|mass|tumou?r|granulation|recanaliz|stent)\b",
+        text,
+    ):
+        fallback_location = "Trachea"
 
     def _get_site(loc: str) -> dict[str, Any]:
         if loc not in sites:
@@ -311,7 +322,14 @@ def _extract_cao_interventions_detail(
                     continue
                 locations_in_sentence.append(canonical)
         if locations_in_sentence:
-            current_location = locations_in_sentence[0]
+            heading_hint = bool(
+                re.match(
+                    r"(?i)^\s*(?:trachea|carina|rms|lms|bi|lingula|rul|rml|rll|lul|lll)\b\s*[:\-]",
+                    sentence.strip(),
+                )
+            )
+            if _CAO_LOCATION_CONTEXT_RE.search(sentence) or heading_hint:
+                current_location = locations_in_sentence[0]
 
         # 1) Percent obstruction with explicit location group (loc before percent).
         for match in _OBSTRUCTION_PCT_AFTER_LOC_RE.finditer(sentence):

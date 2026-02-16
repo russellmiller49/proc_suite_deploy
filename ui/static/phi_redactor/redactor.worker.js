@@ -453,6 +453,11 @@ const DATE_SLASH_RE =
 const DATE_ISO_RE =
   /\b(\d{4}[-\/]\d{1,2}[-\/]\d{1,2})\b/g;
 
+// Matches: "January 15, 1960", "Jan 15, 1960", and (conservatively) "Jan 15" (year optional).
+// Used to prevent ZK bundle date-leak rejections for month-name date strings.
+const DATE_MONTH_NAME_RE =
+  /\b((?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t|tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\s+\d{1,2}(?:st|nd|rd|th)?(?:\s*,?\s*(?:19|20)\d{2})?)\b/gi;
+
 // Matches: "DOB: 01/15/1960" or "Date of Birth: January 15, 1960"
 const DOB_HEADER_RE =
   /\b(?:DOB|Date\s+of\s+Birth|Birth\s*Date|Birthdate)\s*[:\-]?\s*(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}|\d{1,2}[-\s]?(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*[-\s,]?\s*\d{1,2}[-,\s]+\d{2,4}|(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2}[-,\s]+\d{2,4})\b/gi;
@@ -1623,6 +1628,20 @@ function runRegexDetectors(text) {
         label: "DATE",
         score: 0.95,
         source: "regex_date_iso",
+      });
+    }
+  }
+
+  // 10b) Month-name dates: "January 15, 1960" / "Jan 15" (year optional)
+  for (const match of text.matchAll(DATE_MONTH_NAME_RE)) {
+    const dateGroup = match[1];
+    if (dateGroup && match.index != null) {
+      spans.push({
+        start: match.index,
+        end: match.index + dateGroup.length,
+        label: "DATE",
+        score: 0.93,
+        source: "regex_date_month_name",
       });
     }
   }

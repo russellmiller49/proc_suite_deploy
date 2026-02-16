@@ -77,6 +77,7 @@ def _evidence_items_for_prefix(
 def default_evidence_prefixes_for_code(code: str) -> list[str]:
     """Heuristic mapping from CPT -> registry evidence prefixes."""
     return {
+        "31573": ["procedures_performed.therapeutic_injection"],
         "31600": ["procedures_performed.percutaneous_tracheostomy"],
         "31615": ["established_tracheostomy_route"],
         "31622": ["procedures_performed.diagnostic_bronchoscopy"],

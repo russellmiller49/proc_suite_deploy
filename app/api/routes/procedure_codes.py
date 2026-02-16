@@ -1063,8 +1063,8 @@ def run_unified_extraction(
     enforce_legacy_endpoints_allowed()
     enforce_request_mode_override_allowed((request.mode or "").strip().lower())
 
-    from config.settings import CoderSettings
     from app.coder.domain_rules.registry_to_cpt.coding_rules import derive_all_codes_with_meta
+    from config.settings import CoderSettings
 
     # Always require PHI review for this endpoint
     require_review = True

@@ -47,7 +47,7 @@ def _serialize_jsonable(value: Any) -> Any:
             pass
     if isinstance(value, dict):
         return {k: _serialize_jsonable(v) for k, v in value.items()}
-    if isinstance(value, (list, tuple)):
+    if isinstance(value, list | tuple):
         return [_serialize_jsonable(v) for v in value]
     return value
 
@@ -246,7 +246,12 @@ class ReportingStrategy:
         )
         return fallback
 
-    def _render_structured(self, record: dict[str, Any], *, source_text: str | None = None) -> dict[str, Any]:
+    def _render_structured(
+        self,
+        record: dict[str, Any],
+        *,
+        source_text: str | None = None,
+    ) -> dict[str, Any]:
         """Render structured report from registry record.
 
         Args:

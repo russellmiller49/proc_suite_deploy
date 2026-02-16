@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import re
 
-from config.settings import CoderSettings
 from app.coder.schema import (
     BundleDecision,
     CodeDecision,
@@ -19,6 +18,7 @@ from app.coder.schema import (
     PerCodeBilling,
 )
 from app.domain.knowledge_base.repository import KnowledgeBaseRepository
+from config.settings import CoderSettings
 from proc_schemas.coding import CodeSuggestion, CodingResult
 
 _BILLABLE_HYBRID_DECISIONS = {

@@ -62,22 +62,55 @@ def normalize_text(text: str) -> str:
 
 
 def verify_registry(registry: IPRegistryV3, full_source_text: str) -> IPRegistryV3:
-    """Drop events whose evidence quote cannot be verified in the full source note text."""
-    normalized_source = normalize_text(full_source_text or "")
+    """Verify and anchor event evidence quotes against the full source note text.
+
+    For each procedure event, attempt to:
+    1) Anchor the quote to exact offsets in the note text (preferred), updating
+       `evidence.quote` to the exact substring from the note and populating
+       `evidence.start/end`.
+    2) Fall back to normalized containment verification when offsets cannot be
+       determined, clearing any pre-filled offsets to avoid misleading spans.
+
+    Events whose evidence quote cannot be verified are dropped.
+    """
+
+    from app.evidence.quote_anchor import anchor_quote
+    from app.registry.schema.ip_v3_extraction import EvidenceSpan
+
+    full_text = full_source_text or ""
+    normalized_source = normalize_text(full_text)
 
     kept: list[ProcedureEvent] = []
     for event in registry.procedures:
         evidence = getattr(event, "evidence", None)
         quote = getattr(evidence, "quote", None) if evidence is not None else None
-        if not quote or not str(quote).strip():
+        quote_clean = (str(quote) if quote is not None else "").strip()
+        if not quote_clean:
             continue
 
-        normalized_quote = normalize_text(str(quote))
-        if not normalized_quote:
+        anchored = anchor_quote(full_text, quote_clean)
+        if anchored.span is not None:
+            updated = event.model_copy(deep=True)
+            if updated.evidence is None:
+                updated.evidence = EvidenceSpan(
+                    quote=anchored.span.text,
+                    start=anchored.span.start,
+                    end=anchored.span.end,
+                )
+            else:
+                updated.evidence.quote = anchored.span.text
+                updated.evidence.start = anchored.span.start
+                updated.evidence.end = anchored.span.end
+            kept.append(updated)
             continue
 
-        if normalized_quote in normalized_source:
-            kept.append(event)
+        normalized_quote = normalize_text(quote_clean)
+        if normalized_quote and normalized_quote in normalized_source:
+            updated = event.model_copy(deep=True)
+            if updated.evidence is not None:
+                updated.evidence.start = None
+                updated.evidence.end = None
+            kept.append(updated)
 
     return registry.model_copy(update={"procedures": kept})
 

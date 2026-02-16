@@ -89,7 +89,10 @@ def calculate_financials(
 
     family_items = [item for item in per_code_billing if in_family(item)]
     if len(family_items) > 1:
-        primary_item = max(family_items, key=lambda it: float(it.get("_base_facility_payment") or 0.0))
+        primary_item = max(
+            family_items,
+            key=lambda it: float(it.get("_base_facility_payment") or 0.0),
+        )
         primary_code = str(primary_item.get("cpt_code") or "")
 
         reduced_codes: list[str] = []
@@ -124,4 +127,3 @@ def calculate_financials(
     estimated_payment = round(total_payment, 2) if per_code_billing else None
 
     return total_work_rvu, estimated_payment, per_code_billing, warnings
-

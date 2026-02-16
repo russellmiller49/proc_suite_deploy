@@ -1273,37 +1273,37 @@
                 "type": "object",
                 "additionalProperties": true,
                 "properties": {
-	                  "station": {
-	                    "type": "string",
-	                    "enum": [
-	                      "2R",
-	                      "2L",
-	                      "3p",
-	                      "4R",
-	                      "4L",
-	                      "7",
-	                      "10R",
-	                      "10L",
-	                      "11R",
-	                      "11L",
-	                      "12R",
-	                      "12L"
-	                    ]
-	                  },
-	                  "target_id": {
-	                    "type": [
-	                      "string",
-	                      "null"
-	                    ],
-	                    "description": "Stable ID for linking this station detail to collected specimens/targets. UI/postprocessing may assign; extraction may omit."
-	                  },
-	                  "size_mm": {
-	                    "type": [
-	                      "number",
-	                      "null"
-	                    ],
-	                    "minimum": 0
-	                  },
+                  "station": {
+                    "type": "string",
+                    "enum": [
+                      "2R",
+                      "2L",
+                      "3p",
+                      "4R",
+                      "4L",
+                      "7",
+                      "10R",
+                      "10L",
+                      "11R",
+                      "11L",
+                      "12R",
+                      "12L"
+                    ]
+                  },
+                  "target_id": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "description": "Stable ID for linking this station detail to collected specimens/targets. UI/postprocessing may assign; extraction may omit."
+                  },
+                  "size_mm": {
+                    "type": [
+                      "number",
+                      "null"
+                    ],
+                    "minimum": 0
+                  },
                   "passes": {
                     "type": [
                       "integer",
@@ -1725,14 +1725,14 @@
                 "string",
                 "null"
               ],
-	              "enum": [
-	                "Mucus plug",
-	                "Mucus",
-	                "Blood/clot",
-	                "Purulent secretions",
-	                "Other",
-	                null
-	              ]
+              "enum": [
+                "Mucus plug",
+                "Mucus",
+                "Blood/clot",
+                "Purulent secretions",
+                "Other",
+                null
+              ]
             },
             "location": {
               "type": [
@@ -2779,6 +2779,42 @@
               ]
             }
           }
+        },
+        "therapeutic_injection": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "description": "Endobronchial therapeutic instillation/injection of medication.",
+          "properties": {
+            "performed": {
+              "type": "boolean"
+            },
+            "medication": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "dose": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "volume_ml": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "location": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
         }
       }
     },
@@ -3264,6 +3300,89 @@
               ]
             }
           }
+        },
+        "chest_tube_removal": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "properties": {
+            "performed": {
+              "type": "boolean"
+            },
+            "action": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "enum": [
+                "Insertion",
+                "Removal",
+                "Repositioning",
+                "Exchange",
+                null
+              ]
+            },
+            "side": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "enum": [
+                "Right",
+                "Left",
+                null
+              ]
+            },
+            "indication": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "enum": [
+                "Pneumothorax",
+                "Effusion drainage",
+                "Empyema",
+                "Hemothorax",
+                "Post-procedural",
+                null
+              ]
+            },
+            "tube_type": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "enum": [
+                "Pigtail",
+                "Straight",
+                "Surgical/Large bore",
+                null
+              ]
+            },
+            "tube_size_fr": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 8,
+              "maximum": 40
+            },
+            "guidance": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "enum": [
+                "Ultrasound",
+                "CT",
+                "Fluoroscopy",
+                "None",
+                null
+              ]
+            }
+          },
+          "description": "Chest tube removal event."
         }
       }
     },
@@ -3298,25 +3417,25 @@
                   "Other"
                 ]
               },
-	              "location": {
-	                "type": [
-	                  "string",
-	                  "null"
-	                ]
-	              },
-	              "source_target_id": {
-	                "type": [
-	                  "string",
-	                  "null"
-	                ],
-	                "description": "Optional link to a granular target/station target_id when known. UI/postprocessing may assign; extraction may omit."
-	              },
-	              "container_count": {
-	                "type": [
-	                  "integer",
-	                  "null"
-	                ]
-	              },
+              "location": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "source_target_id": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "Optional link to a granular target/station target_id when known. UI/postprocessing may assign; extraction may omit."
+              },
+              "container_count": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
               "sent_for": {
                 "type": [
                   "array",
@@ -3383,13 +3502,13 @@
           "default": false,
           "description": "Master flag - if false, complication_list should be empty or omitted"
         },
-	        "complication_list": {
-	          "type": [
-	            "array",
-	            "null"
-	          ],
-	          "items": {
-	            "type": "string",
+        "complication_list": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "string",
             "enum": [
               "Bleeding - Mild",
               "Bleeding - Moderate",
@@ -3408,59 +3527,59 @@
               "Death",
               "Other"
             ]
-	          },
-	          "description": "List of complications that occurred (omit 'None' - use any_complication: false instead)"
-	        },
-	        "events": {
-	          "type": [
-	            "array",
-	            "null"
-	          ],
-	          "description": "Structured complications (optional, parallel to complication_list). UI/postprocessing may normalize; extraction may omit.",
-	          "items": {
-	            "type": "object",
-	            "properties": {
-	              "type": {
-	                "type": "string",
-	                "description": "Complication type (e.g., Bleeding, Pneumothorax, Hypoxia, Arrhythmia)"
-	              },
-	              "ctcae_grade": {
-	                "type": [
-	                  "integer",
-	                  "null"
-	                ],
-	                "minimum": 1,
-	                "maximum": 5,
-	                "description": "CTCAE grade (1-5) when documented"
-	              },
-	              "interventions": {
-	                "type": [
-	                  "array",
-	                  "null"
-	                ],
-	                "items": {
-	                  "type": "string"
-	                },
-	                "description": "Interventions performed for this complication"
-	              },
-	              "notes": {
-	                "type": [
-	                  "string",
-	                  "null"
-	                ]
-	              }
-	            },
-	            "required": [
-	              "type"
-	            ]
-	          }
-	        },
-	        "bleeding": {
-	          "type": [
-	            "object",
-	            "null"
-	          ],
-	          "properties": {
+          },
+          "description": "List of complications that occurred (omit 'None' - use any_complication: false instead)"
+        },
+        "events": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "description": "Structured complications (optional, parallel to complication_list). UI/postprocessing may normalize; extraction may omit.",
+          "items": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "description": "Complication type (e.g., Bleeding, Pneumothorax, Hypoxia, Arrhythmia)"
+              },
+              "ctcae_grade": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 1,
+                "maximum": 5,
+                "description": "CTCAE grade (1-5) when documented"
+              },
+              "interventions": {
+                "type": [
+                  "array",
+                  "null"
+                ],
+                "items": {
+                  "type": "string"
+                },
+                "description": "Interventions performed for this complication"
+              },
+              "notes": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "type"
+            ]
+          }
+        },
+        "bleeding": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "properties": {
             "occurred": {
               "type": "boolean"
             },
@@ -4689,39 +4808,39 @@
           "items": {
             "type": "object",
             "properties": {
-	              "station": {
-	                "type": "string",
-	                "enum": [
-	                  "2R",
-	                  "2L",
-	                  "3p",
-	                  "4R",
-	                  "4L",
-	                  "7",
-	                  "10R",
-	                  "10L",
-	                  "11R",
-	                  "11L",
-	                  "12R",
-	                  "12L"
-	                ],
-	                "description": "IASLC lymph node station"
-	              },
-	              "target_id": {
-	                "type": [
-	                  "string",
-	                  "null"
-	                ],
-	                "description": "Stable ID for linking this station detail to collected specimens/targets. UI/postprocessing may assign; extraction may omit."
-	              },
-	              "short_axis_mm": {
-	                "type": [
-	                  "number",
-	                  "null"
-	                ],
-	                "minimum": 0,
-	                "description": "Short-axis diameter in mm"
-	              },
+              "station": {
+                "type": "string",
+                "enum": [
+                  "2R",
+                  "2L",
+                  "3p",
+                  "4R",
+                  "4L",
+                  "7",
+                  "10R",
+                  "10L",
+                  "11R",
+                  "11L",
+                  "12R",
+                  "12L"
+                ],
+                "description": "IASLC lymph node station"
+              },
+              "target_id": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "Stable ID for linking this station detail to collected specimens/targets. UI/postprocessing may assign; extraction may omit."
+              },
+              "short_axis_mm": {
+                "type": [
+                  "number",
+                  "null"
+                ],
+                "minimum": 0,
+                "description": "Short-axis diameter in mm"
+              },
               "long_axis_mm": {
                 "type": [
                   "number",
@@ -4990,22 +5109,22 @@
           "items": {
             "type": "object",
             "properties": {
-	              "target_number": {
-	                "type": "integer",
-	                "minimum": 1,
-	                "description": "Sequential target number"
-	              },
-	              "target_id": {
-	                "type": [
-	                  "string",
-	                  "null"
-	                ],
-	                "description": "Stable ID for linking this target to collected specimens. UI/postprocessing may assign; extraction may omit."
-	              },
-	              "target_location_text": {
-	                "type": "string",
-	                "description": "Full anatomic description"
-	              },
+              "target_number": {
+                "type": "integer",
+                "minimum": 1,
+                "description": "Sequential target number"
+              },
+              "target_id": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "Stable ID for linking this target to collected specimens. UI/postprocessing may assign; extraction may omit."
+              },
+              "target_location_text": {
+                "type": "string",
+                "description": "Full anatomic description"
+              },
               "target_lobe": {
                 "type": [
                   "string",
@@ -5916,23 +6035,23 @@
                   "Other"
                 ]
               },
-	              "source_location": {
-	                "type": "string",
-	                "description": "Anatomic location (e.g., '4R', 'RUL apical', 'Left pleura')"
-	              },
-	              "source_target_id": {
-	                "type": [
-	                  "string",
-	                  "null"
-	                ],
-	                "description": "Optional link to a granular target/station target_id when known. UI/postprocessing may assign; extraction may omit."
-	              },
-	              "collection_tool": {
-	                "type": [
-	                  "string",
-	                  "null"
-	                ]
-	              },
+              "source_location": {
+                "type": "string",
+                "description": "Anatomic location (e.g., '4R', 'RUL apical', 'Left pleura')"
+              },
+              "source_target_id": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "Optional link to a granular target/station target_id when known. UI/postprocessing may assign; extraction may omit."
+              },
+              "collection_tool": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
               "specimen_count": {
                 "type": [
                   "integer",

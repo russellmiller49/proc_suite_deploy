@@ -3112,6 +3112,193 @@ def reconcile_ebus_sampling_from_narrative(record: RegistryRecord, full_text: st
     return warnings
 
 
+def reconcile_ebus_inspected_only_stations(record: RegistryRecord, full_text: str) -> list[str]:
+    """Downgrade EBUS stations that are explicitly inspected/measured without sampling.
+
+    This prevents inspected-only stations (e.g., "no adenopathy seen") from being
+    treated as needle aspiration events when the narrative is clear.
+    """
+    warnings: list[str] = []
+    procedures = getattr(record, "procedures_performed", None)
+    linear = getattr(procedures, "linear_ebus", None) if procedures is not None else None
+    if linear is None or getattr(linear, "performed", None) is not True:
+        return warnings
+    if not full_text:
+        return warnings
+
+    node_events = getattr(linear, "node_events", None)
+    if not isinstance(node_events, list) or not node_events:
+        return warnings
+
+    try:
+        from app.ner.entity_types import normalize_station
+    except Exception:  # pragma: no cover
+        normalize_station = None  # type: ignore[assignment]
+
+    inspected: set[str] = set()
+    sampled: set[str] = set()
+    station_to_quote: dict[str, str] = {}
+
+    pending_stations: list[str] = []
+    for sentence in re.split(r"(?:\n+|(?<=[.!?])\s+)", full_text):
+        if not sentence:
+            continue
+
+        has_sampling = bool(_EBUS_SAMPLING_INDICATORS_RE.search(sentence))
+        has_inspection = bool(_EBUS_INSPECTION_HINTS_RE.search(sentence)) or bool(
+            re.search(r"(?i)\b(?:no\s+evidence\s+of\s+adenopathy|no\s+adenopathy|measur(?:e|ed)|sizing)\b", sentence)
+        )
+
+        stations_in_sentence: list[str] = []
+        for match in _EBUS_FALLBACK_STATION_RE.finditer(sentence):
+            token = match.group(1) or ""
+            station = normalize_station(token) if normalize_station is not None else token.strip().upper()
+            station = validate_station_format(str(station)) or str(station).strip().upper()
+            if station:
+                stations_in_sentence.append(station)
+        for match in _EBUS_STATION_TOKEN_RE.finditer(sentence):
+            token = match.group(1) or ""
+            station = normalize_station(token) if normalize_station is not None else token.strip().upper()
+            station = validate_station_format(str(station)) or str(station).strip().upper()
+            if station:
+                stations_in_sentence.append(station)
+
+        if not stations_in_sentence:
+            if has_sampling and pending_stations:
+                sampled.update(pending_stations)
+                pending_stations = []
+            continue
+
+        if has_sampling:
+            sampled.update(stations_in_sentence)
+            pending_stations = []
+            continue
+        if has_inspection:
+            inspected.update(stations_in_sentence)
+            quote = re.sub(r"\s+", " ", sentence).strip()
+            for station in stations_in_sentence:
+                station_to_quote.setdefault(station, quote[:280])
+            pending_stations = stations_in_sentence
+        else:
+            pending_stations = stations_in_sentence
+
+    if not inspected:
+        return warnings
+
+    changed = False
+    for event in node_events:
+        station = getattr(event, "station", None)
+        if not isinstance(station, str) or not station.strip():
+            continue
+        station_norm = station.strip().upper()
+        if station_norm in inspected and station_norm not in sampled:
+            if getattr(event, "action", None) != "inspected_only":
+                setattr(event, "action", "inspected_only")
+                changed = True
+            if getattr(event, "outcome", None) not in (None, "unknown", ""):
+                setattr(event, "outcome", "unknown")
+                changed = True
+            quote = station_to_quote.get(station_norm)
+            if quote:
+                setattr(event, "evidence_quote", quote)
+
+    if changed and hasattr(linear, "stations_sampled"):
+        existing = getattr(linear, "stations_sampled", None)
+        if isinstance(existing, list):
+            filtered = [s for s in existing if str(s).strip().upper() not in inspected or str(s).strip().upper() in sampled]
+            setattr(linear, "stations_sampled", filtered or None)
+        warnings.append("EBUS_INSPECTION_ONLY: downgraded inspected-only stations to avoid false sampling.")
+
+    return warnings
+
+
+def reconcile_aborted_targets(record: RegistryRecord, full_text: str) -> list[str]:
+    """Remove aborted/failed peripheral targets from per-procedure location lists."""
+    warnings: list[str] = []
+    if not full_text:
+        return warnings
+
+    abort_re = re.compile(
+        r"(?i)\b(?:aborted|terminated|unable\s+to\s+identify|could\s+not\s+identify|"
+        r"not\s+identified|failed\s+to\s+identify|unable\s+to\s+locate|could\s+not\s+locate)\b"
+    )
+    target_re = re.compile(r"(?i)\b(?:nodule|lesion|target|segment|lobe|rb\d{1,2}|lb\d{1,2})\b")
+
+    try:
+        from app.registry.deterministic_extractors import _extract_lung_locations_from_text
+    except Exception:  # pragma: no cover
+        _extract_lung_locations_from_text = None  # type: ignore[assignment]
+
+    aborted_locs: set[str] = set()
+    for sentence in re.split(r"(?:\n+|(?<=[.!?])\s+)", full_text):
+        if not sentence or not abort_re.search(sentence):
+            continue
+        if not target_re.search(sentence):
+            continue
+        if _extract_lung_locations_from_text is None:
+            continue
+        for loc in _extract_lung_locations_from_text(sentence):
+            if loc:
+                aborted_locs.add(str(loc).upper().strip())
+
+    if not aborted_locs:
+        return warnings
+
+    def _filter_locations(values: list[str]) -> tuple[list[str], bool]:
+        filtered: list[str] = []
+        changed = False
+        for val in values:
+            if not isinstance(val, str):
+                filtered.append(val)
+                continue
+            upper = val.upper()
+            if any(token in upper for token in aborted_locs):
+                changed = True
+                continue
+            filtered.append(val)
+        return filtered, changed
+
+    procedures = getattr(record, "procedures_performed", None)
+    if procedures is None:
+        return warnings
+
+    target_fields = [
+        ("brushings", "locations"),
+        ("peripheral_tbna", "targets_sampled"),
+        ("transbronchial_cryobiopsy", "locations_biopsied"),
+        ("transbronchial_biopsy", "locations"),
+    ]
+
+    for proc_name, field in target_fields:
+        proc = getattr(procedures, proc_name, None)
+        if proc is None:
+            continue
+        current = getattr(proc, field, None)
+        if not isinstance(current, list) or not current:
+            continue
+        filtered, changed = _filter_locations(current)
+        if changed:
+            setattr(proc, field, filtered or None)
+            warnings.append(f"ABORTED_TARGETS: removed aborted locations from {proc_name}.{field}.")
+
+    # Mark navigation targets as unsuccessful when the target location was aborted.
+    granular = getattr(record, "granular_data", None)
+    targets = getattr(granular, "navigation_targets", None) if granular is not None else None
+    if isinstance(targets, list) and targets:
+        for target in targets:
+            try:
+                target_lobe = getattr(target, "target_lobe", None)
+                target_text = getattr(target, "target_location_text", None)
+                if isinstance(target_lobe, str) and target_lobe.upper() in aborted_locs:
+                    setattr(target, "navigation_successful", False)
+                elif isinstance(target_text, str) and any(tok in target_text.upper() for tok in aborted_locs):
+                    setattr(target, "navigation_successful", False)
+            except Exception:
+                continue
+
+    return warnings
+
+
 _PROCEDURE_DETAIL_SECTION_PATTERN = re.compile(
     r"(?im)^\s*(?:procedure\s+in\s+detail|description\s+of\s+procedure|procedure\s+description)\s*:?"
 )
@@ -3964,6 +4151,56 @@ def populate_ebus_node_events_fallback(record: RegistryRecord, full_text: str) -
     if not station_events:
         # Some notes clearly document EBUS-TBNA sampling but omit station tokens
         # (e.g., "Lymph node sizing and sampling were performed using EBUS-TBNA ...").
+        mass_match: re.Match[str] | None = None
+        if re.search(r"(?i)\b(?:ebus|endobronchial\s+ultrasound)\b", full_text):
+            mass_match = re.search(
+                r"(?is)\b(?:mass|lesion|nodule)\b[^.\n]{0,240}"
+                r"\b(?:tbna|fna|biops(?:y|ied|ies)|needle\s+pass(?:es)?|passes?|aspirat(?:e|ed|ion)|core)\b"
+                r"|\b(?:tbna|fna|biops(?:y|ied|ies)|needle\s+pass(?:es)?|passes?|aspirat(?:e|ed|ion)|core)\b"
+                r"[^.\n]{0,240}\b(?:mass|lesion|nodule)\b",
+                full_text,
+            )
+        if mass_match and not _EBUS_EXPLICIT_NEGATION_PHRASES_RE.search(mass_match.group(0) or ""):
+            snippet = re.sub(r"\s+", " ", (mass_match.group(0) or "").strip())
+            start = int(mass_match.start())
+            end = int(mass_match.end())
+            station_events["Lung Mass"] = NodeInteraction(
+                station="Lung Mass",
+                action="needle_aspiration",
+                outcome=None,
+                evidence_quote=snippet[:280] if snippet else "EBUS-TBNA sampling documented (lung mass).",
+            )
+            station_evidence["Lung Mass"] = {
+                "token_start": start,
+                "token_end": end,
+                "quote_start": start,
+                "quote_end": end,
+            }
+            setattr(linear, "node_events", list(station_events.values()))
+            if hasattr(linear, "stations_sampled"):
+                setattr(linear, "stations_sampled", ["Lung Mass"])
+            try:
+                from app.common.spans import Span
+
+                evidence = getattr(record, "evidence", None)
+                if not isinstance(evidence, dict):
+                    evidence = {}
+                text = full_text[start:end].strip()
+                evidence.setdefault("procedures_performed.linear_ebus.stations_sampled.0", []).append(
+                    Span(text=text, start=start, end=end, confidence=0.9)
+                )
+                evidence.setdefault("procedures_performed.linear_ebus.node_events.0.station", []).append(
+                    Span(text=text, start=start, end=end, confidence=0.9)
+                )
+                evidence.setdefault("procedures_performed.linear_ebus.node_events.0.evidence_quote", []).append(
+                    Span(text=text, start=start, end=end, confidence=0.9)
+                )
+                record.evidence = evidence
+            except Exception:
+                pass
+            warnings.append("EBUS_FALLBACK: sampling documented for lung mass; added node_event.")
+            return warnings
+
         tbna_match = re.search(r"(?is)\bebus[-\s]?tbna\b", full_text)
         if not tbna_match:
             tbna_match = re.search(
@@ -4194,6 +4431,14 @@ def enrich_ebus_node_event_outcomes(record: RegistryRecord, full_text: str) -> l
     if not rose_windows:
         return warnings
 
+    def _rose_sentence(window: str) -> str | None:
+        for sent in re.split(r"(?:\n+|(?<=[.!?])\s+)", window or ""):
+            if _EBUS_ROSE_MARKER_RE.search(sent):
+                cleaned = re.sub(r"\s+", " ", sent).strip()
+                if cleaned:
+                    return cleaned[:280]
+        return None
+
     for event in node_events:
         if getattr(event, "action", None) != "needle_aspiration":
             continue
@@ -4202,18 +4447,27 @@ def enrich_ebus_node_event_outcomes(record: RegistryRecord, full_text: str) -> l
             continue
 
         outcome = getattr(event, "outcome", None)
-        if outcome not in (None, "unknown", "deferred_to_final_path"):
-            continue
+        outcome_str = str(outcome or "").strip().lower()
 
         inferred: str | None = None
+        rose_quote: str | None = None
         for window in rose_windows:
             inferred = _infer_ebus_node_outcome_from_rose_window(window, station)
             if inferred:
+                rose_quote = _rose_sentence(window)
                 break
 
         if inferred:
-            setattr(event, "outcome", inferred)
-            warnings.append(f"AUTO_EBUS_OUTCOME: {station.strip().upper()} -> {inferred}")
+            # Allow ROSE-derived benign to override "suspicious" labels that came from
+            # pre-biopsy indications rather than the onsite result.
+            override_allowed = outcome_str in ("", "unknown", "deferred_to_final_path") or (
+                outcome_str == "suspicious" and inferred == "benign"
+            )
+            if override_allowed:
+                setattr(event, "outcome", inferred)
+                if rose_quote:
+                    setattr(event, "evidence_quote", rose_quote)
+                warnings.append(f"AUTO_EBUS_OUTCOME: {station.strip().upper()} -> {inferred}")
 
     return warnings
 
@@ -4762,6 +5016,16 @@ def enrich_procedure_success_status(record: RegistryRecord, full_text: str) -> l
         setattr(outcomes, "aborted_reason", current_old_reason)
         changed = True
 
+    # If the narrative documents overall completion, do not leave procedure_completed=false
+    # just because a sub-target was aborted.
+    if completion_language_present and getattr(outcomes, "procedure_completed", None) is False and status != "Aborted":
+        setattr(outcomes, "procedure_completed", True)
+        changed = True
+        if current_status in (None, "", "Unknown") and status in ("Failed", "Partial success"):
+            setattr(outcomes, "procedure_success_status", "Partial success")
+            changed = True
+        warnings.append("AUTO_OUTCOMES_COMPLETION_OVERRIDE: completion language present; set procedure_completed=true.")
+
     # Evidence spans (best-effort; do not fail postprocess).
     try:
         from app.common.spans import Span
@@ -4884,7 +5148,10 @@ _BAL_STANDARD_LINE_RE = re.compile(
     r"[^.\n]{0,80}\b(?:was\s+)?performed\b[^.\n]{0,80}\b(?:at|in)\b\s+(?P<loc>[^.\n]{3,220})"
 )
 _BAL_MINI_PREFIX_RE = re.compile(r"(?i)\bmini\s+(?:bronch(?:ial)?\s+alveolar\s+lavage|bal)\b")
-_BAL_INSTILLED_RE = re.compile(r"(?i)\binstilled\s+(?P<num>\d{1,4})\s*(?:cc|ml)\b")
+_BAL_INSTILLED_RE = re.compile(
+    r"(?i)\binstill(?:ed|ation)?\s+(?P<num>\d{1,4})\s*(?:cc|ml)\b"
+    r"|\b(?P<num2>\d{1,4})\s*(?:cc|ml)\b[^.\n]{0,30}\binstillat(?:ion|ed)\b"
+)
 _BAL_RETURN_RE = re.compile(
     r"(?i)\b(?:suction\s*returned(?:\s+with)?|returned\s+with|recovered)\s+(?P<num>\d{1,4})\s*(?:cc|ml)\b"
 )
@@ -4921,8 +5188,9 @@ def enrich_bal_from_procedure_detail(record: RegistryRecord, full_text: str) -> 
         recovered_span: tuple[int, int] | None = None
         m_inst = _BAL_INSTILLED_RE.search(window)
         if m_inst:
+            num_raw = m_inst.group("num") or m_inst.group("num2")
             try:
-                instilled = float(int(m_inst.group("num")))
+                instilled = float(int(num_raw)) if num_raw is not None else None
             except Exception:
                 instilled = None
             instilled_span = (start + m_inst.start(), start + m_inst.end())
@@ -4946,6 +5214,47 @@ def enrich_bal_from_procedure_detail(record: RegistryRecord, full_text: str) -> 
         )
 
     if not candidates:
+        # Fallback: capture BAL instilled/return volumes even when location is absent.
+        try:
+            instilled_existing = getattr(bal, "volume_instilled_ml", None)
+            recovered_existing = getattr(bal, "volume_recovered_ml", None)
+            if instilled_existing in (None, "", 0) or recovered_existing in (None, "", 0):
+                bal_ctx_re = re.compile(
+                    r"(?i)\b(?:bal|broncho[-\s]?alveolar\s+lavage|bronchial\s+alveolar\s+lavage)\b"
+                )
+                instilled_val = None
+                recovered_val = None
+
+                for match in _BAL_INSTILLED_RE.finditer(full_text):
+                    window = full_text[max(0, match.start() - 120) : min(len(full_text), match.end() + 120)]
+                    if not bal_ctx_re.search(window):
+                        continue
+                    num_raw = match.group("num") or match.group("num2")
+                    try:
+                        instilled_val = float(int(num_raw)) if num_raw is not None else None
+                    except Exception:
+                        instilled_val = None
+                    break
+
+                for match in _BAL_RETURN_RE.finditer(full_text):
+                    window = full_text[max(0, match.start() - 120) : min(len(full_text), match.end() + 120)]
+                    if not bal_ctx_re.search(window):
+                        continue
+                    try:
+                        recovered_val = float(int(match.group("num")))
+                    except Exception:
+                        recovered_val = None
+                    break
+
+                if instilled_val is not None and (instilled_existing in (None, "", 0)):
+                    setattr(bal, "volume_instilled_ml", instilled_val)
+                    warnings.append("BAL_FALLBACK: populated instilled volume from BAL sentence without location.")
+                if recovered_val is not None and (recovered_existing in (None, "", 0)):
+                    setattr(bal, "volume_recovered_ml", recovered_val)
+                    warnings.append("BAL_FALLBACK: populated recovered volume from BAL sentence without location.")
+        except Exception:
+            pass
+
         # Even when the note lacks an explicit "BAL ... performed at <location>" line,
         # attach evidence spans for already-populated volume fields so the UI can
         # highlight the supporting text (e.g., "instilled 40 cc").

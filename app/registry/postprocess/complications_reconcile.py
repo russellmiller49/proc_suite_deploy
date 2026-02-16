@@ -41,9 +41,18 @@ _BLOCKER_RE = re.compile(r"(?i)\b(?:endobronchial\s+blocker|arndt|blocker)\b")
 _TRANSFUSION_RE = re.compile(r"(?i)\b(?:transfus(?:ion|ed)|prbc|packed\s+red\s+blood)\b")
 _EMBOLIZATION_RE = re.compile(r"(?i)\bemboliz(?:ation|ed)\b")
 _SURGERY_RE = re.compile(r"(?i)\bsurger(?:y|ical)\b")
+_PROTAMINE_RE = re.compile(r"(?i)\bprotamine\b")
 _ABORT_FOR_BLEEDING_RE = re.compile(
     r"(?i)\b(?:abort(?:ed|ing)|terminate(?:d|ing)|stop(?:ped|ping))\b[^.\n]{0,120}\b(?:bleed(?:ing)?|hemorrhage|haemorrhage)\b"
 )
+_BLEEDING_CONTROL_RE = re.compile(
+    r"(?i)\b(?:tamponade|hemostasis|control(?:led)?|cessation|stopp?ed|halt(?:ed)?)\b"
+)
+
+_ARRHYTHMIA_RE = re.compile(
+    r"(?i)\b(?:arrhythmia|atrial\s+fibrillation|a\.?\s*fib|afib|a\s+fib|rvr|tachyarrhythmia)\b"
+)
+_CARDIOVERSION_RE = re.compile(r"(?i)\bcardioversion\b")
 
 
 def _maybe_unescape_newlines(text: str) -> str:
@@ -143,13 +152,22 @@ def _infer_nashville_bleeding_grade(text: str) -> tuple[int | None, re.Match[str
     for pat in (_BALLOON_RE, _BLOCKER_RE):
         match = _first_match_with_bleeding_context(pat, text)
         if match:
-            return 3, match
+            window = text[max(0, match.start() - 160) : min(len(text), match.end() + 160)]
+            # Require explicit bleeding control/tamponade language to avoid
+            # over-calling grade 3 when blockers are used for non-bleeding workflows.
+            if _BLEEDING_CONTROL_RE.search(window):
+                return 3, match
 
     # Grade 2: wedge/cold saline/topical vasoconstrictor in bleeding context.
     for pat in (_WEDGE_RE, _COLD_SALINE_RE, _EPI_RE):
         match = _first_match_with_bleeding_context(pat, text)
         if match:
             return 2, match
+
+    # Grade 2: anticoagulation reversal (e.g., protamine) in bleeding context.
+    protamine_match = _first_match_with_bleeding_context(_PROTAMINE_RE, text)
+    if protamine_match:
+        return 2, protamine_match
 
     # Grade 1: suction-only hemostasis in bleeding context.
     suction_match = _first_match_with_bleeding_context(_SUCTION_RE, text)
@@ -202,7 +220,13 @@ def reconcile_complications_from_narrative(record: RegistryRecord, full_text: st
         if _NEGATION_PREFIX_RE.search(prefix):
             hematoma_match = None
 
-    if not pneumothorax_match and not hematoma_match:
+    arrhythmia_match = _ARRHYTHMIA_RE.search(text)
+    if arrhythmia_match:
+        prefix = text[max(0, arrhythmia_match.start() - 80) : arrhythmia_match.start()]
+        if _NEGATION_PREFIX_RE.search(prefix) or re.search(r"(?i)\b(?:history|prior|previous|known)\b", prefix):
+            arrhythmia_match = None
+
+    if not pneumothorax_match and not hematoma_match and arrhythmia_match is None:
         if bleeding_grade is None:
             return warnings
 
@@ -233,14 +257,17 @@ def reconcile_complications_from_narrative(record: RegistryRecord, full_text: st
             comp_list.append(item)
             changed = True
 
-    def _add_event(event_type: str, notes: str) -> None:
+    def _add_event(event_type: str, notes: str, interventions: list[str] | None = None) -> None:
         nonlocal changed
         events = complications.get("events")
         if not isinstance(events, list):
             events = []
         if any(isinstance(e, dict) and str(e.get("type") or "").lower() == event_type.lower() for e in events):
             return
-        events.append({"type": event_type, "notes": notes or None})
+        payload: dict[str, Any] = {"type": event_type, "notes": notes or None}
+        if interventions:
+            payload["interventions"] = interventions
+        events.append(payload)
         complications["events"] = events
         changed = True
 
@@ -293,6 +320,16 @@ def reconcile_complications_from_narrative(record: RegistryRecord, full_text: st
             _add_evidence("complications.bleeding.bleeding_grade_nashville", bleeding_match)
             warnings.append(f"BLEEDING_GRADE_DERIVED: Nashville grade={bleeding_grade}")
 
+            # Add a bleeding event with specific interventions when documented.
+            if bleeding_grade > 0:
+                interventions: list[str] = []
+                protamine_match = _first_match_with_bleeding_context(_PROTAMINE_RE, text)
+                if protamine_match:
+                    interventions.append("Protamine administration")
+                    _append_evidence("complications.bleeding.intervention_required", protamine_match)
+                snippet = _line_snippet(text, bleeding_match.start(), bleeding_match.end())
+                _add_event("Bleeding", snippet, interventions if interventions else None)
+
     if pneumothorax_match:
         _ensure_any_complication()
         _add_comp_list("Pneumothorax")
@@ -342,6 +379,20 @@ def reconcile_complications_from_narrative(record: RegistryRecord, full_text: st
         _add_event("Hematoma", snippet)
         _add_evidence("complications.other_complication_details", hematoma_match)
         warnings.append("COMPLICATION_OVERRIDE: hematoma mentioned in narrative; overriding summary 'None'.")
+
+    if arrhythmia_match:
+        _ensure_any_complication()
+        _add_comp_list("Arrhythmia")
+        snippet = _line_snippet(text, arrhythmia_match.start(), arrhythmia_match.end())
+        window = text[max(0, arrhythmia_match.start() - 200) : min(len(text), arrhythmia_match.end() + 200)]
+        interventions: list[str] = []
+        if _CARDIOVERSION_RE.search(window):
+            interventions.append("Cardioversion")
+        _add_event("Arrhythmia", snippet, interventions or None)
+        _add_evidence("complications.complication_list", arrhythmia_match)
+        if interventions:
+            _append_evidence("complications.events", arrhythmia_match)
+        warnings.append("COMPLICATION_OVERRIDE: arrhythmia mentioned in narrative; overriding summary 'None'.")
 
     if not changed:
         return warnings

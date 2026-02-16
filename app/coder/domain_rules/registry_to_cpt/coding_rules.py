@@ -825,6 +825,11 @@ def derive_all_codes_with_meta(
                 codes.append("31645")
                 rationales["31645"] = "therapeutic_aspiration.performed=true"
 
+    # Therapeutic instillation/injection (31573)
+    if _performed(_proc(record, "therapeutic_injection")):
+        codes.append("31573")
+        rationales["31573"] = "therapeutic_injection.performed=true"
+
     # Foreign body removal
     if _performed(_proc(record, "foreign_body_removal")):
         codes.append("31635")
@@ -837,6 +842,8 @@ def derive_all_codes_with_meta(
 
     # Airway stent
     stent = _proc(record, "airway_stent")
+    foreign_body = _proc(record, "foreign_body_removal")
+    foreign_body_performed = _performed(foreign_body)
     if stent is not None:
         action = _get(stent, "action")
         action_text = str(action).strip().lower() if action is not None else ""
@@ -889,8 +896,13 @@ def derive_all_codes_with_meta(
                     "Stent revision/repositioning documented without removal; coded as placement (31636). Consider modifier 22 when documentation supports increased work."
                 )
         elif removal_action:
-            codes.append("31638")
-            rationales["31638"] = "airway_stent indicates removal/exchange"
+            if foreign_body_performed and not placement_action and not revision_action:
+                warnings.append(
+                    "Stent removal documented alongside foreign body removal; suppressed 31638 in favor of 31635."
+                )
+            else:
+                codes.append("31638")
+                rationales["31638"] = "airway_stent indicates removal/exchange"
         elif _performed(stent):
             warnings.append(
                 "airway_stent.performed=true but action is missing/ambiguous; suppressing stent placement CPT"

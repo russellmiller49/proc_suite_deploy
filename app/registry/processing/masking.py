@@ -94,6 +94,10 @@ def mask_offset_preserving(text: str, patterns: Iterable[str] = PATTERNS) -> str
 
     masked = _mask_ip_code_mod_details_cpt_codes(masked)
     masked = _mask_cpt_definition_lines(masked)
+    # Also mask CPT-bearing lines inside PROCEDURE/PROCEDURES blocks to reduce
+    # header-driven false positives in deterministic extractors.
+    procedure_header_spans, _ = _find_procedure_header_cpt_spans(raw)
+    masked = _mask_spans(masked, procedure_header_spans)
     # Prevent deterministic extractors from "reading" blank modality template rows
     # (e.g., APC/Cryoprobe listed but empty columns).
     masked = _mask_spans(masked, find_empty_table_row_spans(masked, keywords=DEFAULT_TABLE_TOOL_KEYWORDS))

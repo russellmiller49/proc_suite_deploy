@@ -7,6 +7,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, model_serializer, model_validator
 
+from app.agents.aggregator.timeline_aggregator import EntityLedger, LinkProposal
 from app.coder.schema import CoderOutput
 from app.common.spans import Span
 from app.registry.schema import RegistryRecord
@@ -235,6 +236,49 @@ class UnifiedProcessRequest(BaseModel):
     )
 
 
+class BundleTimepointRole(str, Enum):
+    PREOP_IMAGING = "PREOP_IMAGING"
+    INDEX_PROCEDURE = "INDEX_PROCEDURE"
+    PATHOLOGY = "PATHOLOGY"
+    FOLLOW_UP = "FOLLOW_UP"
+
+
+class ParsedDocRequest(BaseModel):
+    """Single document request for a ZK bundle."""
+
+    timepoint_role: BundleTimepointRole
+    seq: int = Field(..., description="Ordering key within the episode (stable, client-provided).")
+    text: str = Field(
+        ...,
+        description="Scrubbed note text containing only relative timeline tokens.",
+    )
+
+
+class ProcessBundleRequest(BaseModel):
+    """Request schema for multi-document (ZK) bundle ingestion."""
+
+    zk_patient_id: str = Field(..., description="Client-generated pseudonymous patient identifier.")
+    episode_id: str = Field(..., description="Client-generated episode identifier.")
+    documents: list[ParsedDocRequest] = Field(default_factory=list)
+
+    already_scrubbed: bool = Field(
+        True,
+        description=(
+            "If true, the server will skip PHI scrubbing and treat all bundle docs as scrubbed."
+        ),
+    )
+    locality: str = Field("00", description="Geographic locality for RVU calculations")
+    include_financials: bool = Field(
+        False,
+        description="Whether to include RVU/payment info per doc",
+    )
+    explain: bool = Field(False, description="Include extraction evidence/rationales per doc")
+    include_v3_event_log: bool = Field(
+        False,
+        description="Whether to include the optional V3 event-log payload per doc.",
+    )
+
+
 class CodeSuggestionSummary(BaseModel):
     """Simplified code suggestion for unified response."""
 
@@ -319,6 +363,51 @@ class UnifiedProcessResponse(BaseModel):
     processing_time_ms: float = 0.0
 
 
+class BundleDocResponse(BaseModel):
+    timepoint_role: BundleTimepointRole
+    seq: int
+    doc_t_offset_days: int | None = Field(
+        default=None,
+        description="Parsed doc offset from a `T+N`/`T-N` header token, if present.",
+    )
+    result: UnifiedProcessResponse
+
+
+class ProcessBundleResponse(BaseModel):
+    zk_patient_id: str
+    episode_id: str
+    documents: list[BundleDocResponse] = Field(default_factory=list)
+    timeline: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Best-effort deterministic timeline metrics derived from doc offsets.",
+    )
+    entity_ledger: EntityLedger | None = Field(
+        default=None,
+        description="Entity ledger + explicit cross-doc link proposals (Phase 7).",
+    )
+    relations_heuristic: list[LinkProposal] = Field(
+        default_factory=list,
+        description="Heuristic relations (Phase 8 baseline).",
+    )
+    relations_ml: list[LinkProposal] = Field(
+        default_factory=list,
+        description="ML relation proposals (Phase 8 shadow mode).",
+    )
+    relations: list[LinkProposal] = Field(
+        default_factory=list,
+        description="Merged relations (ML if high confidence else heuristic).",
+    )
+    relations_warnings: list[str] = Field(
+        default_factory=list,
+        description="Warnings from relation extraction + shadow-mode merge (Phase 8).",
+    )
+    relations_metrics: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Relation extraction metrics (Phase 8).",
+    )
+    processing_time_ms: float = 0.0
+
+
 __all__ = [
     "CoderRequest",
     "CoderResponse",
@@ -338,6 +427,11 @@ __all__ = [
     "SeedFromTextResponse",
     "UnifiedProcessRequest",
     "UnifiedProcessResponse",
+    "BundleTimepointRole",
+    "ParsedDocRequest",
+    "ProcessBundleRequest",
+    "BundleDocResponse",
+    "ProcessBundleResponse",
     "ReviewStatus",
     "VerifyRequest",
     "VerifyResponse",

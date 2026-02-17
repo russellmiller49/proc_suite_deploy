@@ -90,10 +90,11 @@ _PLEURAL_ABUTTING_RE = re.compile(
     r"|\bpleura\b[^.\n]{0,60}\b(?:abutting|abuts|touching|contacting|against|pleural[-\s]?based)\b"
 )
 
+# Air bronchogram language is treated as CT bronchus sign (no separate field).
 _AIR_BRONCHOGRAM_POS_RE = re.compile(r"(?i)\bair\s+bronchogram(?:s)?\b")
 _AIR_BRONCHOGRAM_NEG_RE = re.compile(
-    r"(?i)\b(?:no|without|absent)\b[^.\n]{0,60}\bair\s+bronchogram(?:s)?\b"
-    r"|\bair\s+bronchogram(?:s)?\b[^.\n]{0,60}\b(?:not\s+present|absent)\b"
+    r"(?i)\b(?:no|without|absen(?:t|ce))\b[^.\n]{0,60}\bair\s+bronchogram(?:s)?\b"
+    r"|\bair\s+bronchogram(?:s)?\b[^.\n]{0,60}\b(?:not\s+present|absen(?:t|ce))\b"
 )
 
 _SUV_RE = re.compile(r"(?i)\bSUV(?:\s*max)?\s*(?:of|is|:)?\s*(\d+(?:\.\d+)?)\b")
@@ -272,22 +273,6 @@ def _extract_distance_from_pleura_mm(text: str) -> tuple[float | None, re.Match[
     return val, match
 
 
-def _extract_air_bronchogram_present(text: str) -> tuple[bool | None, re.Match[str] | None]:
-    raw = (text or "").strip()
-    if not raw:
-        return None, None
-
-    match = _AIR_BRONCHOGRAM_NEG_RE.search(raw)
-    if match:
-        return False, match
-
-    match = _AIR_BRONCHOGRAM_POS_RE.search(raw)
-    if match:
-        return True, match
-
-    return None, None
-
-
 def _extract_pet_suv_max(text: str) -> tuple[float | None, re.Match[str] | None]:
     raw = (text or "").strip()
     if not raw:
@@ -318,6 +303,15 @@ def _extract_bronchus_sign(text: str) -> tuple[bool | None, re.Match[str] | None
         return False, match
 
     match = _BRONCHUS_SIGN_POS_RE.search(raw)
+    if match:
+        return True, match
+
+    # Treat air bronchogram phrasing as bronchus sign polarity.
+    match = _AIR_BRONCHOGRAM_NEG_RE.search(raw)
+    if match:
+        return False, match
+
+    match = _AIR_BRONCHOGRAM_POS_RE.search(raw)
     if match:
         return True, match
 
@@ -586,16 +580,6 @@ def extract_navigation_targets(note_text: str) -> list[dict[str, Any]]:
                         "text": suv_match.group(0).strip(),
                         "start": int(loc_offset + suv_match.start()),
                         "end": int(loc_offset + suv_match.end()),
-                    }
-
-            air_bronch, air_match = _extract_air_bronchogram_present(raw_loc_full)
-            if air_bronch is not None:
-                target["air_bronchogram_present"] = air_bronch
-                if air_match:
-                    evidence["air_bronchogram_present"] = {
-                        "text": air_match.group(0).strip(),
-                        "start": int(loc_offset + air_match.start()),
-                        "end": int(loc_offset + air_match.end()),
                     }
 
             bronchus_sign, bs_match = _extract_bronchus_sign(raw_loc_full)
@@ -970,20 +954,6 @@ def extract_navigation_targets(note_text: str) -> list[dict[str, Any]]:
                     "text": suv_match.group(0).strip(),
                     "start": int(suv_base_offset + suv_match.start()),
                     "end": int(suv_base_offset + suv_match.end()),
-                }
-
-        air_bronch, air_match = _extract_air_bronchogram_present(section_text)
-        air_base_offset = section_offset
-        if air_bronch is None and match_mode in {"nodule_header", "numbered_target"}:
-            air_bronch, air_match = _extract_air_bronchogram_present(header_text)
-            air_base_offset = header_offset
-        if air_bronch is not None:
-            target["air_bronchogram_present"] = air_bronch
-            if air_match:
-                evidence["air_bronchogram_present"] = {
-                    "text": air_match.group(0).strip(),
-                    "start": int(air_base_offset + air_match.start()),
-                    "end": int(air_base_offset + air_match.end()),
                 }
 
         bronchus_sign, bs_match = _extract_bronchus_sign(section_text)

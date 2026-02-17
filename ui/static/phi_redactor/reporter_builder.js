@@ -491,7 +491,6 @@ function getCompletenessInputSpec(promptPath) {
       options: ["Solid", "Part-solid", "Ground-glass", "Cavitary", "Calcified"],
     },
     "granular_data.navigation_targets[*].distance_from_pleura_mm": { type: "number", placeholder: "mm" },
-    "granular_data.navigation_targets[*].air_bronchogram_present": { type: "boolean" },
     "granular_data.navigation_targets[*].pet_suv_max": { type: "number", placeholder: "e.g., 4.2" },
     "granular_data.navigation_targets[*].registration_error_mm": { type: "number", placeholder: "mm" },
     "granular_data.navigation_targets[*].tool_in_lesion_confirmed": { type: "boolean" },

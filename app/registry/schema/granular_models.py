@@ -593,10 +593,6 @@ class NavigationTarget(BaseModel):
     ct_characteristics: Literal[
         "Solid", "Part-solid", "Ground-glass", "Cavitary", "Calcified"
     ] | None = None
-    air_bronchogram_present: bool | None = Field(
-        default=None,
-        description="Air bronchogram documented on CT for this target lesion when explicitly stated.",
-    )
     pet_suv_max: float | None = Field(None, ge=0)
     
     # Navigation performance

@@ -5184,13 +5184,6 @@
                   null
                 ]
               },
-              "air_bronchogram_present": {
-                "type": [
-                  "boolean",
-                  "null"
-                ],
-                "description": "Air bronchogram documented on CT for this target lesion when explicitly stated"
-              },
               "pet_suv_max": {
                 "type": [
                   "number",

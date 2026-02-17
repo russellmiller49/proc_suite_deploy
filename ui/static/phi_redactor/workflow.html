@@ -25,14 +25,15 @@
       <section class="page-hero">
         <h2>How the workflow is intended to run</h2>
         <p>
-          Procedure Suite is designed to scrub PHI in the browser, then run the extraction pipeline
-          on de-identified text. This page summarizes the current demo flow and what is still under
-          development.
+          Procedure Suite scrubs PHI in the browser, then runs extraction on scrubbed text only.
+          You can process a single note or build a multi-document Bundle (Zero-Knowledge Timeline)
+          for longitudinal episodes. This page documents both paths and the guardrails that keep
+          absolute dates and identifiers out of server requests.
         </p>
       </section>
 
       <section class="content-card">
-        <h3>Step-by-step workflow</h3>
+        <h3>Single-note workflow (default)</h3>
         <ol class="workflow-list">
           <li>Paste the procedural note into the editor.</li>
           <li>Run PHI detection and review each proposed redaction.</li>
@@ -52,6 +53,50 @@
           <li><strong>Edited JSON (Training):</strong> when you edit tables, a second JSON payload is generated and labeled for training.</li>
           <li><strong>Export JSON:</strong> download the raw response payload.</li>
           <li><strong>Export Tables:</strong> download the flattened tables as an Excel-readable file.</li>
+          <li><strong>Bundle (Zero-Knowledge Timeline):</strong> compose multi-document episodes using date tokens instead of absolute dates.</li>
+        </ul>
+      </section>
+
+      <section class="content-card">
+        <h3>Bundle (Zero-Knowledge Timeline) – What it is</h3>
+        <p>
+          A Bundle lets you submit multiple scrubbed documents as a single episode without sharing
+          absolute dates. The browser converts dates into relative tokens like
+          <code>[DATE: T-3 DAYS]</code> using an Index date (T=0), and prepends each document with a
+          system header such as <code>[SYSTEM: ROLE=INDEX_PROCEDURE SEQ=1 DOC_OFFSET=T+0 DAYS]</code>.
+          The server receives only scrubbed text plus relative offsets and returns per-document
+          extraction results and a timeline summary.
+        </p>
+        <div class="callout">
+          The Index date never leaves your browser. It is used locally to translate date strings
+          into T offsets. Absolute dates are blocked at submit-time.
+        </div>
+      </section>
+
+      <section class="content-card">
+        <h3>Bundle step-by-step</h3>
+        <ol class="workflow-list">
+          <li>Run detection and apply redactions on the current note.</li>
+          <li>Open <strong>Bundle (Zero-Knowledge Timeline)</strong> and set the Index date (T=0).</li>
+          <li>Set the Document date, Timepoint role, and a unique Seq number.</li>
+          <li>Keep <strong>Translate dates to T tokens</strong> enabled (recommended).</li>
+          <li>Click <strong>Chronology Preview</strong> to verify date parsing and replacements.</li>
+          <li>Click <strong>Add scrubbed note to bundle</strong> to stage the document.</li>
+          <li>Repeat for additional documents in the episode.</li>
+          <li>Generate or enter a ZK Patient ID and Episode ID.</li>
+          <li>Click <strong>Submit bundle</strong> and review per-document results in the dropdown.</li>
+          <li>Use <strong>Export Bundle JSON</strong> if you need the full response payload.</li>
+        </ol>
+      </section>
+
+      <section class="content-card">
+        <h3>Bundle guardrails and troubleshooting</h3>
+        <ul class="workflow-list">
+          <li>Bundle submission is blocked if any date-like strings remain in the text.</li>
+          <li>If blocked, re-run detection, apply redactions, and manually redact remaining dates.</li>
+          <li>If you change dates, roles, or sequence numbers, remove the doc and re-add it.</li>
+          <li>Seq values must be positive and unique within the bundle.</li>
+          <li>Chronology Preview shows how each detected date will be translated before bundling.</li>
         </ul>
       </section>
 
@@ -59,7 +104,8 @@
         <h3>What happens to PHI?</h3>
         <p class="subtle">
           PHI detection runs entirely in your browser. The server only receives the scrubbed text
-          that you explicitly submit.
+          that you explicitly submit. For bundles, the server receives only scrubbed text and
+          relative date tokens, not absolute dates.
         </p>
       </section>
     </main>

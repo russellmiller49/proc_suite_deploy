@@ -578,6 +578,7 @@ async def report_seed_from_text(
                 {
                     "group": prompt.group,
                     "path": prompt.path,
+                    "target_path": prompt.target_path,
                     "label": prompt.label,
                     "severity": prompt.severity,
                     "message": prompt.message,

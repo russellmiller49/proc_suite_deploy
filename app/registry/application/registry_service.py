@@ -1165,7 +1165,7 @@ class RegistryService:
                             bronchus_sign = seed_data.get("bronchus_sign")
                             existing_bronchus_sign = clinical.get("bronchus_sign")
                             if bronchus_sign is not None and existing_bronchus_sign in (None, "", "Not assessed"):
-                                if re.search(r"(?i)\bbronchus\s+sign\b", seed_text or ""):
+                                if re.search(r"(?i)\b(?:bronchus\s+sign|air\s+bronchogram(?:s)?)\b", seed_text or ""):
                                     clinical["bronchus_sign"] = bronchus_sign
                                     clinical_changed = True
                                     _add_first_span_skip_cpt_headers(
@@ -1173,6 +1173,9 @@ class RegistryService:
                                         [
                                             r"\bbronchus\s+sign\b[^.\n]{0,40}\b(?:positive|negative|present|absent|no|yes|not\s+present)\b",
                                             r"\b(?:positive|negative)\b[^.\n]{0,20}\bbronchus\s+sign\b",
+                                            r"\b(?:no|without|absen(?:t|ce))\b[^.\n]{0,60}\bair\s+bronchogram(?:s)?\b",
+                                            r"\bair\s+bronchogram(?:s)?\b[^.\n]{0,60}\b(?:not\s+present|absen(?:t|ce))\b",
+                                            r"\bair\s+bronchogram(?:s)?\b",
                                         ],
                                     )
 

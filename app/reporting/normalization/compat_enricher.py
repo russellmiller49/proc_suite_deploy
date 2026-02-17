@@ -315,6 +315,74 @@ def _add_compat_flat_fields(raw: dict[str, Any]) -> dict[str, Any]:
             if elastography_pattern not in (None, "", [], {}):
                 raw["ebus_elastography_pattern"] = elastography_pattern
 
+    # --- EBUS compat from granular per-station detail (extraction-first / completeness addendum) ---
+    granular = raw.get("granular_data") or {}
+    if isinstance(granular, dict):
+        granular_detail = granular.get("linear_ebus_stations_detail")
+        if isinstance(granular_detail, list) and granular_detail:
+            # Ensure station list fields exist for adapter matching.
+            if raw.get("linear_ebus_stations") in (None, "", [], {}):
+                stations = [
+                    str(item.get("station") or "").strip().upper()
+                    for item in granular_detail
+                    if isinstance(item, dict) and item.get("station")
+                ]
+                stations = [s for s in stations if s]
+                if stations:
+                    raw["linear_ebus_stations"] = _dedupe_preserve_order(stations)
+            if raw.get("ebus_stations_sampled") in (None, "", [], {}):
+                derived = _coerce_str_list(raw.get("linear_ebus_stations"))
+                if derived:
+                    raw["ebus_stations_sampled"] = _dedupe_preserve_order(derived)
+
+            # Map granular detail into legacy detail payload for EBUSTBNAAdapter.
+            if raw.get("ebus_stations_detail") in (None, "", [], {}):
+                converted: list[dict[str, Any]] = []
+                for item in granular_detail:
+                    if not isinstance(item, dict):
+                        continue
+                    station = str(item.get("station") or "").strip()
+                    if not station:
+                        continue
+                    entry: dict[str, Any] = {"station": station.upper()}
+                    if item.get("short_axis_mm") not in (None, "", [], {}):
+                        entry["size_mm"] = item.get("short_axis_mm")
+                    if item.get("number_of_passes") not in (None, "", [], {}):
+                        entry["passes"] = item.get("number_of_passes")
+                    rose = item.get("rose_result")
+                    if rose not in (None, "", [], {}):
+                        entry["rose_result"] = rose
+                    elif item.get("lymphocytes_present") is True:
+                        entry["rose_result"] = "Adequate lymphocytes"
+                    elif item.get("lymphocytes_present") is False:
+                        entry["rose_result"] = "Nondiagnostic"
+                    converted.append(entry)
+                if converted:
+                    raw["ebus_stations_detail"] = converted
+
+            # Global needle gauge / passes for adapter defaults.
+            if raw.get("ebus_needle_gauge") in (None, "", [], {}):
+                gauges = [
+                    item.get("needle_gauge")
+                    for item in granular_detail
+                    if isinstance(item, dict) and item.get("needle_gauge") not in (None, "", [], {})
+                ]
+                gauges = [g for g in gauges if isinstance(g, int)]
+                if gauges and len(set(gauges)) == 1:
+                    raw["ebus_needle_gauge"] = str(gauges[0])
+                elif gauges:
+                    raw["ebus_needle_gauge"] = str(gauges[0])
+
+            if raw.get("ebus_passes") in (None, "", [], {}):
+                passes_vals = [
+                    item.get("number_of_passes")
+                    for item in granular_detail
+                    if isinstance(item, dict) and item.get("number_of_passes") not in (None, "", [], {})
+                ]
+                passes_vals = [p for p in passes_vals if isinstance(p, int)]
+                if passes_vals and len(set(passes_vals)) == 1:
+                    raw["ebus_passes"] = passes_vals[0]
+
     # --- Navigational/robotic bronchoscopy compat (parallel_ner nested keys -> legacy flat keys) ---
     equipment = raw.get("equipment") or {}
     if not isinstance(equipment, dict):

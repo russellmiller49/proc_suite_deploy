@@ -685,6 +685,51 @@ const CHEST_US_PLEURA_OPTIONS = [
   { value: "Thick", label: "Thick" },
   { value: "Nodular", label: "Nodular" },
 ];
+const ASA_CLASS_OPTIONS = [
+  { value: "", label: "—" },
+  { value: "1", label: "1" },
+  { value: "2", label: "2" },
+  { value: "3", label: "3" },
+  { value: "4", label: "4" },
+  { value: "5", label: "5" },
+  { value: "6", label: "6" },
+];
+const BRONCHUS_SIGN_OPTIONS = [
+  { value: "", label: "—" },
+  { value: "Positive", label: "Positive" },
+  { value: "Negative", label: "Negative" },
+  { value: "Not assessed", label: "Not assessed" },
+];
+const RADIAL_EBUS_PROBE_POSITION_OPTIONS = [
+  { value: "", label: "—" },
+  { value: "Concentric", label: "Concentric" },
+  { value: "Eccentric", label: "Eccentric" },
+  { value: "Adjacent", label: "Adjacent" },
+  { value: "Not visualized", label: "Not visualized" },
+];
+const NAV_CONFIRMATION_METHOD_OPTIONS = [
+  { value: "", label: "—" },
+  { value: "Radial EBUS", label: "Radial EBUS" },
+  { value: "CBCT", label: "CBCT" },
+  { value: "Fluoroscopy", label: "Fluoroscopy" },
+  { value: "Augmented Fluoroscopy", label: "Augmented Fluoroscopy" },
+  { value: "None", label: "None" },
+];
+const NAV_TARGET_CONFIRMATION_METHOD_OPTIONS = [
+  { value: "", label: "—" },
+  { value: "Radial EBUS", label: "Radial EBUS" },
+  { value: "CBCT", label: "CBCT" },
+  { value: "Fluoroscopy", label: "Fluoroscopy" },
+  { value: "Augmented fluoroscopy", label: "Augmented fluoroscopy" },
+  { value: "None", label: "None" },
+];
+const FIBRINOLYTIC_INDICATION_OPTIONS = [
+  { value: "", label: "—" },
+  { value: "Complex parapneumonic", label: "Complex parapneumonic" },
+  { value: "Empyema", label: "Empyema" },
+  { value: "Hemothorax", label: "Hemothorax" },
+  { value: "Malignant effusion", label: "Malignant effusion" },
+];
 
 runBtn.disabled = true;
 cancelBtn.disabled = true;
@@ -1753,7 +1798,6 @@ function getCompletenessInputSpec(promptPath) {
       options: ["Solid", "Part-solid", "Ground-glass", "Cavitary", "Calcified"],
     },
     "granular_data.navigation_targets[*].distance_from_pleura_mm": { type: "number", placeholder: "mm" },
-    "granular_data.navigation_targets[*].air_bronchogram_present": { type: "boolean" },
     "granular_data.navigation_targets[*].pet_suv_max": { type: "number", placeholder: "e.g., 4.2" },
     "granular_data.navigation_targets[*].registration_error_mm": { type: "number", placeholder: "mm" },
     "granular_data.navigation_targets[*].tool_in_lesion_confirmed": { type: "boolean" },
@@ -1857,31 +1901,46 @@ function coerceCompletenessValue(spec, rawValue) {
   return raw;
 }
 
+function escapeRegExp(value) {
+  return String(value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function getStoredWildcardEffectivePathsForPrompt(promptPath) {
+  const base = String(promptPath || "").trim();
+  if (!base.includes("[*]")) return [];
+  const parts = base.split("[*]");
+  const pattern = `^${parts.map(escapeRegExp).join("\\[(\\d+)\\]")}$`;
+  let re = null;
+  try {
+    re = new RegExp(pattern);
+  } catch (e) {
+    console.warn("Invalid completeness wildcard path pattern (ignored):", base, e);
+    return [];
+  }
+  const out = [];
+  for (const key of completenessRawValueByPath.keys()) {
+    if (re.test(key)) out.push(key);
+  }
+  out.sort();
+  return out;
+}
+
 function buildCompletenessEdits(registry, prompts) {
   const list = Array.isArray(prompts) ? prompts : [];
   const ops = [];
   const fields = [];
 
   list.forEach((prompt) => {
-    const promptPath = String(prompt?.path || "").trim();
+    const promptPath = String(prompt?.target_path || prompt?.path || "").trim();
     if (!promptPath) return;
 
     const resolved = resolvePromptPath(registry, promptPath);
     if (resolved.hasWildcard && resolved.wildcardCount === 0) return;
-    const effectivePath = resolved.effectivePath;
-    const rawValue = completenessRawValueByPath.get(effectivePath);
-    if (
-      rawValue === undefined ||
-      rawValue === null ||
-      (typeof rawValue === "string" && rawValue.trim() === "") ||
-      (Array.isArray(rawValue) && rawValue.length === 0)
-    ) {
-      return;
-    }
-
     const spec = getCompletenessInputSpec(promptPath);
 
     if (spec.type === "ecog") {
+      const effectivePath = resolved.effectivePath;
+      const rawValue = completenessRawValueByPath.get(effectivePath);
       const raw = String(rawValue || "").trim();
       if (!raw) return;
       const match = raw.match(/^\s*([0-4])\s*$/);
@@ -1895,13 +1954,29 @@ function buildCompletenessEdits(registry, prompts) {
       return;
     }
 
-    const coerced = coerceCompletenessValue(spec, rawValue);
-    if (coerced === null) return;
+    const effectivePaths = resolved.hasWildcard
+      ? getStoredWildcardEffectivePathsForPrompt(promptPath)
+      : [resolved.effectivePath];
 
-    const ptr = registryDottedPathToPointer(effectivePath);
-    if (!ptr) return;
-    ops.push({ op: "add", path: ptr, value: coerced });
-    fields.push(effectivePath);
+    effectivePaths.forEach((effectivePath) => {
+      const rawValue = completenessRawValueByPath.get(effectivePath);
+      if (
+        rawValue === undefined ||
+        rawValue === null ||
+        (typeof rawValue === "string" && rawValue.trim() === "") ||
+        (Array.isArray(rawValue) && rawValue.length === 0)
+      ) {
+        return;
+      }
+
+      const coerced = coerceCompletenessValue(spec, rawValue);
+      if (coerced === null) return;
+
+      const ptr = registryDottedPathToPointer(effectivePath);
+      if (!ptr) return;
+      ops.push({ op: "add", path: ptr, value: coerced });
+      fields.push(effectivePath);
+    });
   });
 
   return { edited_patch: ops, edited_fields: fields };
@@ -1911,6 +1986,121 @@ function recomputeCompletenessEdits(registry, prompts) {
   const next = buildCompletenessEdits(registry, prompts);
   completenessEdits = next.edited_patch.length || next.edited_fields.length ? next : null;
   updateEditedPayload();
+}
+
+function getFlatTableStateById(tableId) {
+  const tables = Array.isArray(flatTablesState) ? flatTablesState : [];
+  return tables.find((t) => t?.id === tableId) || null;
+}
+
+function findFlatFieldValueRowByRegistryPath(tables, registryPath) {
+  const list = Array.isArray(tables) ? tables : [];
+  const full = String(registryPath || "").trim();
+  if (!full) return null;
+  for (const table of list) {
+    const rows = Array.isArray(table?.rows) ? table.rows : [];
+    for (let i = 0; i < rows.length; i += 1) {
+      const row = rows[i];
+      const meta = row?.__meta || {};
+      if (meta.path === full) return { table, row, rowIndex: i };
+    }
+  }
+  return null;
+}
+
+function formatCompletenessValueForFlatTable(meta, value) {
+  const valueType = String(meta?.valueType || "text").toLowerCase();
+  if (value === null || value === undefined) return "";
+  if (valueType === "boolean") return toYesNo(value);
+  if (valueType === "number") {
+    if (typeof value === "number") return Number.isFinite(value) ? String(value) : "";
+    const raw = String(value || "").trim();
+    return raw;
+  }
+  if (valueType === "list") {
+    if (Array.isArray(value)) {
+      return value
+        .map((v) => String(v || "").trim())
+        .filter((v) => v !== "")
+        .join(", ");
+    }
+    return String(value || "").trim();
+  }
+  return String(value ?? "");
+}
+
+function applyCompletenessValueToFlatTables(targetEffectivePath, coercedValue) {
+  const path = String(targetEffectivePath || "").trim();
+  if (!path) return false;
+  if (!Array.isArray(flatTablesState) || flatTablesState.length === 0) return false;
+
+  const restoreBase = coercedValue === null || coercedValue === undefined;
+
+  // Granular arrays (direct cell addressing by index).
+  const navMatch = path.match(/^granular_data\.navigation_targets\[(\d+)\]\.([^.]+)$/);
+  if (navMatch) {
+    const rowIndex = Number.parseInt(navMatch[1], 10);
+    const key = navMatch[2];
+    if (!Number.isFinite(rowIndex) || rowIndex < 0) return false;
+    const table = getFlatTableStateById("navigation_targets");
+    if (!table || !Array.isArray(table.rows) || rowIndex >= table.rows.length) return false;
+    const row = table.rows[rowIndex];
+
+    const baseTable = getFlatTableBaseById("navigation_targets");
+    const baseRow = Array.isArray(baseTable?.rows) ? baseTable.rows[rowIndex] : null;
+
+    if (restoreBase) {
+      row[key] = baseRow ? baseRow[key] ?? "" : "";
+      return true;
+    }
+
+    if (typeof coercedValue === "boolean") row[key] = toYesNo(coercedValue);
+    else if (typeof coercedValue === "number") row[key] = Number.isFinite(coercedValue) ? String(coercedValue) : "";
+    else if (Array.isArray(coercedValue))
+      row[key] = coercedValue.map((v) => String(v || "").trim()).filter((v) => v !== "").join(", ");
+    else row[key] = String(coercedValue ?? "");
+    return true;
+  }
+
+  const ebusMatch = path.match(/^granular_data\.linear_ebus_stations_detail\[(\d+)\]\.([^.]+)$/);
+  if (ebusMatch) {
+    const rowIndex = Number.parseInt(ebusMatch[1], 10);
+    const key = ebusMatch[2];
+    if (!Number.isFinite(rowIndex) || rowIndex < 0) return false;
+    const table = getFlatTableStateById("linear_ebus_stations_detail");
+    if (!table || !Array.isArray(table.rows) || rowIndex >= table.rows.length) return false;
+    const row = table.rows[rowIndex];
+
+    const baseTable = getFlatTableBaseById("linear_ebus_stations_detail");
+    const baseRow = Array.isArray(baseTable?.rows) ? baseTable.rows[rowIndex] : null;
+
+    if (restoreBase) {
+      row[key] = baseRow ? baseRow[key] ?? "" : "";
+      return true;
+    }
+
+    if (typeof coercedValue === "boolean") row[key] = toYesNo(coercedValue);
+    else if (typeof coercedValue === "number") row[key] = Number.isFinite(coercedValue) ? String(coercedValue) : "";
+    else if (Array.isArray(coercedValue))
+      row[key] = coercedValue.map((v) => String(v || "").trim()).filter((v) => v !== "").join(", ");
+    else row[key] = String(coercedValue ?? "");
+    return true;
+  }
+
+  // Field/value rows (meta.path points at registry.*).
+  const registryPath = `registry.${path}`;
+  const stateLoc = findFlatFieldValueRowByRegistryPath(flatTablesState, registryPath);
+  if (!stateLoc) return false;
+  const meta = stateLoc.row?.__meta || {};
+
+  if (restoreBase) {
+    const baseLoc = findFlatFieldValueRowByRegistryPath(flatTablesBase, registryPath);
+    stateLoc.row.value = baseLoc?.row?.value ?? "";
+    return true;
+  }
+
+  stateLoc.row.value = formatCompletenessValueForFlatTable(meta, coercedValue);
+  return true;
 }
 
 function renderCompletenessPrompts(data) {
@@ -1945,10 +2135,44 @@ function renderCompletenessPrompts(data) {
 
   const hint = document.createElement("div");
   hint.className = "subtle";
-  hint.textContent = "Entries here stage corrections in “Edited JSON (Training)”. For evidence-backed extraction, add to the note and re-run.";
+  hint.textContent =
+    "Edits here update the Flattened Tables below and are recorded in “Edited JSON (Training)”. For evidence-backed extraction, add to the note and re-run.";
   summary.appendChild(hint);
 
   completenessPromptsBodyEl.appendChild(summary);
+
+  const commitCompletenessValue = (promptPath, effectivePath) => {
+    const basePromptPath = String(promptPath || "").trim();
+    const baseEffectivePath = String(effectivePath || "").trim();
+    if (!basePromptPath || !baseEffectivePath) return;
+
+    const spec = getCompletenessInputSpec(basePromptPath);
+    const rawValue = completenessRawValueByPath.get(baseEffectivePath);
+
+    if (spec.type === "ecog") {
+      const raw = String(rawValue ?? "").trim();
+      if (!raw) {
+        applyCompletenessValueToFlatTables("clinical_context.ecog_score", null);
+        applyCompletenessValueToFlatTables("clinical_context.ecog_text", null);
+      } else {
+        const match = raw.match(/^\s*([0-4])\s*$/);
+        if (match) {
+          applyCompletenessValueToFlatTables("clinical_context.ecog_score", Number.parseInt(match[1], 10));
+          applyCompletenessValueToFlatTables("clinical_context.ecog_text", null);
+        } else {
+          applyCompletenessValueToFlatTables("clinical_context.ecog_text", raw);
+          applyCompletenessValueToFlatTables("clinical_context.ecog_score", null);
+        }
+      }
+    } else {
+      const coerced = coerceCompletenessValue(spec, rawValue);
+      const ok = applyCompletenessValueToFlatTables(baseEffectivePath, coerced);
+      if (!ok) console.warn("Completeness prompt update target not found in flattened tables:", baseEffectivePath);
+    }
+
+    renderFlatTablesFromState();
+    recomputeCompletenessEdits(registry, prompts);
+  };
 
   const grouped = new Map();
   prompts.forEach((p) => {
@@ -2009,17 +2233,20 @@ function renderCompletenessPrompts(data) {
       main.appendChild(message);
 
       const path = String(p?.path || "").trim();
-      if (path) {
+      const targetPath = String(p?.target_path || "").trim();
+      const displayPath =
+        path && targetPath && path !== targetPath ? `${path} → ${targetPath}` : (targetPath || path);
+      if (displayPath) {
         const meta = document.createElement("div");
         meta.className = "completeness-item-path";
-        meta.textContent = path;
+        meta.textContent = displayPath;
         main.appendChild(meta);
       }
 
       const controls = document.createElement("div");
       controls.className = "completeness-item-controls";
 
-      const promptPath = String(p?.path || "").trim();
+      const promptPath = String(p?.target_path || p?.path || "").trim();
       const resolved = resolvePromptPath(registry, promptPath);
 
       if (resolved.hasWildcard) {
@@ -2072,7 +2299,7 @@ function renderCompletenessPrompts(data) {
         select.value = stored === undefined || stored === null ? "" : String(stored);
         select.addEventListener("change", () => {
           completenessRawValueByPath.set(effectivePath, String(select.value || ""));
-          recomputeCompletenessEdits(registry, prompts);
+          commitCompletenessValue(promptPath, effectivePath);
         });
         input = select;
       } else if (spec.type === "boolean") {
@@ -2091,7 +2318,7 @@ function renderCompletenessPrompts(data) {
         select.value = stored === undefined || stored === null ? "" : String(stored);
         select.addEventListener("change", () => {
           completenessRawValueByPath.set(effectivePath, String(select.value || ""));
-          recomputeCompletenessEdits(registry, prompts);
+          commitCompletenessValue(promptPath, effectivePath);
         });
         input = select;
       } else if (spec.type === "multiselect" && Array.isArray(spec.options)) {
@@ -2118,7 +2345,7 @@ function renderCompletenessPrompts(data) {
             .map((o) => String(o.value || "").trim())
             .filter((v) => v !== "");
           completenessRawValueByPath.set(effectivePath, vals);
-          recomputeCompletenessEdits(registry, prompts);
+          commitCompletenessValue(promptPath, effectivePath);
         });
         input = select;
       } else {
@@ -2131,8 +2358,8 @@ function renderCompletenessPrompts(data) {
         el.value = stored === undefined || stored === null ? "" : String(stored);
         el.addEventListener("input", () => {
           completenessRawValueByPath.set(effectivePath, String(el.value || ""));
-          recomputeCompletenessEdits(registry, prompts);
         });
+        el.addEventListener("blur", () => commitCompletenessValue(promptPath, effectivePath));
         input = el;
       }
 
@@ -2878,7 +3105,7 @@ function renderClinicalContextTable(data) {
     { label: "Patient sex", value: sex },
     { label: "ASA class", value: asa },
     { label: "Indication category", value: ctx?.indication_category },
-    { label: "Bronchus sign", value: ctx?.bronchus_sign === null || ctx?.bronchus_sign === undefined ? null : (ctx?.bronchus_sign ? "Yes" : "No") },
+    { label: "Bronchus sign", value: ctx?.bronchus_sign },
     { label: "Sedation type", value: sed?.type },
     { label: "Anesthesia provider", value: sed?.anesthesia_provider },
     { label: "Airway type", value: setting?.airway_type },
@@ -3730,7 +3957,29 @@ function buildFlattenedTables(data) {
       path: `registry.${asaInfo.path || "risk_assessment.asa_class"}`,
       valueType: "number",
       inputType: "select",
-      options: [1, 2, 3, 4, 5, 6],
+      options: ASA_CLASS_OPTIONS,
+    },
+  });
+  const ecogScore = registry?.clinical_context?.ecog_score;
+  const ecogText = registry?.clinical_context?.ecog_text;
+  clinicalRows.push({
+    field: "ECOG score",
+    value: Number.isFinite(ecogScore) ? String(ecogScore) : "",
+    __meta: { path: "registry.clinical_context.ecog_score", valueType: "number" },
+  });
+  clinicalRows.push({
+    field: "ECOG (raw text/range)",
+    value: ecogText || "",
+    __meta: { path: "registry.clinical_context.ecog_text", valueType: "text" },
+  });
+  clinicalRows.push({
+    field: "CT bronchus sign",
+    value: registry?.clinical_context?.bronchus_sign || "",
+    __meta: {
+      path: "registry.clinical_context.bronchus_sign",
+      valueType: "text",
+      inputType: "select",
+      options: BRONCHUS_SIGN_OPTIONS,
     },
   });
 
@@ -3785,6 +4034,166 @@ function buildFlattenedTables(data) {
     allowDelete: false,
   });
 
+  const navAgg = registry?.procedures_performed?.navigational_bronchoscopy || {};
+  const navAggPerformed = isPerformedProcedure(navAgg);
+  const navTargetsPresent =
+    Array.isArray(registry?.granular_data?.navigation_targets) && registry.granular_data.navigation_targets.length > 0;
+  if (navAggPerformed || hasProcedureDetails(navAgg) || navTargetsPresent) {
+    tables.push({
+      id: "navigation_bronchoscopy_details",
+      title: "Navigational Bronchoscopy (Aggregate)",
+      columns: [
+        { key: "field", label: "Field", readOnly: true },
+        { key: "value", label: "Value", type: "text" },
+      ],
+      rows: [
+        {
+          field: "Tool-in-lesion confirmed",
+          value: toYesNo(navAgg?.tool_in_lesion_confirmed),
+          __meta: {
+            path: "registry.procedures_performed.navigational_bronchoscopy.tool_in_lesion_confirmed",
+            valueType: "boolean",
+          },
+        },
+        {
+          field: "Tool-in-lesion method",
+          value: navAgg?.confirmation_method || "",
+          __meta: {
+            path: "registry.procedures_performed.navigational_bronchoscopy.confirmation_method",
+            valueType: "text",
+            inputType: "select",
+            options: NAV_CONFIRMATION_METHOD_OPTIONS,
+          },
+        },
+        {
+          field: "CT-to-body divergence (mm)",
+          value: Number.isFinite(navAgg?.divergence_mm) ? String(navAgg.divergence_mm) : "",
+          __meta: {
+            path: "registry.procedures_performed.navigational_bronchoscopy.divergence_mm",
+            valueType: "number",
+          },
+        },
+      ],
+      allowAdd: false,
+      allowDelete: false,
+    });
+  }
+
+  const radial = registry?.procedures_performed?.radial_ebus || {};
+  const radialPerformed = isPerformedProcedure(radial);
+  const rebusUsed =
+    Array.isArray(registry?.granular_data?.navigation_targets) &&
+    registry.granular_data.navigation_targets.some(
+      (t) => t?.rebus_used === true || String(t?.rebus_view || "").trim() !== ""
+    );
+  if (radialPerformed || hasProcedureDetails(radial) || rebusUsed) {
+    tables.push({
+      id: "radial_ebus_details",
+      title: "Radial EBUS (Aggregate)",
+      columns: [
+        { key: "field", label: "Field", readOnly: true },
+        { key: "value", label: "Value", type: "text" },
+      ],
+      rows: [
+        {
+          field: "Probe position",
+          value: radial?.probe_position || "",
+          __meta: {
+            path: "registry.procedures_performed.radial_ebus.probe_position",
+            valueType: "text",
+            inputType: "select",
+            options: RADIAL_EBUS_PROBE_POSITION_OPTIONS,
+          },
+        },
+      ],
+      allowAdd: false,
+      allowDelete: false,
+    });
+  }
+
+  const fibrinolytic = registry?.pleural_procedures?.fibrinolytic_therapy || {};
+  const fibrinolyticPerformed = isPerformedProcedure(fibrinolytic);
+  if (fibrinolyticPerformed || hasProcedureDetails(fibrinolytic)) {
+    tables.push({
+      id: "pleural_fibrinolytic_therapy",
+      title: "Pleural Fibrinolytic Therapy",
+      columns: [
+        { key: "field", label: "Field", readOnly: true },
+        { key: "value", label: "Value", type: "text" },
+      ],
+      rows: [
+        {
+          field: "Agents",
+          value: Array.isArray(fibrinolytic?.agents) ? fibrinolytic.agents.join(", ") : "",
+          __meta: { path: "registry.pleural_procedures.fibrinolytic_therapy.agents", valueType: "list" },
+        },
+        {
+          field: "tPA dose (mg)",
+          value: Number.isFinite(fibrinolytic?.tpa_dose_mg) ? String(fibrinolytic.tpa_dose_mg) : "",
+          __meta: { path: "registry.pleural_procedures.fibrinolytic_therapy.tpa_dose_mg", valueType: "number" },
+        },
+        {
+          field: "DNase dose (mg)",
+          value: Number.isFinite(fibrinolytic?.dnase_dose_mg) ? String(fibrinolytic.dnase_dose_mg) : "",
+          __meta: { path: "registry.pleural_procedures.fibrinolytic_therapy.dnase_dose_mg", valueType: "number" },
+        },
+        {
+          field: "Number of doses",
+          value: Number.isFinite(fibrinolytic?.number_of_doses) ? String(fibrinolytic.number_of_doses) : "",
+          __meta: {
+            path: "registry.pleural_procedures.fibrinolytic_therapy.number_of_doses",
+            valueType: "number",
+          },
+        },
+        {
+          field: "Indication",
+          value: fibrinolytic?.indication || "",
+          __meta: {
+            path: "registry.pleural_procedures.fibrinolytic_therapy.indication",
+            valueType: "text",
+            inputType: "select",
+            options: FIBRINOLYTIC_INDICATION_OPTIONS,
+          },
+        },
+      ],
+      allowAdd: false,
+      allowDelete: false,
+    });
+  }
+
+  const complications = registry?.complications || {};
+  const ptx = complications?.pneumothorax || {};
+  const bleed = complications?.bleeding || {};
+  const showComplications =
+    ptx?.occurred === true ||
+    bleed?.occurred === true ||
+    hasMeaningfulValue(ptx?.intervention) ||
+    hasMeaningfulValue(bleed?.bleeding_grade_nashville);
+  if (showComplications) {
+    tables.push({
+      id: "complications_details",
+      title: "Complications (Key Fields)",
+      columns: [
+        { key: "field", label: "Field", readOnly: true },
+        { key: "value", label: "Value", type: "text" },
+      ],
+      rows: [
+        {
+          field: "Pneumothorax intervention",
+          value: Array.isArray(ptx?.intervention) ? ptx.intervention.join(", ") : "",
+          __meta: { path: "registry.complications.pneumothorax.intervention", valueType: "list" },
+        },
+        {
+          field: "Bleeding grade (Nashville 0–4)",
+          value: Number.isFinite(bleed?.bleeding_grade_nashville) ? String(bleed.bleeding_grade_nashville) : "",
+          __meta: { path: "registry.complications.bleeding.bleeding_grade_nashville", valueType: "number" },
+        },
+      ],
+      allowAdd: false,
+      allowDelete: false,
+    });
+  }
+
   const granular = registry?.granular_data || {};
   const navigationTargets = Array.isArray(granular?.navigation_targets) ? granular.navigation_targets : [];
   tables.push({
@@ -3796,11 +4205,14 @@ function buildFlattenedTables(data) {
       { key: "target_lobe", label: "Lobe", type: "text" },
       { key: "target_segment", label: "Segment", type: "text" },
       { key: "lesion_size_mm", label: "Size (mm)", type: "number" },
+      { key: "distance_from_pleura_mm", label: "Dist from pleura (mm)", type: "number" },
       { key: "ct_characteristics", label: "CT Characteristics", type: "text" },
       { key: "pet_suv_max", label: "PET SUV Max", type: "number" },
       { key: "bronchus_sign", label: "Bronchus Sign", type: "text" },
       { key: "registration_error_mm", label: "Registration Error (mm)", type: "number" },
       { key: "rebus_view", label: "rEBUS View", type: "text" },
+      { key: "tool_in_lesion_confirmed", label: "TIL Confirmed", type: "select", options: YES_NO_OPTIONS },
+      { key: "confirmation_method", label: "TIL Method", type: "select", options: NAV_TARGET_CONFIRMATION_METHOD_OPTIONS },
       { key: "sampling_tools_used", label: "Sampling Tools", type: "text" },
       { key: "number_of_needle_passes", label: "Needle Passes", type: "number" },
       { key: "number_of_forceps_biopsies", label: "Forceps Specimens", type: "number" },
@@ -3814,11 +4226,14 @@ function buildFlattenedTables(data) {
       target_lobe: t?.target_lobe || "",
       target_segment: t?.target_segment || "",
       lesion_size_mm: Number.isFinite(t?.lesion_size_mm) ? String(t.lesion_size_mm) : "",
+      distance_from_pleura_mm: Number.isFinite(t?.distance_from_pleura_mm) ? String(t.distance_from_pleura_mm) : "",
       ct_characteristics: t?.ct_characteristics || "",
       pet_suv_max: Number.isFinite(t?.pet_suv_max) ? String(t.pet_suv_max) : "",
       bronchus_sign: t?.bronchus_sign || "",
       registration_error_mm: Number.isFinite(t?.registration_error_mm) ? String(t.registration_error_mm) : "",
       rebus_view: t?.rebus_view || "",
+      tool_in_lesion_confirmed: toYesNo(t?.tool_in_lesion_confirmed),
+      confirmation_method: t?.confirmation_method || "",
       sampling_tools_used: Array.isArray(t?.sampling_tools_used) ? t.sampling_tools_used.join(", ") : "",
       number_of_needle_passes: Number.isFinite(t?.number_of_needle_passes) ? String(t.number_of_needle_passes) : "",
       number_of_forceps_biopsies: Number.isFinite(t?.number_of_forceps_biopsies) ? String(t.number_of_forceps_biopsies) : "",
@@ -3849,6 +4264,7 @@ function buildFlattenedTables(data) {
       { key: "needle_gauge", label: "Needle Gauge", type: "text" },
       { key: "number_of_passes", label: "Passes", type: "number" },
       { key: "rose_result", label: "ROSE Result", type: "text" },
+      { key: "lymphocytes_present", label: "Lymphocytes", type: "select", options: YES_NO_OPTIONS },
       { key: "morphologic_impression", label: "Morphologic Impression", type: "text" },
     ],
     rows: ebusStations.map((s) => ({
@@ -3865,6 +4281,7 @@ function buildFlattenedTables(data) {
       needle_gauge: s?.needle_gauge ? String(s.needle_gauge) : "",
       number_of_passes: Number.isFinite(s?.number_of_passes) ? String(s.number_of_passes) : "",
       rose_result: s?.rose_result || "",
+      lymphocytes_present: toYesNo(s?.lymphocytes_present),
       morphologic_impression: s?.morphologic_impression || "",
     })),
     allowAdd: false,
@@ -4597,6 +5014,7 @@ function getFlatTableGroupId(tableId) {
   const id = String(tableId || "");
   if (id.startsWith("coding_") || id === "rules_applied" || id === "financial_summary") return "coding";
   if (id === "audit_flags") return "quality";
+  if (id === "complications_details") return "quality";
   if (id === "clinical_context") return "patient";
   if (id === "diagnostic_findings") return "diagnostics";
   if (id === "evidence_traceability") return "evidence";
@@ -5166,6 +5584,66 @@ function applyEditsToPayload(payload, tables) {
     setByPath(payload, meta.path, value);
   });
 
+  const navAggRows = tableMap.get("navigation_bronchoscopy_details")?.rows || [];
+  navAggRows.forEach((row) => {
+    const meta = row.__meta || {};
+    if (!meta.path) return;
+    let value = row.value;
+    if (meta.valueType === "boolean") value = parseYesNo(value);
+    if (meta.valueType === "number") value = parseNumber(value);
+    if (meta.valueType === "list") value = parseList(value);
+    if (meta.valueType === "text") {
+      const trimmed = String(value || "").trim();
+      value = trimmed ? trimmed : null;
+    }
+    setByPath(payload, meta.path, value);
+  });
+
+  const radialEbusRows = tableMap.get("radial_ebus_details")?.rows || [];
+  radialEbusRows.forEach((row) => {
+    const meta = row.__meta || {};
+    if (!meta.path) return;
+    let value = row.value;
+    if (meta.valueType === "boolean") value = parseYesNo(value);
+    if (meta.valueType === "number") value = parseNumber(value);
+    if (meta.valueType === "list") value = parseList(value);
+    if (meta.valueType === "text") {
+      const trimmed = String(value || "").trim();
+      value = trimmed ? trimmed : null;
+    }
+    setByPath(payload, meta.path, value);
+  });
+
+  const fibrinolyticRows = tableMap.get("pleural_fibrinolytic_therapy")?.rows || [];
+  fibrinolyticRows.forEach((row) => {
+    const meta = row.__meta || {};
+    if (!meta.path) return;
+    let value = row.value;
+    if (meta.valueType === "boolean") value = parseYesNo(value);
+    if (meta.valueType === "number") value = parseNumber(value);
+    if (meta.valueType === "list") value = parseList(value);
+    if (meta.valueType === "text") {
+      const trimmed = String(value || "").trim();
+      value = trimmed ? trimmed : null;
+    }
+    setByPath(payload, meta.path, value);
+  });
+
+  const complicationsRows = tableMap.get("complications_details")?.rows || [];
+  complicationsRows.forEach((row) => {
+    const meta = row.__meta || {};
+    if (!meta.path) return;
+    let value = row.value;
+    if (meta.valueType === "boolean") value = parseYesNo(value);
+    if (meta.valueType === "number") value = parseNumber(value);
+    if (meta.valueType === "list") value = parseList(value);
+    if (meta.valueType === "text") {
+      const trimmed = String(value || "").trim();
+      value = trimmed ? trimmed : null;
+    }
+    setByPath(payload, meta.path, value);
+  });
+
   const ebusRows = tableMap.get("linear_ebus_summary")?.rows || [];
   ebusRows.forEach((row) => {
     const meta = row.__meta || {};
@@ -5218,6 +5696,9 @@ function applyEditsToPayload(payload, tables) {
       const size = parseNumber(row?.lesion_size_mm);
       out.lesion_size_mm = size;
 
+      const dist = parseNumber(row?.distance_from_pleura_mm);
+      out.distance_from_pleura_mm = dist;
+
       const ct = String(row?.ct_characteristics || "").trim();
       out.ct_characteristics = ct ? ct : null;
 
@@ -5232,6 +5713,12 @@ function applyEditsToPayload(payload, tables) {
 
       const view = String(row?.rebus_view || "").trim();
       out.rebus_view = view ? view : null;
+
+      const til = parseYesNo(row?.tool_in_lesion_confirmed);
+      out.tool_in_lesion_confirmed = til;
+
+      const method = String(row?.confirmation_method || "").trim();
+      out.confirmation_method = method ? method : null;
 
       const tools = parseList(row?.sampling_tools_used);
       out.sampling_tools_used = tools.length ? tools : null;
@@ -5304,6 +5791,9 @@ function applyEditsToPayload(payload, tables) {
 
       const rose = String(row?.rose_result || "").trim();
       out.rose_result = rose ? rose : null;
+
+      const lymph = parseYesNo(row?.lymphocytes_present);
+      out.lymphocytes_present = lymph;
 
       const imp = String(row?.morphologic_impression || "").trim();
       out.morphologic_impression = imp ? imp : null;

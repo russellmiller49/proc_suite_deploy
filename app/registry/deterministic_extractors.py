@@ -326,6 +326,8 @@ def _maybe_unescape_newlines(text: str) -> str:
 def extract_bronchus_sign(note_text: str) -> Optional[bool]:
     """Extract CT bronchus sign polarity when explicitly documented.
 
+    Air bronchogram phrasing is treated as bronchus sign polarity.
+
     Returns:
         True when positive/present, False when negative/absent, None when not documented/indeterminate.
     """
@@ -352,6 +354,10 @@ def extract_bronchus_sign(note_text: str) -> Optional[bool]:
         # Positive
         (True, r"\bbronchus\s+sign\b[^.\n]{0,40}\b(?:positive|present|yes)\b"),
         (True, r"\b(?:positive|present)\b[^.\n]{0,20}\bbronchus\s+sign\b"),
+        # Air bronchogram phrasing treated as bronchus sign
+        (False, r"\b(?:no|without|absen(?:t|ce))\b[^.\n]{0,60}\bair\s+bronchogram(?:s)?\b"),
+        (False, r"\bair\s+bronchogram(?:s)?\b[^.\n]{0,60}\b(?:not\s+present|absen(?:t|ce))\b"),
+        (True, r"\bair\s+bronchogram(?:s)?\b"),
     ]
 
     for value, pat in patterns:

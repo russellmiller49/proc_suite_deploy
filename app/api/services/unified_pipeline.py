@@ -244,6 +244,7 @@ async def run_unified_pipeline_logic(
             MissingFieldPrompt(
                 group=p.group,
                 path=p.path,
+                target_path=p.target_path,
                 label=p.label,
                 severity=p.severity,
                 message=p.message,

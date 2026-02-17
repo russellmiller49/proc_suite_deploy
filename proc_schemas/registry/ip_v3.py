@@ -276,10 +276,6 @@ class LesionCharacteristics(BaseModel):
         ge=0,
         description="Distance to pleura in mm when explicitly documented (0 if abutting).",
     )
-    air_bronchogram_present: Optional[bool] = Field(
-        default=None,
-        description="Air bronchogram documented on CT when explicitly stated.",
-    )
     pet_suv_max: float | None = Field(
         default=None,
         ge=0,

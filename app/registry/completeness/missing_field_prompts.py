@@ -14,6 +14,7 @@ class MissingFieldPrompt:
 
     group: str
     path: str
+    target_path: str
     label: str
     severity: PromptSeverity
     message: str
@@ -135,6 +136,7 @@ def generate_missing_field_prompts(record: RegistryRecord) -> list[MissingFieldP
         *,
         group: str,
         path: str,
+        target_path: str | None = None,
         label: str,
         severity: PromptSeverity,
         message: str,
@@ -152,6 +154,7 @@ def generate_missing_field_prompts(record: RegistryRecord) -> list[MissingFieldP
             MissingFieldPrompt(
                 group=group,
                 path=path,
+                target_path=target_path or path,
                 label=label,
                 severity=severity,
                 message=message,
@@ -164,17 +167,21 @@ def generate_missing_field_prompts(record: RegistryRecord) -> list[MissingFieldP
     add_prompt_if_missing(
         group="Global",
         path="patient_demographics.age_years",
+        target_path="patient.age",
         label="Patient age (years)",
         severity="required",
         message="Age was not found in the note. Add age in years (e.g., “65-year-old”).",
+        any_of_paths=["patient.age", "patient_demographics.age_years"],
     )
 
     add_prompt_if_missing(
         group="Global",
         path="clinical_context.asa_class",
+        target_path="risk_assessment.asa_class",
         label="ASA class",
         severity="required",
         message="ASA class was not found in the note. Add ASA 1–6 (e.g., “ASA 3”).",
+        any_of_paths=["risk_assessment.asa_class", "clinical_context.asa_class"],
     )
 
     add_prompt_if_missing(
@@ -321,13 +328,6 @@ def generate_missing_field_prompts(record: RegistryRecord) -> list[MissingFieldP
             label="Distance from pleura (mm)",
             severity="recommended",
             message="Distance from pleura was not captured. Add distance (mm/cm) or state abutting pleura.",
-        )
-        add_prompt_if_missing(
-            group="Navigation",
-            path="granular_data.navigation_targets[*].air_bronchogram_present",
-            label="Air bronchogram",
-            severity="recommended",
-            message="Air bronchogram status was not captured. Document present/absent if stated on CT.",
         )
         add_prompt_if_missing(
             group="Navigation",

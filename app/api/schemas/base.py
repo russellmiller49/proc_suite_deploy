@@ -302,6 +302,13 @@ class MissingFieldPrompt(BaseModel):
             "Dotted path relative to the registry root (supports [*] wildcards for arrays)."
         ),
     )
+    target_path: str = Field(
+        ...,
+        description=(
+            "Canonical dotted path relative to the registry root (supports [*] wildcards for arrays). "
+            "The UI should update this path when a user fills a completeness prompt."
+        ),
+    )
     label: str = Field(..., description="Short human label for the missing field.")
     severity: Literal["required", "recommended"] = Field(
         default="recommended",

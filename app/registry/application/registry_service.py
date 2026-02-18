@@ -2170,6 +2170,7 @@ class RegistryService:
             enrich_ebus_node_event_sampling_details,
             enrich_eus_b_sampling_details,
             enrich_linear_ebus_needle_gauge,
+            enrich_specimens_from_specimen_section,
             enrich_medical_thoracoscopy_biopsies_taken,
             enrich_outcomes_complication_details,
             enrich_procedure_success_status,
@@ -2230,6 +2231,9 @@ class RegistryService:
         bal_detail_warnings = enrich_bal_from_procedure_detail(record, masked_note_text)
         if bal_detail_warnings:
             extraction_warnings.extend(bal_detail_warnings)
+        specimens_warnings = enrich_specimens_from_specimen_section(record, raw_note_text or "")
+        if specimens_warnings:
+            extraction_warnings.extend(specimens_warnings)
         aborted_target_warnings = reconcile_aborted_targets(record, masked_note_text)
         if aborted_target_warnings:
             extraction_warnings.extend(aborted_target_warnings)
@@ -2747,6 +2751,35 @@ class RegistryService:
 
             kb_repo = get_kb_repo()
 
+            def _parse_modifier_22_apply_to_targets(text: str) -> set[str]:
+                """Parse explicit "Apply to:" modifier-22 instructions from the note header."""
+                targets: set[str] = set()
+                if not text:
+                    return targets
+                for match in re.finditer(r"(?i)\bapply\s+to\s*:", text):
+                    before = text[max(0, match.start() - 500) : match.start()].lower()
+                    if not re.search(r"\b22\b", before):
+                        continue
+                    if not (
+                        "unusual procedure" in before
+                        or "substantially greater work" in before
+                        or re.search(r"(?i)\bmodifier\s*22\b", before)
+                    ):
+                        continue
+                    tail = text[match.end() : match.end() + 2000]
+                    stop = re.search(
+                        r"(?im)^\s*(?:anesthesia|monitoring|instrument|estimated\s+blood\s+loss|complications?|"
+                        r"procedure\s+in\s+detail|specimen\\(s\\)|impression/plan|impression|plan)\b",
+                        tail,
+                    )
+                    if stop:
+                        tail = tail[: stop.start()]
+                    for m_code in re.finditer(r"\b(\d{5})\b", tail):
+                        targets.add(m_code.group(1))
+                return targets
+
+            modifier_22_targets = _parse_modifier_22_apply_to_targets(raw_note_text or "")
+
             cpt_payload: list[dict[str, Any]] = []
             from app.coder.domain_rules.registry_to_cpt.coding_rules import derive_units_for_codes
 
@@ -2775,6 +2808,12 @@ class RegistryService:
                     and peripheral_tbna_performed
                 ):
                     item["modifiers"] = ["59"]
+                if code_str in modifier_22_targets:
+                    existing_mods = item.get("modifiers")
+                    mods: list[str] = existing_mods if isinstance(existing_mods, list) else []
+                    if "22" not in mods:
+                        mods.append("22")
+                    item["modifiers"] = mods
                 cpt_payload.append(item)
 
             billing["cpt_codes"] = cpt_payload

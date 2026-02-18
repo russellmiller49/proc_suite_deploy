@@ -73,6 +73,18 @@ _PASSES_RE = re.compile(r"(?i)\b(\d{1,2})\s+passes?\b")
 _PASSES_WORD_RE = re.compile(r"(?i)\b(one|two|three|four|five|six|seven|eight|nine|ten)\s+passes?\b")
 _NEEDLE_GAUGE_RE = re.compile(r"(?i)\b(19|21|22|25)\s*[- ]?(?:g|gauge)\b")
 
+_SITE_BLOCK_HEADER_RE = re.compile(r"(?im)^\s*site\s*#?\s*(?P<num>\d{1,2})\s*(?:[:\-–.]|\)\s*)")
+_SITE_STATION_TOKEN_RE = re.compile(
+    r"\b(2R|2L|4R|4L|7|10R|10L|11R(?:S|I)?|11L(?:S|I)?)\b",
+    re.IGNORECASE,
+)
+_SITE_PASSES_RE = re.compile(
+    r"\b(\d{1,2})\b[^.\n]{0,120}\b(?:"
+    r"needle\s+passes?|passes?|endobronchial\s+ultrasound\s+guided\s+transbronchial\s+biops(?:y|ies)"
+    r")\b",
+    re.IGNORECASE,
+)
+
 _SAMPLED_FALSE_RE = re.compile(
     r"(?i)\b(?:"
     r"not\s+biopsied"
@@ -109,6 +121,28 @@ _LYMPH_POS_RE = re.compile(
 _LYMPH_NEG_RE = re.compile(r"(?i)\b(?:no|without|scant|rare)\s+(?:lymphocytes?|lymphoid\s+tissue)\b")
 _BLOOD_ONLY_RE = re.compile(r"(?i)\b(?:blood\s+only|acellular)\b")
 _NONDIAGNOSTIC_RE = re.compile(r"(?i)\b(?:nondiagnostic|non-diagnostic|insufficient)\b")
+
+def _infer_elastography_color_pattern(text: str) -> str | None:
+    """Map narrative elastography descriptors to the granular schema color patterns."""
+    lower = (text or "").lower()
+    if not lower:
+        return None
+
+    if "green/yellow" in lower:
+        return "predominantly_green"
+    if "predominantly soft" in lower and "green" in lower:
+        return "predominantly_green"
+    if "mixed soft and stiff" in lower:
+        return "blue_green"
+    if "mixed" in lower and "blue" in lower and "green" in lower:
+        return "blue_green"
+    if "predominantly" in lower and "blue" in lower:
+        return "predominantly_blue"
+    if "green" in lower and "blue" in lower:
+        return "blue_green"
+    if "green" in lower:
+        return "green"
+    return None
 
 
 def _maybe_unescape_newlines(text: str) -> str:
@@ -423,10 +457,46 @@ def extract_linear_ebus_stations_detail(note_text: str) -> list[dict[str, Any]]:
 
     global_gauge: int | None = None
     global_gauge_evidence: dict[str, Any] | None = None
-    gauge_match = _GLOBAL_NEEDLE_GAUGE_RE.search(text)
-    if not gauge_match:
-        gauge_match = _COMPLETENESS_NEEDLE_GAUGE_RE.search(text)
-    if gauge_match:
+    gauge_matches = list(_GLOBAL_NEEDLE_GAUGE_RE.finditer(text))
+    if not gauge_matches:
+        gauge_matches = list(_COMPLETENESS_NEEDLE_GAUGE_RE.finditer(text))
+    if gauge_matches:
+        # Prefer gauge mentions scoped to EBUS context to avoid pulling peripheral/navigation
+        # TBNA gauges (often earlier in the note) into the nodal EBUS object.
+        ebus_context_re = re.compile(
+            r"(?i)\b(?:ebus|endobronchial\s+ultrasound|convex\s+probe|linear\s+ebus|station|stations|lymph\s+node|mediastin(?:al|um)|hilar)\b"
+        )
+        peripheral_context_re = re.compile(r"(?i)\b(?:lesion|nodule|mass|peripheral|navigat|enb|robotic|radial\s+ebus)\b")
+
+        ebus_scoped: list[re.Match[str]] = []
+        for match in gauge_matches:
+            line_start = text.rfind("\n", 0, match.start()) + 1
+            line_end = text.find("\n", match.end())
+            if line_end == -1:
+                line_end = len(text)
+            line_text = text[line_start:line_end]
+
+            if ebus_context_re.search(line_text) or _STATION_HEADER_RE.search(line_text):
+                ebus_scoped.append(match)
+                continue
+
+            prev_end = line_start - 1
+            prev_nonempty: str | None = None
+            while prev_end > 0:
+                prev_start = text.rfind("\n", 0, prev_end) + 1
+                prev_line = text[prev_start:prev_end].rstrip("\r")
+                if prev_line.strip():
+                    prev_nonempty = prev_line
+                    break
+                prev_end = prev_start - 1
+
+            if prev_nonempty and (ebus_context_re.search(prev_nonempty) or _STATION_HEADER_RE.search(prev_nonempty)):
+                if not peripheral_context_re.search(line_text):
+                    ebus_scoped.append(match)
+
+        used_matches = ebus_scoped if ebus_scoped else gauge_matches
+        gauge_match = used_matches[0]
+
         global_gauge = _to_int(gauge_match.group(1))
         if global_gauge is not None:
             global_gauge_evidence = {
@@ -548,6 +618,67 @@ def extract_linear_ebus_stations_detail(note_text: str) -> list[dict[str, Any]]:
             global_gauge=global_gauge,
             default_sampled=True,
         )
+
+    # Site blocks ("Site 1: The 7 (subcarinal) node ...") often contain the best
+    # per-station sampling counts and elastography narrative.
+    site_blocks = list(_SITE_BLOCK_HEADER_RE.finditer(text))
+    for idx, match in enumerate(site_blocks):
+        start = match.start()
+        end = site_blocks[idx + 1].start() if idx + 1 < len(site_blocks) else len(text)
+        raw_section = text[start:end]
+        leading_trim = len(raw_section) - len(raw_section.lstrip())
+        section_offset = start + leading_trim
+        section = raw_section.strip()
+        if not section:
+            continue
+
+        first_line = section.splitlines()[0].strip() if section.splitlines() else ""
+        station_token: str | None = None
+        for m_station in _SITE_STATION_TOKEN_RE.finditer(first_line):
+            token = (m_station.group(1) or "").strip()
+            if token:
+                station_token = token
+                break
+        if not station_token:
+            continue
+
+        station = _normalize_station_token(station_token)
+        if not station:
+            continue
+
+        entry = by_station.get(station)
+        if entry is None:
+            entry = {"station": station}
+            by_station[station] = entry
+            order.append(station)
+
+        _apply_section_to_entry(
+            entry,
+            section,
+            section_offset=section_offset,
+            global_gauge=global_gauge,
+            global_gauge_evidence=global_gauge_evidence,
+        )
+
+        passes_match = _SITE_PASSES_RE.search(section)
+        if passes_match and entry.get("number_of_passes") is None:
+            try:
+                entry["number_of_passes"] = int(passes_match.group(1))
+                entry["_number_of_passes_evidence"] = {
+                    "text": (passes_match.group(0) or "").strip(),
+                    "start": section_offset + int(passes_match.start()),
+                    "end": section_offset + int(passes_match.end()),
+                }
+            except Exception:
+                pass
+
+        if entry.get("elastography_pattern") is None:
+            inferred = _infer_elastography_color_pattern(section)
+            if inferred:
+                entry["elastography_performed"] = True
+                entry["elastography_pattern"] = inferred
+            elif "elastography" in section.lower():
+                entry.setdefault("elastography_performed", True)
 
     # Size-only station list lines (common in free-text narratives), e.g.:
     #   11L - 7.8mm

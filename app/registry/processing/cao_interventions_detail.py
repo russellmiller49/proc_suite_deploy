@@ -254,7 +254,10 @@ def _extract_cao_interventions_detail(
     pre_context_remaining = 0
     fallback_location = None
     if re.search(
-        r"(?i)\btrachea(?:l)?\b[^.\n]{0,80}\b(?:obstruct|stenos|narrow|lesion|mass|tumou?r|granulation|recanaliz|stent)\b",
+        r"(?i)\btrachea(?:l)?\b[^.\n]{0,80}\b(?:obstruct|stenos|narrow|lesion|mass|tumou?r|granulation|recanaliz|stent)\w*\b",
+        text,
+    ) or re.search(
+        r"(?i)\b(?:obstruct|stenos|narrow|lesion|mass|tumou?r|granulation|recanaliz|stent)\w*\b[^.\n]{0,80}\btrachea(?:l)?\b",
         text,
     ):
         fallback_location = "Trachea"

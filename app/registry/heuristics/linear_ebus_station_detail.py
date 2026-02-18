@@ -102,9 +102,19 @@ def apply_linear_ebus_station_detail_heuristics(
                 continue
             if value in (None, "", [], {}):
                 continue
-            if existing_item.get(key) in (None, "", [], {}):
+            existing_value = existing_item.get(key)
+            if existing_value in (None, "", [], {}):
                 existing_item[key] = value
                 updated = True
+                continue
+
+            # Allow deterministic station-detail parsing to override ambiguous/default values
+            # when it has direct evidence (e.g., avoid peripheral-TBNA gauge leaking into EBUS).
+            if key in {"needle_gauge", "number_of_passes"} and existing_value != value:
+                station_evidence = evidence_by_station.get(station) or {}
+                if station_evidence.get(key):
+                    existing_item[key] = value
+                    updated = True
         if updated:
             by_station[station] = existing_item
 

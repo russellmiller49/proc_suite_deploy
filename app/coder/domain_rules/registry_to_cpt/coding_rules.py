@@ -866,7 +866,7 @@ def derive_all_codes_with_meta(
         )
         has_placement_verb = bool(
             re.search(
-                r"(?i)\b(?:place(?:d|ment)?|deploy(?:ed|ment)?|insert(?:ed|ion)?|implant(?:ed|ation)?|position(?:ed|ing)?)\b",
+                r"(?i)\b(?:place(?:d|ment)|deploy(?:ed|ment)?|insert(?:ed|ion)?|implant(?:ed|ation)?|position(?:ed|ing)?)\b",
                 stent_evidence,
             )
         )
@@ -896,13 +896,12 @@ def derive_all_codes_with_meta(
                     "Stent revision/repositioning documented without removal; coded as placement (31636). Consider modifier 22 when documentation supports increased work."
                 )
         elif removal_action:
+            codes.append("31638")
+            rationales["31638"] = "airway_stent indicates removal/exchange"
             if foreign_body_performed and not placement_action and not revision_action:
                 warnings.append(
-                    "Stent removal documented alongside foreign body removal; suppressed 31638 in favor of 31635."
+                    "Foreign body removal was extracted alongside airway stent removal; coding as 31638 (stent removal). Review if a distinct foreign body was also removed."
                 )
-            else:
-                codes.append("31638")
-                rationales["31638"] = "airway_stent indicates removal/exchange"
         elif _performed(stent):
             warnings.append(
                 "airway_stent.performed=true but action is missing/ambiguous; suppressing stent placement CPT"

@@ -18,11 +18,12 @@ logger = logging.getLogger(__name__)
 # Valid EBUS lymph node stations - canonical format
 VALID_EBUS_STATIONS = frozenset({
     "2R", "2L", "4R", "4L", "7", "10R", "10L", "11R", "11L",
+    "11RS", "11RI", "11LS", "11LI",
     # Also accept numeric-only for station 7
 })
 
 # Pattern to match valid station format
-STATION_PATTERN = re.compile(r"^(2R|2L|4R|4L|7|10R|10L|11R|11L)$", re.IGNORECASE)
+STATION_PATTERN = re.compile(r"^(2R|2L|4R|4L|7|10R|10L|11R(?:S|I)?|11L(?:S|I)?)$", re.IGNORECASE)
 
 # Deterministic station ordering for stable outputs (and tests).
 _EBUS_STATION_SORT_ORDER = (
@@ -35,7 +36,11 @@ _EBUS_STATION_SORT_ORDER = (
     "10R",
     "10L",
     "11R",
+    "11RS",
+    "11RI",
     "11L",
+    "11LS",
+    "11LI",
     "12R",
     "12L",
     "LUNG MASS",
@@ -771,7 +776,7 @@ def validate_station_format(station: str) -> str | None:
     """Validate and normalize a station name to canonical format.
 
     Returns the canonical station name (uppercase) if valid, None otherwise.
-    Valid stations: 2R, 2L, 4R, 4L, 7, 10R, 10L, 11R, 11L
+    Valid stations: 2R, 2L, 4R, 4L, 7, 10R, 10L, 11R/11L (including 11Rs/11Ri/11Ls/11Li)
     """
     if not station:
         return None
@@ -779,16 +784,20 @@ def validate_station_format(station: str) -> str | None:
     # Remove common prefixes
     cleaned = re.sub(r"^(STATION|STN|NODE)[\s:]*", "", cleaned, flags=re.IGNORECASE).strip()
 
-    # Extract the first plausible station token, allowing common sub-station suffixes:
-    # - "11Rs"/"11Ri" -> "11R"
+    # Extract the first plausible station token, preserving common sub-station suffixes:
+    # - "11Rs"/"11Ri" -> "11RS"/"11RI"
     match = re.search(
-        r"(?<![0-9A-Z])(2R|2L|4R|4L|7|10R|10L|11R|11L)(?:[SI])?(?![0-9A-Z])",
+        r"(?<![0-9A-Z])(2R|2L|4R|4L|7|10R|10L|11R|11L)([SI])?(?![0-9A-Z])",
         cleaned,
     )
     if not match:
         return None
 
-    token = match.group(1).upper()
+    base = match.group(1).upper()
+    suffix = (match.group(2) or "").upper().strip()
+    token = base
+    if base in {"11R", "11L"} and suffix in {"S", "I"}:
+        token = f"{base}{suffix}"
 
     # Station 7 is ambiguous; require explicit context unless it is exactly "7".
     if token == "7":
@@ -2933,6 +2942,23 @@ def reconcile_ebus_sampling_from_narrative(record: RegistryRecord, full_text: st
     except Exception:  # pragma: no cover
         normalize_station = None  # type: ignore[assignment]
 
+    def _digit_station_has_node_context(line: str, start: int, end: int) -> bool:
+        """Return True if a digit-only station token (e.g., '7') appears in nodal/station context.
+
+        This avoids misclassifying counts like "Total 7 samples..." as station 7 sampling.
+        """
+        before_char = line[start - 1] if start > 0 else ""
+        after_char = line[end] if end < len(line) else ""
+        if before_char in {"/", "-"} or after_char in {"/", "-"}:
+            return False
+
+        lookbehind = line[max(0, start - 24) : start].lower()
+        lookahead = line[end : end + 42].lower()
+        return bool(
+            re.search(r"\b(?:station|level)\b", lookbehind)
+            or re.search(r"\b(?:node|ln|lymph|subcarinal|paratracheal)\b|\(", lookahead)
+        )
+
     station_to_quote: dict[str, str] = {}
     for raw_line in (full_text or "").splitlines():
         line = (raw_line or "").strip()
@@ -2955,6 +2981,8 @@ def reconcile_ebus_sampling_from_narrative(record: RegistryRecord, full_text: st
 
         for match in _EBUS_STATION_TOKEN_RE.finditer(line):
             token = match.group(1) or ""
+            if token.isdigit() and not _digit_station_has_node_context(line, match.start(1), match.end(1)):
+                continue
             station = normalize_station(token) if normalize_station is not None else token.strip().upper()
             if not station:
                 continue
@@ -2997,6 +3025,10 @@ def reconcile_ebus_sampling_from_narrative(record: RegistryRecord, full_text: st
         for m_station in _EBUS_STATION_TOKEN_RE.finditer(header_line):
             token = (m_station.group(1) or "").strip()
             if token:
+                if token.isdigit() and not _digit_station_has_node_context(
+                    header_line, m_station.start(1), m_station.end(1)
+                ):
+                    continue
                 station_token = token
                 break
         if station_token is None:
@@ -3004,6 +3036,10 @@ def reconcile_ebus_sampling_from_narrative(record: RegistryRecord, full_text: st
                 for m_station in _EBUS_STATION_TOKEN_RE.finditer(ln):
                     token = (m_station.group(1) or "").strip()
                     if token:
+                        if token.isdigit() and not _digit_station_has_node_context(
+                            ln, m_station.start(1), m_station.end(1)
+                        ):
+                            continue
                         station_token = token
                         break
                 if station_token is not None:
@@ -3229,6 +3265,28 @@ def reconcile_aborted_targets(record: RegistryRecord, full_text: str) -> list[st
     except Exception:  # pragma: no cover
         _extract_lung_locations_from_text = None  # type: ignore[assignment]
 
+    segment_token_re = re.compile(r"(?i)\b([LR]B\d{1,2})\b")
+
+    # Many notes abort a target without repeating the bronchus token (RB/LB). Track the
+    # most recent segment mention per lobe so we can attribute abort language to it.
+    last_segment_by_lobe: dict[str, str] = {}
+    if _extract_lung_locations_from_text is not None:
+        for match in segment_token_re.finditer(full_text or ""):
+            seg = (match.group(1) or "").strip().upper()
+            if not seg:
+                continue
+            line_start = full_text.rfind("\n", 0, match.start()) + 1
+            line_end = full_text.find("\n", match.end())
+            if line_end == -1:
+                line_end = len(full_text)
+            line_text = full_text[line_start:line_end]
+            lobes = _extract_lung_locations_from_text(line_text)
+            if len(lobes) != 1:
+                window = full_text[max(0, match.start() - 80) : min(len(full_text), match.end() + 80)]
+                lobes = _extract_lung_locations_from_text(window)
+            if len(lobes) == 1:
+                last_segment_by_lobe[str(lobes[0]).upper().strip()] = seg
+
     aborted_locs: set[str] = set()
     for sentence in re.split(r"(?:\n+|(?<=[.!?])\s+)", full_text):
         if not sentence or not abort_re.search(sentence):
@@ -3237,9 +3295,22 @@ def reconcile_aborted_targets(record: RegistryRecord, full_text: str) -> list[st
             continue
         if _extract_lung_locations_from_text is None:
             continue
-        for loc in _extract_lung_locations_from_text(sentence):
+        lobes_in_sentence = _extract_lung_locations_from_text(sentence)
+        for loc in lobes_in_sentence:
             if loc:
                 aborted_locs.add(str(loc).upper().strip())
+        for seg_match in segment_token_re.finditer(sentence):
+            seg = (seg_match.group(1) or "").strip().upper()
+            if seg:
+                aborted_locs.add(seg)
+
+        # If the abort sentence names only the lobe (e.g., "RLL nodule not identified ... aborted"),
+        # attribute the abort to the most recently mentioned segment in that lobe when available.
+        if not segment_token_re.search(sentence) and len(lobes_in_sentence) == 1:
+            lobe = str(lobes_in_sentence[0]).upper().strip()
+            inferred = last_segment_by_lobe.get(lobe)
+            if inferred:
+                aborted_locs.add(inferred)
 
     if not aborted_locs:
         return warnings
@@ -3703,6 +3774,146 @@ def reconcile_ebus_sampling_from_specimen_log(record: RegistryRecord, full_text:
         pass
 
     warnings.append(f"EBUS_SPECIMEN_OVERRIDE: stations_sampled={confirmed} from specimen log TBNA entries.")
+    return warnings
+
+
+_SPECIMEN_SECTION_HEADER_RE = re.compile(r"(?im)^\s*specimen(?:\(\s*s\s*\))?s?\s*:?\s*$")
+_SPECIMEN_SECTION_STOP_RE = re.compile(
+    r"(?im)^\s*(?:impression/plan|impression|plan|anesthesia|monitoring|instrument|complications?|procedure\s+in\s+detail)\b"
+)
+
+
+def enrich_specimens_from_specimen_section(record: RegistryRecord, full_text: str) -> list[str]:
+    """Populate registry.specimens.specimens_collected from the SPECIMEN(S) section when missing.
+
+    This is a lightweight backstop for notes that explicitly enumerate specimens (e.g., "- RUL BAL")
+    but where the extractor doesn't populate the structured specimens block.
+    """
+    warnings: list[str] = []
+    if not full_text:
+        return warnings
+
+    existing_spec = getattr(record, "specimens", None)
+    existing_list = (
+        getattr(existing_spec, "specimens_collected", None) if existing_spec is not None else None
+    )
+    if isinstance(existing_list, list) and existing_list:
+        return warnings
+
+    header = _SPECIMEN_SECTION_HEADER_RE.search(full_text)
+    if not header:
+        return warnings
+
+    tail = full_text[header.end() :]
+    if not tail:
+        return warnings
+
+    stop = _SPECIMEN_SECTION_STOP_RE.search(tail)
+    if stop:
+        tail = tail[: stop.start()]
+
+    lobe_re = re.compile(r"(?i)\b(RUL|RML|RLL|LUL|LLL|LINGULA)\b")
+    segment_re = re.compile(r"(?i)\b([LR]B\d{1,2})\b")
+    bal_re = re.compile(r"(?i)\bBAL\b|bronchial\s+alveolar\s+lavage")
+
+    def _normalize_location(raw: str) -> str | None:
+        token = (raw or "").strip().upper()
+        if not token:
+            return None
+        if token == "LINGULA":
+            return "Lingula"
+        return token
+
+    def _map_sent_for_token(raw: str) -> str | None:
+        t = (raw or "").strip().lower()
+        if not t:
+            return None
+        if "cyto" in t:
+            return "Cytology"
+        if "cell block" in t or "cellblock" in t:
+            return "Cell block"
+        if "flow" in t:
+            return "Flow cytometry"
+        if "hist" in t or "path" in t:
+            return "Histology"
+        if "micro" in t or "culture" in t:
+            return "Microbiology"
+        if "afb" in t:
+            return "AFB"
+        if "fung" in t:
+            return "Fungal"
+        if "ngs" in t or "molecular" in t:
+            return "Molecular/NGS"
+        if "pd-l1" in t or "pdl1" in t:
+            return "PD-L1"
+        if "cell count" in t or "count" in t:
+            return "Other"
+        return None
+
+    candidates: list[dict[str, object]] = []
+    for raw_line in tail.splitlines():
+        line = (raw_line or "").strip()
+        if not line:
+            if candidates:
+                break
+            continue
+
+        # Strip common bullet prefixes ("-", "--", "*", "•").
+        line = re.sub(r"^[\s\-\*\u2022]+", "", line).strip()
+        if not line:
+            continue
+        if not bal_re.search(line):
+            continue
+
+        loc_match = lobe_re.search(line) or segment_re.search(line)
+        location = _normalize_location(loc_match.group(1)) if loc_match else None
+
+        sent_for: list[str] = []
+        paren = re.search(r"\(([^)]{1,200})\)", line)
+        if paren:
+            raw = paren.group(1)
+            for part in re.split(r"[,/;]|\band\b", raw, flags=re.IGNORECASE):
+                mapped = _map_sent_for_token(part)
+                if mapped and mapped not in sent_for:
+                    sent_for.append(mapped)
+
+        item: dict[str, object] = {"type": "BAL"}
+        if location:
+            item["location"] = location
+        if sent_for:
+            item["sent_for"] = sent_for
+        candidates.append(item)
+
+    if not candidates:
+        return warnings
+
+    try:
+        from typing import get_args
+
+        spec_anno = type(record).model_fields["specimens"].annotation
+        spec_cls = [a for a in get_args(spec_anno) if a is not type(None)][0]
+        list_anno = spec_cls.model_fields["specimens_collected"].annotation
+        list_cls = [a for a in get_args(list_anno) if a is not type(None)][0]
+        item_cls = list_cls.__args__[0]
+
+        validated: list[object] = []
+        seen: set[tuple[str, str]] = set()
+        for cand in candidates:
+            loc = str(cand.get("location") or "").strip()
+            key = ("BAL", loc.upper())
+            if key in seen:
+                continue
+            seen.add(key)
+            validated.append(item_cls.model_validate(cand))
+
+        if not validated:
+            return warnings
+
+        record.specimens = spec_cls.model_validate({"specimens_collected": validated})
+        warnings.append(f"AUTO_SPECIMENS: populated specimens_collected={len(validated)} from SPECIMEN(S) section.")
+    except Exception:
+        return warnings
+
     return warnings
 
 
@@ -5329,10 +5540,50 @@ def enrich_bal_from_procedure_detail(record: RegistryRecord, full_text: str) -> 
     recovered_values = {c.get("recovered") for c in candidates if isinstance(c.get("recovered"), float)}
 
     if len(locs_in_order) > 1 and (len(instilled_values) > 1 or len(recovered_values) > 1):
-        warnings.append(
-            "AMBIGUOUS_BAL_DETAIL: multiple standard BAL candidates in note; not overriding bal fields"
+        # Multi-site BAL with differing volumes can't be represented perfectly in the
+        # single-slot `procedures_performed.bal` schema. When the extractor populated
+        # the BAL slot from a mini-BAL snippet (common), prefer the largest standard
+        # BAL candidate as the representative record.
+        existing_instilled = getattr(bal, "volume_instilled_ml", None)
+        existing_recovered = getattr(bal, "volume_recovered_ml", None)
+
+        def _to_floatish(value: object) -> float | None:
+            try:
+                if value is None:
+                    return None
+                if isinstance(value, (int, float)):
+                    return float(value)
+                return float(str(value).strip())
+            except Exception:
+                return None
+
+        inst_existing = _to_floatish(existing_instilled)
+        rec_existing = _to_floatish(existing_recovered)
+        looks_like_mini_bal = (
+            inst_existing is not None
+            and inst_existing <= 30
+            and (rec_existing is None or rec_existing <= 10)
         )
-        return warnings
+
+        best: dict[str, object] | None = None
+        for c in candidates:
+            inst = c.get("instilled")
+            if not isinstance(inst, float):
+                continue
+            if best is None or inst > float(best.get("instilled") or 0):
+                best = c
+
+        if looks_like_mini_bal and best:
+            candidates = [best]
+            locs_in_order = [str(best.get("loc") or "").strip()] if best.get("loc") else []
+            instilled_values = {best.get("instilled")} if isinstance(best.get("instilled"), float) else set()
+            recovered_values = {best.get("recovered")} if isinstance(best.get("recovered"), float) else set()
+            warnings.append("BAL_MULTI_SITE: selected largest standard BAL candidate (multi-site volumes differ).")
+        else:
+            warnings.append(
+                "AMBIGUOUS_BAL_DETAIL: multiple standard BAL candidates in note; not overriding bal fields"
+            )
+            return warnings
 
     loc = "; ".join(locs_in_order).strip()
     if len(loc) > 180:

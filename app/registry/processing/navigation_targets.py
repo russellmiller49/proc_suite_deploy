@@ -60,7 +60,7 @@ _TARGET_SEGMENT_OF_LOBE_RE = re.compile(
     r"(?is)\btarget\s+lesion\b[^.\n]{0,260}\bin\s+(?:the\s+)?(?P<segment>[A-Za-z][A-Za-z -]{0,60}?Segment)\s+of\s+(?:the\s+)?(?P<lobe>RUL|RML|RLL|LUL|LLL|LINGULA)\b"
 )
 _BRONCHUS_CODE_RE = re.compile(r"\b([LR]B\d{1,2})\b", re.IGNORECASE)
-_NEEDLE_GAUGE_RE = re.compile(r"(?i)\b(19|21|22|25)\s*[- ]?(?:g|gauge)\b")
+_NEEDLE_GAUGE_RE = re.compile(r"(?i)\b(19|21|22|23|25)\s*[- ]?(?:g|gauge)\b")
 _PASSES_RE = re.compile(r"(?i)\b(\d{1,2})\s+passes?\b")
 _SPECIMEN_COUNT_RE = re.compile(r"(?i)\b(\d{1,2})\s+(?:specimens?|samples?|biops(?:y|ies))\b")
 
@@ -678,14 +678,28 @@ def extract_navigation_targets(note_text: str) -> list[dict[str, Any]]:
             tools: list[str] = []
             tbna_match = re.search(r"(?i)\btransbronchial\s+needle\s+aspiration\b|\btbna\b", scan_text)
             if tbna_match:
-                gauge_match = _NEEDLE_GAUGE_RE.search(scan_text[tbna_match.start() : tbna_match.start() + 500])
-                gauge = gauge_match.group(1) if gauge_match else None
-                tools.append(f"Needle ({gauge}G)" if gauge else "Needle")
-
-                passes_match = _PASSES_RE.search(scan_text[tbna_match.start() : tbna_match.start() + 500])
-                if passes_match:
+                window = scan_text[tbna_match.start() : tbna_match.start() + 500]
+                gauges = []
+                for gm in _NEEDLE_GAUGE_RE.finditer(window):
+                    raw = (gm.group(1) or "").strip()
                     try:
-                        target["number_of_needle_passes"] = int(passes_match.group(1))
+                        g = int(raw)
+                    except Exception:
+                        g = None
+                    if g is not None and g not in gauges:
+                        gauges.append(g)
+                gauge_label = None
+                if gauges:
+                    gauge_label = "/".join(f"{g}G" for g in gauges)
+                tools.append(f"Needle ({gauge_label})" if gauge_label else "Needle")
+
+                # Prefer explicit "passes" but accept "Total N samples..." as a proxy when present.
+                passes_match = _PASSES_RE.search(window)
+                total_match = _TOTAL_SAMPLES_RE.search(window) if not passes_match else None
+                match_for_count = passes_match or total_match
+                if match_for_count:
+                    try:
+                        target["number_of_needle_passes"] = int(match_for_count.group(1))
                     except Exception:
                         pass
 
@@ -751,10 +765,17 @@ def extract_navigation_targets(note_text: str) -> list[dict[str, Any]]:
             return []
 
         seen_locations: set[str] = set()
-        for engage in engage_matches:
+        ebus_stop_re = re.compile(r"(?i)\bebus[-\s]*findings\b")
+        for idx, engage in enumerate(engage_matches):
             segment = (engage.group("segment") or "").strip() or None
             lobe = _normalize_lobe(engage.group("lobe")) or None
             bronchus = (engage.group("bronchus") or "").strip()
+
+            next_start = engage_matches[idx + 1].start() if idx + 1 < len(engage_matches) else len(scan_text)
+            section = scan_text[engage.start() : next_start]
+            stop_match = ebus_stop_re.search(section)
+            if stop_match:
+                section = section[: stop_match.start()]
 
             if segment and lobe and bronchus:
                 location_text = f"{segment} of {lobe} ({bronchus})"
@@ -775,7 +796,7 @@ def extract_navigation_targets(note_text: str) -> list[dict[str, Any]]:
             seen_locations.add(location_text.lower())
 
             # Local window: look for lesion size near the engage statement.
-            window = scan_text[engage.start() : min(len(scan_text), engage.start() + 800)]
+            window = section[:800]
             lesion_size_mm: float | None = None
             cm = _TARGET_LESION_SIZE_CM_RE.search(window)
             if cm:
@@ -797,6 +818,71 @@ def extract_navigation_targets(note_text: str) -> list[dict[str, Any]]:
                 target["target_segment"] = segment
             if lesion_size_mm is not None:
                 target["lesion_size_mm"] = lesion_size_mm
+
+            rebus_match = _REBUS_VIEW_RE.search(section)
+            if rebus_match:
+                view = (rebus_match.group(1) or "").strip().title()
+                if view:
+                    target["rebus_used"] = True
+                    target["rebus_view"] = view
+
+            tools: list[str] = []
+
+            tbna_match = re.search(r"(?i)\btransbronchial\s+needle\s+aspiration\b|\btbna\b", section)
+            if tbna_match:
+                tbna_window = section[tbna_match.start() : tbna_match.start() + 700]
+                gauges: list[int] = []
+                for gm in _NEEDLE_GAUGE_RE.finditer(tbna_window):
+                    raw = (gm.group(1) or "").strip()
+                    try:
+                        g = int(raw)
+                    except Exception:
+                        g = None
+                    if g is not None and g not in gauges:
+                        gauges.append(g)
+                gauge_label = "/".join(f"{g}G" for g in gauges) if gauges else None
+                tools.append(f"Needle ({gauge_label})" if gauge_label else "Needle")
+
+                m_total = _TOTAL_SAMPLES_RE.search(tbna_window)
+                m_passes = _PASSES_RE.search(tbna_window) if not m_total else None
+                m_count = m_total or m_passes
+                if m_count:
+                    try:
+                        target["number_of_needle_passes"] = int(m_count.group(1))
+                    except Exception:
+                        pass
+
+            cryo_match = _CRYO_RE.search(section)
+            if cryo_match:
+                tools.append("Cryoprobe")
+                cryo_window = section[cryo_match.start() : cryo_match.start() + 900]
+                m_total = _TOTAL_SAMPLES_RE.search(cryo_window)
+                if m_total:
+                    try:
+                        target["number_of_cryo_biopsies"] = int(m_total.group(1))
+                    except Exception:
+                        pass
+
+            forceps_match = re.search(
+                r"(?i)\bforceps\s+biops(?:y|ies)\b|\btransbronchial\s+forceps\s+biops(?:y|ies)\b",
+                section,
+            )
+            if forceps_match:
+                tools.append("Forceps")
+                forceps_window = section[forceps_match.start() : forceps_match.start() + 500]
+                spec_match = _SPECIMEN_COUNT_RE.search(forceps_window)
+                if spec_match:
+                    try:
+                        target["number_of_forceps_biopsies"] = int(spec_match.group(1))
+                    except Exception:
+                        pass
+
+            brush_match = re.search(r"(?i)\bbrushings?\b|\bcytology\s+brush\b", section)
+            if brush_match:
+                tools.append("Brush")
+
+            if tools:
+                target["sampling_tools_used"] = tools
 
             ct_char = _detect_ct_characteristics(window)
             if ct_char:

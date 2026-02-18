@@ -854,6 +854,7 @@ class ClinicalGuardrails:
         segments: list[str] = []
         placements: list[dict[str, object]] = []
         removed_valve = False
+        pending_segment: str | None = None
         for line in valve_block.splitlines():
             clean = line.strip()
             if not clean:
@@ -865,13 +866,7 @@ class ClinicalGuardrails:
             size_match = re.search(r"(?i)\bsize\s*([0-9]+(?:\.[0-9]+)?)\b", clean)
             if not size_match:
                 continue
-            is_removed = bool(re.search(r"(?i)\bremoved\b|\bretriev|\bextract|\bexplant", clean))
-            if is_removed:
-                removed_valve = True
-                continue
 
-            valve_size = size_match.group(1)
-            sizes.append(valve_size)
             seg = None
             if "\t" in clean:
                 seg = clean.split("\t", 1)[0].strip()
@@ -879,6 +874,21 @@ class ClinicalGuardrails:
                 marker = re.search(r"(?i)\b(?:olympus|pulmonx|zephyr|spiration)\b", clean)
                 if marker:
                     seg = clean[: marker.start()].strip() or None
+
+            is_removed = bool(re.search(r"(?i)\bremoved\b|\bretriev|\bextract|\bexplant", clean))
+            if is_removed:
+                removed_valve = True
+                # Common BLVR template: "Segment ... size 9 placed initially then removed."
+                # The next line may be a replacement valve ("... size 7 placed") without a segment token.
+                if seg:
+                    pending_segment = seg
+                continue
+
+            valve_size = size_match.group(1)
+            sizes.append(valve_size)
+            if not seg and pending_segment:
+                seg = pending_segment
+            pending_segment = None
             if seg:
                 segments.append(seg)
             valve_type: str | None = None
@@ -909,9 +919,12 @@ class ClinicalGuardrails:
             if not blvr.get("valve_sizes") or len(blvr.get("valve_sizes") or []) < count:
                 blvr["valve_sizes"] = sizes
                 changed = True
-            if segments and not blvr.get("segments_treated"):
-                blvr["segments_treated"] = segments
-                changed = True
+            if segments:
+                existing_segments = blvr.get("segments_treated")
+                existing_len = len(existing_segments) if isinstance(existing_segments, list) else 0
+                if not existing_segments or existing_len < len(segments):
+                    blvr["segments_treated"] = segments
+                    changed = True
 
         if removed_valve:
             if self._set_procedure_performed(record_data, "foreign_body_removal", True):

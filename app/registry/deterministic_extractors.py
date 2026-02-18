@@ -85,8 +85,11 @@ def extract_demographics(note_text: str) -> Dict[str, Any]:
     if match:
         result["patient_age"] = int(match.group(1))
 
-    # Pattern 4: "72-year-old male/female"
-    year_old_gender_pattern = r"(\d+)[-\s]year[-\s]old\s*(male|female|man|woman)"
+    # Pattern 4: "72-year-old male/female" (also handles stuttered "66 year old-year-old male")
+    year_old_gender_pattern = (
+        r"\b(\d{1,3})\s*(?:-?\s*year\s*-?\s*old)(?:\s*-\s*year\s*-?\s*old)?\s*"
+        r"(male|female|man|woman)\b"
+    )
     match = re.search(year_old_gender_pattern, note_text, re.IGNORECASE)
     if match:
         result["patient_age"] = int(match.group(1))
@@ -1721,9 +1724,9 @@ def extract_airway_stent(note_text: str) -> Dict[str, Any]:
     # Prefer proximity-based evidence of actual action (avoids history-only mentions).
     placement_window_hit = _stent_action_window_hit(
         text_lower,
-        # Avoid weak cues like "well positioned" (often refers to an existing stent).
+        # Avoid weak cues like "in place"/"well positioned" (often refers to an existing stent).
         # Use a tighter window to prevent "stent ... removed ... LMA inserted" false positives.
-        verbs=["place", "deploy", "insert", "advance", "seat", "deliver", "implant"],
+        verbs=["placed", "placement", "deploy", "insert", "advance", "seat", "deliver", "implant", "position"],
         max_chars=40,
     )
     placement_negated = _stent_placement_negated(text_lower)
@@ -1731,7 +1734,7 @@ def extract_airway_stent(note_text: str) -> Dict[str, Any]:
 
     removal_window_hit = _stent_action_window_hit(
         text_lower,
-        verbs=["remov", "retriev", "extract", "explant", "pull", "peel", "grasp", "exchang", "replac"],
+        verbs=["remov", "retriev", "extract", "explant", "pull", "peel", "exchang", "replac"],
     )
     has_removal = removal_window_hit
 
@@ -1773,13 +1776,16 @@ def extract_airway_stent(note_text: str) -> Dict[str, Any]:
 
     proc: dict[str, Any] = {"performed": True}
 
-    if has_placement:
-        proc["action"] = "Placement"
+    if has_placement and has_removal:
+        proc["action"] = "Revision/Repositioning"
+        proc["airway_stent_removal"] = True
     elif has_removal:
         proc["action"] = "Removal"
         proc["airway_stent_removal"] = True
     elif revision_hint:
         proc["action"] = "Revision/Repositioning"
+    elif has_placement:
+        proc["action"] = "Placement"
 
     action = str(proc.get("action") or "").strip()
     if action == "Placement":

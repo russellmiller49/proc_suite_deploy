@@ -1946,6 +1946,123 @@
                 "Right mainstem",
                 "Left mainstem",
                 "Bronchus intermedius",
+                "RUL",
+                "RML",
+                "RLL",
+                "LUL",
+                "LLL",
+                "Lingula",
+                "Carina (Y)",
+                "Other",
+                null
+              ]
+            },
+            "indication": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "enum": [
+                "Malignant obstruction",
+                "Benign stenosis",
+                "Tracheomalacia",
+                "Fistula",
+                "Post-dilation",
+                "Other",
+                null
+              ]
+            },
+            "deployment_successful": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            }
+          }
+        },
+        "airway_stent_revision": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "properties": {
+            "performed": {
+              "type": "boolean"
+            },
+            "action": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "enum": [
+                "Placement",
+                "Removal",
+                "Revision/Repositioning",
+                "Assessment only",
+                null
+              ]
+            },
+            "airway_stent_removal": {
+              "type": "boolean",
+              "default": false,
+              "description": "True if airway stent removal was performed."
+            },
+            "stent_type": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "enum": [
+                "Silicone - Dumon",
+                "Silicone - Hood",
+                "Silicone - Novatech",
+                "SEMS - Uncovered",
+                "SEMS - Covered",
+                "SEMS - Partially covered",
+                "Hybrid",
+                "Y-Stent",
+                "Other",
+                null
+              ]
+            },
+            "stent_brand": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "diameter_mm": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "minimum": 6,
+              "maximum": 25
+            },
+            "length_mm": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "minimum": 10,
+              "maximum": 100
+            },
+            "location": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "enum": [
+                "Trachea",
+                "Right mainstem",
+                "Left mainstem",
+                "Bronchus intermedius",
+                "RUL",
+                "RML",
+                "RLL",
+                "LUL",
+                "LLL",
+                "Lingula",
                 "Carina (Y)",
                 "Other",
                 null

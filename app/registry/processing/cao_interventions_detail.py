@@ -26,7 +26,7 @@ _CAO_HINT_RE = re.compile(
 
 _CAO_LOCATION_CONTEXT_RE = re.compile(
     r"(?i)\b(?:obstruct|occlud|stenos|narrow|lesion|mass|tumou?r|granulation|"
-    r"endobronchial|recanaliz|debulk|ablat|fungating|web|collapse|stent)\w*\b"
+    r"endobronchial|recanaliz|debulk|ablat|dilat|fungating|web|collapse|stent)\w*\b"
 )
 
 _POST_CUE_RE = re.compile(

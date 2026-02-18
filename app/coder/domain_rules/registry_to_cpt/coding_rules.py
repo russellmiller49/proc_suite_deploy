@@ -840,30 +840,27 @@ def derive_all_codes_with_meta(
         codes.append("31630")
         rationales["31630"] = "airway_dilation.performed=true"
 
-    # Airway stent
+    # Airway stent (supports separate placement + existing-stent revision fields)
     stent = _proc(record, "airway_stent")
+    stent_revision = _proc(record, "airway_stent_revision")
     foreign_body = _proc(record, "foreign_body_removal")
     foreign_body_performed = _performed(foreign_body)
-    if stent is not None:
-        action = _get(stent, "action")
+
+    def _derive_stent_codes(stent_obj: Any, *, field_prefix: str) -> None:
+        if stent_obj is None:
+            return
+
+        action = _get(stent_obj, "action")
         action_text = str(action).strip().lower() if action is not None else ""
-        removal_flag = _get(stent, "airway_stent_removal") is True
+        removal_flag = _get(stent_obj, "airway_stent_removal") is True
 
         assessment_only = action_text.startswith("assessment")
         revision_action = "revision" in action_text or "reposition" in action_text
         placement_action = "placement" in action_text
         removal_action = action_text.startswith("remov") or _stent_action_is_removal(action) or removal_flag
 
-        stent_evidence = _evidence_text_for_prefixes(
-            record,
-            (
-                "procedures_performed.airway_stent",
-                "code_evidence",
-            ),
-        ) or ""
-        has_history_cue = bool(
-            re.search(r"(?i)\b(?:known|existing|prior|previous|history\s+of)\b", stent_evidence)
-        )
+        stent_evidence = _evidence_text_for_prefixes(record, (field_prefix, "code_evidence")) or ""
+        has_history_cue = bool(re.search(r"(?i)\b(?:known|existing|prior|previous|history\s+of)\b", stent_evidence))
         has_placement_verb = bool(
             re.search(
                 r"(?i)\b(?:place(?:d|ment)|deploy(?:ed|ment)?|insert(?:ed|ion)?|implant(?:ed|ation)?|position(?:ed|ing)?)\b",
@@ -872,40 +869,52 @@ def derive_all_codes_with_meta(
         )
 
         if assessment_only:
-            pass
-        elif placement_action and not revision_action and not removal_action:
+            return
+
+        if placement_action and not revision_action and not removal_action:
             codes.append("31636")
-            rationales["31636"] = "airway_stent.action indicates placement"
-        elif revision_action:
+            rationales["31636"] = f"{field_prefix}.action indicates placement"
+            return
+
+        if revision_action:
             # Revision/repositioning can reflect either:
             # - exchange/removal of an existing stent (31638), or
             # - immediate intraprocedural repositioning of a newly placed stent (typically bundled into 31636).
             if removal_action:
                 codes.append("31638")
-                rationales["31638"] = "airway_stent indicates removal/exchange"
+                rationales["31638"] = f"{field_prefix} indicates removal/exchange"
             elif has_history_cue:
                 codes.append("31638")
-                rationales["31638"] = "airway_stent revision/repositioning of an existing stent (history cue present)"
+                rationales["31638"] = f"{field_prefix} revision/repositioning of an existing stent (history cue present)"
             elif not has_placement_verb:
                 codes.append("31638")
-                rationales["31638"] = "airway_stent revision/repositioning without placement verbs (treat as existing stent revision)"
+                rationales["31638"] = f"{field_prefix} revision/repositioning without placement verbs (treat as existing stent revision)"
             else:
                 codes.append("31636")
-                rationales["31636"] = "airway_stent revision/repositioning documented without removal; bundled into placement (consider modifier 22 if significant)"
+                rationales["31636"] = (
+                    f"{field_prefix} revision/repositioning documented without removal; bundled into placement (consider modifier 22 if significant)"
+                )
                 warnings.append(
                     "Stent revision/repositioning documented without removal; coded as placement (31636). Consider modifier 22 when documentation supports increased work."
                 )
-        elif removal_action:
+            return
+
+        if removal_action:
             codes.append("31638")
-            rationales["31638"] = "airway_stent indicates removal/exchange"
+            rationales["31638"] = f"{field_prefix} indicates removal/exchange"
             if foreign_body_performed and not placement_action and not revision_action:
                 warnings.append(
                     "Foreign body removal was extracted alongside airway stent removal; coding as 31638 (stent removal). Review if a distinct foreign body was also removed."
                 )
-        elif _performed(stent):
+            return
+
+        if _performed(stent_obj):
             warnings.append(
-                "airway_stent.performed=true but action is missing/ambiguous; suppressing stent placement CPT"
+                f"{field_prefix}.performed=true but action is missing/ambiguous; suppressing stent placement CPT"
             )
+
+    _derive_stent_codes(stent, field_prefix="procedures_performed.airway_stent")
+    _derive_stent_codes(stent_revision, field_prefix="procedures_performed.airway_stent_revision")
 
     # Mechanical debulking (tumor excision) → 31640
     if _performed(_proc(record, "mechanical_debulking")):
@@ -1464,34 +1473,64 @@ def derive_all_codes_with_meta(
         derived = [c for c in derived if c != "32556"]
         rationales.pop("32556", None)
 
-    # Bundling: stent revision/exchange (31638) supersedes removal/placement in same site.
+    # Bundling: stent revision/exchange (31638) supersedes removal/placement only when the
+    # stent work appears to be on the same anatomic site.
     if "31638" in derived:
         dropped_stent_codes = [c for c in ("31635", "31636") if c in derived]
         if dropped_stent_codes:
-            derived = [c for c in derived if c not in {"31635", "31636"}]
-            for c in dropped_stent_codes:
-                rationales.pop(c, None)
-            warnings.append(
-                "CPT_CONFLICT_STENT_CYCLE: dropped 31635/31636 because 31638 covers stent revision/exchange"
+            placement_loc = _get(_proc(record, "airway_stent"), "location")
+            revision_loc = _get(_proc(record, "airway_stent_revision"), "location")
+            placement_tokens = _airway_site_tokens(placement_loc)
+            revision_tokens = _airway_site_tokens(revision_loc)
+
+            distinct_sites = bool(
+                placement_tokens and revision_tokens and placement_tokens.isdisjoint(revision_tokens)
             )
+
+            if distinct_sites:
+                warnings.append(
+                    "Stent placement (31636) and stent revision/exchange (31638) appear to be at distinct sites; keeping both. Add modifier 59/XS as appropriate."
+                )
+            else:
+                derived = [c for c in derived if c not in {"31635", "31636"}]
+                for c in dropped_stent_codes:
+                    rationales.pop(c, None)
+                warnings.append(
+                    "CPT_CONFLICT_STENT_CYCLE: dropped 31635/31636 because 31638 covers stent revision/exchange"
+                )
 
     # Bundling: Dilation (31630) is typically integral to stent placement/revision
     # when performed to expand the stent at the same anatomic site.
     # Default (safe): assume same site unless the record provides distinct anatomy.
     if "31630" in derived and any(c in derived for c in ("31636", "31638")):
         stent_loc = _get(_proc(record, "airway_stent"), "location")
+        stent_revision_loc = _get(_proc(record, "airway_stent_revision"), "location")
         dilation_loc = _get(_proc(record, "airway_dilation"), "location")
 
         stent_tokens = _airway_site_tokens(stent_loc)
+        stent_revision_tokens = _airway_site_tokens(stent_revision_loc)
         dilation_tokens = _airway_site_tokens(dilation_loc)
-        distinct_locations = bool(
-            stent_tokens and dilation_tokens and stent_tokens.isdisjoint(dilation_tokens)
-        )
+        stent_sites = [t for t in (stent_tokens, stent_revision_tokens) if t]
+        if dilation_tokens and stent_sites:
+            overlaps_any = any(not dilation_tokens.isdisjoint(site) for site in stent_sites)
+            distinct_locations = not overlaps_any
+        else:
+            # Safe default when location detail is missing: assume bundled.
+            distinct_locations = False
 
         if not distinct_locations:
             derived = [c for c in derived if c != "31630"]
             rationales.pop("31630", None)
-            stent_code = "31638" if "31638" in derived else "31636"
+            placement_overlap = bool(stent_tokens and dilation_tokens and not stent_tokens.isdisjoint(dilation_tokens))
+            revision_overlap = bool(
+                stent_revision_tokens and dilation_tokens and not stent_revision_tokens.isdisjoint(dilation_tokens)
+            )
+            if placement_overlap:
+                stent_code = "31636"
+            elif revision_overlap:
+                stent_code = "31638"
+            else:
+                stent_code = "31636" if "31636" in derived else "31638"
             warnings.append(
                 f"31630 (dilation) bundled into {stent_code} (stent). If dilation was performed at a distinct site, add 31630 with modifier 59/XS."
             )

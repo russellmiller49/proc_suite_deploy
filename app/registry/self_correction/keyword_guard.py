@@ -548,8 +548,6 @@ REQUIRED_PATTERNS: dict[str, list[tuple[str, str]]] = {
         (r"(?i)\bmwa\b", "Text mentions MWA."),
         (r"(?i)\bradiofrequency\s+ablation\b", "Text mentions radiofrequency ablation."),
         (r"(?i)\brfa\b", "Text mentions RFA."),
-        (r"(?i)\bcryoablation\b", "Text mentions cryoablation."),
-        (r"(?i)\bcryo\s*ablation\b", "Text mentions cryo ablation."),
     ],
     # Fix for missed rigid bronchoscopy (Report #3)
     "procedures_performed.rigid_bronchoscopy.performed": [
@@ -586,11 +584,11 @@ REQUIRED_PATTERNS: dict[str, list[tuple[str, str]]] = {
     # Pleural: chest tube removal
     "pleural_procedures.chest_tube_removal.performed": [
         (
-            r"(?is)\b(?:chest\s+tube|pigtail\s+catheter|pleural\s+catheter|tube)\b[^.\n]{0,120}\b(?:removed|pulled|withdrawn|discontinued|d/c)\b",
+            r"(?is)\b(?:chest\s+tube|pigtail\s+catheter|pleural\s+(?:catheter|drain)|thoracostomy\s+tube|tube\s+thoracostomy|indwelling\s+pleural\s+catheter|pleurx|ipc)\b[^.\n]{0,120}\b(?:removed|pulled|withdrawn|discontinued|d/c)\b",
             "Text indicates chest tube removal but extraction missed it.",
         ),
         (
-            r"(?is)\b(?:removed|pulled|withdrawn|discontinued|d/c)\b[^.\n]{0,120}\b(?:chest\s+tube|pigtail\s+catheter|pleural\s+catheter|tube)\b",
+            r"(?is)\b(?:removed|pulled|withdrawn|discontinued|d/c)\b[^.\n]{0,120}\b(?:chest\s+tube|pigtail\s+catheter|pleural\s+(?:catheter|drain)|thoracostomy\s+tube|tube\s+thoracostomy|indwelling\s+pleural\s+catheter|pleurx|ipc)\b",
             "Text indicates chest tube removal but extraction missed it.",
         ),
     ],

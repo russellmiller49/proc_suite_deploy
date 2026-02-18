@@ -61,6 +61,7 @@ CUSTOM_FIELD_TYPES[("RegistryRecord", "pleural_procedures", "ipc")] = IPCProcedu
 CUSTOM_FIELD_TYPES[("RegistryRecord", "clinical_context")] = ClinicalContext
 CUSTOM_FIELD_TYPES[("RegistryRecord", "patient_demographics")] = PatientDemographics
 CUSTOM_FIELD_TYPES[("RegistryRecord", "procedures_performed", "airway_stent")] = AirwayStentProcedure
+CUSTOM_FIELD_TYPES[("RegistryRecord", "procedures_performed", "airway_stent_revision")] = AirwayStentProcedure
 CUSTOM_FIELD_TYPES[("RegistryRecord", "procedures_performed", "linear_ebus")] = LinearEBUSProcedure
 CUSTOM_FIELD_TYPES[("RegistryRecord", "procedures_performed", "linear_ebus", "stations_detail")] = list[dict[str, Any]]
 _MODEL_CACHE: dict[tuple[str, ...], type[BaseModel]] = {}

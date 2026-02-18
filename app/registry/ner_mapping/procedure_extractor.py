@@ -353,7 +353,7 @@ class ProcedureExtractor:
 
         def _select_stent_brand() -> str | None:
             candidates = []
-            generic = {"stent", "airway stent", "y-stent", "y stent"}
+            generic = {"stent", "stents", "airway stent", "airway stents", "y-stent", "y stent", "y-stents", "y stents"}
             for ent in stent_brand_entities + stent_device_entities:
                 text = (ent.text or "").strip()
                 if not text:

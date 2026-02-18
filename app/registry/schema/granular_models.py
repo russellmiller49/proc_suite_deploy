@@ -320,6 +320,12 @@ class AirwayStentProcedure(BaseModel):
         "Right mainstem",
         "Left mainstem",
         "Bronchus intermedius",
+        "RUL",
+        "RML",
+        "RLL",
+        "LUL",
+        "LLL",
+        "Lingula",
         "Carina (Y)",
         "Other",
     ] | None = None
@@ -388,6 +394,37 @@ class AirwayStentProcedure(BaseModel):
 
         # Conservative fallback: preserve pipeline stability by treating as unknown.
         return None
+
+    @field_validator("stent_brand", mode="before")
+    @classmethod
+    def normalize_stent_brand(cls, v):
+        if v is None:
+            return None
+        s = str(v).strip()
+        if not s:
+            return None
+        lower = s.lower()
+        if lower in {
+            "stent",
+            "stents",
+            "airway stent",
+            "airway stents",
+            "y-stent",
+            "y stent",
+            "y-stents",
+            "y stents",
+        }:
+            return None
+        # Drop generic suffixes like "Atrium iCast stent" -> "Atrium iCast"
+        s = re.sub(r"(?i)\s+stents?$", "", s).strip()
+        if not s:
+            return None
+        # Normalize common brand shorthands
+        if re.fullmatch(r"(?i)icast", s):
+            return "Atrium iCast"
+        if re.fullmatch(r"(?i)atrium\s+icast", s):
+            return "Atrium iCast"
+        return s
 
     @field_validator("location", mode="before")
     @classmethod

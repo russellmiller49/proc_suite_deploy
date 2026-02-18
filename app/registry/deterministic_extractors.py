@@ -1611,6 +1611,7 @@ _STENT_BRAND_PATTERNS: dict[str, tuple[str, str | None]] = {
     "Dumon": (r"\bdumon\b", "Silicone - Dumon"),
     "Ultraflex": (r"\bultraflex\b", "Other"),
     "Aero": (r"\baero(?:stent)?\b|\baerstent\b", "Other"),
+    "Atrium iCast": (r"\b(?:atrium\s+)?icast\b", "Other"),
 }
 
 
@@ -1674,30 +1675,113 @@ def extract_airway_dilation(note_text: str) -> Dict[str, Any]:
         window_end = min(len(text_lower), match.end() + 240)
         window = text_lower[window_start:window_end]
 
-        size_vals: list[float] = []
-        for m in re.finditer(r"\b(\d+(?:\.\d+)?)\s*mm\b", window):
+        balloon_diameter_mm: float | None = None
+
+        # Common dilation balloon documentation: "<diam sequence> x <length> mm balloon"
+        # Example: "Merit 6-7-8 x 20 mm balloon" -> diameter max=8mm; length=20mm (not stored in schema).
+        seq_x_match = re.search(
+            r"(?i)\b(?P<seq>\d{1,2}(?:\s*[/-]\s*\d{1,2}){1,4})\s*(?:x|×|by)\s*(?P<len>\d+(?:\.\d+)?)\s*mm\b"
+            r"[^.]{0,60}\bballoon\b",
+            window,
+        )
+        if seq_x_match:
             try:
-                size_vals.append(float(m.group(1)))
+                nums = [float(n) for n in re.findall(r"\d{1,2}(?:\.\d+)?", seq_x_match.group("seq") or "")]
+                nums = [n for n in nums if 4 <= n <= 25]
+                if nums:
+                    balloon_diameter_mm = max(nums)
             except Exception:
-                continue
-        # Capture balloon size sequences like "6/7/8 balloon" only when explicit mm values are absent.
-        if not size_vals:
+                balloon_diameter_mm = None
+
+        # Next-most common: "<diam> x <length> mm balloon"
+        if balloon_diameter_mm is None:
+            dim_x_match = re.search(
+                r"(?i)\b(?P<diam>\d+(?:\.\d+)?)\s*(?:mm|cm)?\s*(?:x|×|by)\s*(?P<len>\d+(?:\.\d+)?)\s*(?P<unit>mm|cm)\b"
+                r"[^.]{0,60}\bballoon\b",
+                window,
+            )
+            if dim_x_match:
+                try:
+                    diam = float(dim_x_match.group("diam"))
+                    unit = (dim_x_match.group("unit") or "mm").lower().strip()
+                    if unit == "cm":
+                        diam *= 10.0
+                    if 4 <= diam <= 25:
+                        balloon_diameter_mm = diam
+                except Exception:
+                    balloon_diameter_mm = None
+
+        # Fallback: pick an mm value in range, avoiding obvious "x <length> mm" length tokens.
+        if balloon_diameter_mm is None:
+            candidates: list[float] = []
+            for m in re.finditer(r"\b(\d+(?:\.\d+)?)\s*mm\b", window):
+                prefix = window[max(0, m.start() - 3) : m.start()]
+                if "x" in prefix or "×" in prefix:
+                    continue
+                try:
+                    val = float(m.group(1))
+                except Exception:
+                    continue
+                if 4 <= val <= 25:
+                    candidates.append(val)
+            if candidates:
+                balloon_diameter_mm = max(candidates)
+
+        # Capture balloon size sequences like "6/7/8 balloon" when mm values are absent.
+        if balloon_diameter_mm is None:
             seq_match = re.search(r"\b(\d{1,2})(?:\s*[/-]\s*(\d{1,2}))+\b", window)
             if seq_match and re.search(r"\bballoon\b", window):
-                nums = re.findall(r"\d{1,2}", seq_match.group(0))
-                for num in nums:
-                    try:
-                        size_vals.append(float(num))
-                    except Exception:
-                        continue
+                try:
+                    nums = [float(n) for n in re.findall(r"\d{1,2}", seq_match.group(0) or "")]
+                    nums = [n for n in nums if 4 <= n <= 25]
+                    if nums:
+                        balloon_diameter_mm = max(nums)
+                except Exception:
+                    balloon_diameter_mm = None
 
-        if size_vals:
-            proc["balloon_diameter_mm"] = max(size_vals)
+        if balloon_diameter_mm is not None:
+            proc["balloon_diameter_mm"] = balloon_diameter_mm
+
+        # Best-effort location for downstream bundling (RUL/RML/RLL/LUL/LLL etc).
+        location_map: tuple[tuple[str, str], ...] = (
+            ("RUL", r"(?i)\b(?:rul|right\s+upper(?:\s+lobe)?)\b"),
+            ("RML", r"(?i)\b(?:rml|right\s+middle(?:\s+lobe)?)\b"),
+            ("RLL", r"(?i)\b(?:rll|right\s+lower(?:\s+lobe)?)\b"),
+            ("LUL", r"(?i)\b(?:lul|left\s+upper(?:\s+lobe)?)\b"),
+            ("LLL", r"(?i)\b(?:lll|left\s+lower(?:\s+lobe)?)\b"),
+            ("Lingula", r"(?i)\blingula\b"),
+            ("RMS", r"(?i)\b(?:rms|right\s+main(?:\s*|-)?stem)\b"),
+            ("LMS", r"(?i)\b(?:lms|left\s+main(?:\s*|-)?stem)\b"),
+            ("BI", r"(?i)\b(?:bi|bronchus\s+intermedius)\b"),
+            ("Trachea", r"(?i)\btrachea(?:l)?\b"),
+        )
+        for loc, loc_re in location_map:
+            if re.search(loc_re, window):
+                proc["location"] = loc
+                break
+
+        # Pre/post diameter heuristics.
+        pre_match = re.search(r"(?i)\bdown\s+to\s*(\d+(?:\.\d+)?)\s*mm\b", window)
+        if pre_match:
+            try:
+                proc["pre_dilation_diameter_mm"] = float(pre_match.group(1))
+            except Exception:
+                pass
+        post_match = re.search(r"(?i)\bdilat\w*\b[^.\n]{0,40}\bto\s*(\d+(?:\.\d+)?)\s*mm\b", window)
+        if post_match:
+            try:
+                proc["post_dilation_diameter_mm"] = float(post_match.group(1))
+            except Exception:
+                pass
+
         # Target anatomy heuristic: stent expansion vs stenosis/stricture dilation.
         try:
-            if "stent" in window:
+            if re.search(
+                r"(?i)\bstent\b[^.\n]{0,80}\b(?:expand|dilat)\w*\b|\b(?:expand|dilat)\w*\b[^.\n]{0,80}\bstent\b",
+                window,
+            ):
                 proc["target_anatomy"] = "Stent expansion"
-            elif re.search(r"(?i)\b(?:stenosis|stricture|lesion)\b", window):
+            elif re.search(r"(?i)\b(?:stenos|strictur|narrow|web)\w*\b", window):
                 proc["target_anatomy"] = "Stenosis"
         except Exception:
             pass
@@ -1707,19 +1791,47 @@ def extract_airway_dilation(note_text: str) -> Dict[str, Any]:
 
 
 def extract_airway_stent(note_text: str) -> Dict[str, Any]:
-    """Extract airway stent indicator with a conservative action guess.
+    """Extract airway stent indicator(s) with conservative action guesses.
 
     Notes:
-    - If both placement and removal are present, mark the event as a revision
-      and set airway_stent_removal=True so 31638 can be derived alongside 31636.
+    - If both placement and removal are present, mark the *primary* stent event as a revision
+      and set airway_stent_removal=True so 31638 can be derived.
     - If removal is present without placement, set airway_stent_removal=True so
       31638 can be derived.
+    - If both a new stent placement and a revision of existing stents are documented,
+      emit `airway_stent` for the placement and `airway_stent_revision` for the revision
+      (schema must support the latter).
     """
     preferred_text, _used_detail = _preferred_procedure_detail_text(note_text)
     preferred_text = _strip_cpt_definition_lines(preferred_text)
     text_lower = (preferred_text or "").lower()
     if not text_lower.strip():
         return {}
+
+    def _infer_airway_site_last(raw: str) -> str | None:
+        if not raw:
+            return None
+        patterns: tuple[tuple[str, str], ...] = (
+            ("Trachea", r"(?i)\btrachea(?:l)?\b"),
+            ("Carina (Y)", r"(?i)\bcarina\b|\by-?\s*stent\b"),
+            ("Right mainstem", r"(?i)\b(?:rms|right\s+main(?:\s*|-)?stem)\b"),
+            ("Left mainstem", r"(?i)\b(?:lms|left\s+main(?:\s*|-)?stem)\b"),
+            ("Bronchus intermedius", r"(?i)\b(?:bi|bronchus\s+intermedius)\b"),
+            ("RUL", r"(?i)\b(?:rul|right\s+upper(?:\s+lobe)?)\b"),
+            ("RML", r"(?i)\b(?:rml|right\s+middle(?:\s+lobe)?)\b"),
+            ("RLL", r"(?i)\b(?:rll|right\s+lower(?:\s+lobe)?)\b"),
+            ("LUL", r"(?i)\b(?:lul|left\s+upper(?:\s+lobe)?)\b"),
+            ("LLL", r"(?i)\b(?:lll|left\s+lower(?:\s+lobe)?)\b"),
+            ("Lingula", r"(?i)\blingula\b"),
+        )
+        best_loc: str | None = None
+        best_pos = -1
+        for loc, pat in patterns:
+            for m in re.finditer(pat, raw):
+                if m.start() >= best_pos:
+                    best_pos = m.start()
+                    best_loc = loc
+        return best_loc
 
     # Prefer proximity-based evidence of actual action (avoids history-only mentions).
     placement_window_hit = _stent_action_window_hit(
@@ -1734,9 +1846,16 @@ def extract_airway_stent(note_text: str) -> Dict[str, Any]:
 
     removal_window_hit = _stent_action_window_hit(
         text_lower,
-        verbs=["remov", "retriev", "extract", "explant", "pull", "peel", "exchang", "replac"],
+        # Do not treat generic "pulled ... stent" manipulation as removal; require stronger verbs.
+        verbs=["remov", "retriev", "extract", "explant", "exchang", "replac"],
     )
-    has_removal = removal_window_hit
+    pull_out_hit = bool(
+        re.search(
+            r"(?i)\bstent\b[^.\n]{0,40}\bpull(?:ed)?\s+out\b|\bpull(?:ed)?\s+out\b[^.\n]{0,40}\bstent\b",
+            text_lower,
+        )
+    )
+    has_removal = bool(removal_window_hit or pull_out_hit)
 
     revision_window_hit = _stent_action_window_hit(
         text_lower,
@@ -1774,63 +1893,142 @@ def extract_airway_stent(note_text: str) -> Dict[str, Any]:
     if placement_negated and not has_removal and not revision_hint:
         return {}
 
-    proc: dict[str, Any] = {"performed": True}
+    existing_revision_hint = bool(
+        re.search(r"(?i)\b(?:existing|prior|previous|known|left[- ]sided)\b[^.\n]{0,140}\bstent", text_lower)
+        or re.search(r"(?i)\bin[- ]stent\b[^.\n]{0,120}\bsecretions?\b", text_lower)
+        or re.search(r"(?i)\bstent(?:s)?\b[^.\n]{0,120}\b(?:revis|revision|reposition|adjust)", text_lower)
+    )
+    has_existing_revision = bool(revision_hint and existing_revision_hint)
 
-    if has_placement and has_removal:
-        proc["action"] = "Revision/Repositioning"
-        proc["airway_stent_removal"] = True
-    elif has_removal:
-        proc["action"] = "Removal"
-        proc["airway_stent_removal"] = True
-    elif revision_hint:
-        proc["action"] = "Revision/Repositioning"
-    elif has_placement:
-        proc["action"] = "Placement"
+    def _best_stent_size_candidate(text: str) -> tuple[str, float | None, float | None, int] | None:
+        size_re = re.compile(
+            r"(?i)\b(?P<diam>\d+(?:\.\d+)?)\s*(?:(?P<unit1>mm|cm)\s*)?(?:x|×|by)\s*"
+            r"(?P<len>\d+(?:\.\d+)?)\s*(?P<unit2>mm|cm)\b"
+        )
+        candidates: list[tuple[int, int, str, float | None, float | None]] = []
+        for m in size_re.finditer(text or ""):
+            raw = (m.group(0) or "").strip()
+            if not raw:
+                continue
+            tight_start = max(0, m.start() - 80)
+            tight_end = min(len(text), m.end() + 80)
+            tight = (text or "")[tight_start:tight_end].lower()
+            if "stent" not in tight:
+                continue
+            ctx_start = max(0, m.start() - 120)
+            ctx_end = min(len(text), m.end() + 160)
+            ctx = (text or "")[ctx_start:ctx_end].lower()
 
-    action = str(proc.get("action") or "").strip()
-    if action == "Placement":
-        proc["action_type"] = "placement"
-    elif action == "Removal":
-        proc["action_type"] = "removal"
-    elif action == "Revision/Repositioning":
-        proc["action_type"] = "revision"
-    elif action == "Assessment only":
-        proc["action_type"] = "assessment_only"
+            try:
+                diameter = float(m.group("diam"))
+                length = float(m.group("len"))
+            except Exception:
+                diameter = None
+                length = None
 
-    # Best-effort stent type/brand
-    if re.search(r"\by-?\s*stent\b", text_lower):
-        proc["stent_type"] = "Y-Stent"
-    else:
-        brand, stent_type = _select_stent_brand(text_lower, proc.get("action"))
+            unit1 = (m.group("unit1") or m.group("unit2") or "mm").lower().strip()
+            unit2 = (m.group("unit2") or "mm").lower().strip()
+            if diameter is not None and unit1 == "cm":
+                diameter *= 10.0
+            if length is not None and unit2 == "cm":
+                length *= 10.0
+
+            # Score: prefer explicit placement/deployment context and later (narrative) mentions.
+            score = 0
+            if re.search(r"(?i)\b(?:deployed|deploy(?:ment)?|placed|placement|insert(?:ed|ion)?|implant(?:ed|ation)?)\b", ctx):
+                score += 2
+            if re.search(r"(?i)\b(?:existing|prior|previous|known)\b", ctx):
+                score -= 1
+            if diameter is not None and length is not None and 6 <= diameter <= 25 and 10 <= length <= 100:
+                score += 1
+
+            candidates.append((score, m.start(), raw, diameter, length))
+
+        if not candidates:
+            return None
+        best = max(candidates, key=lambda item: (item[0], item[1]))
+        return best[2], best[3], best[4], best[1]
+
+    def _apply_brand_type(proc: dict[str, Any], *, action: str) -> None:
+        if re.search(r"\by-?\s*stent\b", text_lower):
+            proc["stent_type"] = "Y-Stent"
+            return
+        brand, stent_type = _select_stent_brand(text_lower, action)
         if brand:
             proc["stent_brand"] = brand
         if stent_type and not proc.get("stent_type"):
             proc["stent_type"] = stent_type
 
-    size_match = re.search(
-        r"(?i)\b(?P<diam>\d+(?:\.\d+)?)\s*(?:x|by)\s*(?P<len>\d+(?:\.\d+)?)\s*(?P<unit>mm|cm)\b",
-        preferred_text or "",
-    )
-    if size_match:
-        raw = size_match.group(0).strip()
-        proc["device_size"] = raw
-        try:
-            diameter = float(size_match.group("diam"))
-            length = float(size_match.group("len"))
-        except (TypeError, ValueError):
-            diameter = None
-            length = None
-        unit = (size_match.group("unit") or "").lower().strip()
-        if diameter is not None and length is not None:
-            if unit == "cm":
-                diameter *= 10.0
-                length *= 10.0
-            if 6 <= diameter <= 25:
-                proc["diameter_mm"] = diameter
-            if 10 <= length <= 100:
-                proc["length_mm"] = length
+    result: dict[str, Any] = {}
 
-    return {"airway_stent": proc}
+    # Primary event: prefer capturing placement details when present.
+    if has_placement:
+        placement_proc: dict[str, Any] = {"performed": True, "action": "Placement"}
+        _apply_brand_type(placement_proc, action="Placement")
+
+        size_candidate = _best_stent_size_candidate(preferred_text or "")
+        if size_candidate:
+            raw_size, diameter, length, pos = size_candidate
+            if diameter is not None and length is not None and 6 <= diameter <= 25 and 10 <= length <= 100:
+                placement_proc["device_size"] = raw_size
+                placement_proc["diameter_mm"] = diameter
+                placement_proc["length_mm"] = length
+                # Infer site from immediate pre-context to avoid later BI manipulation phrases.
+                lookback = (preferred_text or "")[max(0, pos - 700) : pos]
+                inferred = _infer_airway_site_last(lookback)
+                if inferred:
+                    placement_proc["location"] = inferred
+
+        if re.search(r"(?i)\b(?:deployed|placed|inserted)\b[^.\n]{0,120}\b(?:in\s+good\s+position|well\s+positioned|good\s+position)\b", preferred_text or ""):
+            placement_proc["deployment_successful"] = True
+        result["airway_stent"] = placement_proc
+
+        # Secondary: existing-stent revision documented alongside a new placement.
+        if has_existing_revision and not has_removal:
+            revision_proc: dict[str, Any] = {"performed": True, "action": "Revision/Repositioning"}
+            # Best-effort: left-sided stents are usually LMS/LUL/LLL; keep coarse.
+            if re.search(r"(?i)\b(?:lms|left\s+main(?:\s*|-)?stem)\b", preferred_text or "") or re.search(
+                r"(?i)\bleft[-\s]?sided\b", preferred_text or ""
+            ):
+                revision_proc["location"] = "Left mainstem"
+            result["airway_stent_revision"] = revision_proc
+
+    # If no placement, fall back to a single conservative stent action classification.
+    if not has_placement:
+        proc: dict[str, Any] = {"performed": True}
+        if has_removal:
+            proc["action"] = "Removal"
+            proc["airway_stent_removal"] = True
+        elif revision_hint:
+            proc["action"] = "Revision/Repositioning"
+        _apply_brand_type(proc, action=str(proc.get("action") or ""))
+        result["airway_stent"] = proc
+
+    # Exchange/removal + placement in the same session: represent as revision on the primary stent.
+    if has_placement and has_removal:
+        proc = result.get("airway_stent") if isinstance(result.get("airway_stent"), dict) else {"performed": True}
+        proc["performed"] = True
+        proc["action"] = "Revision/Repositioning"
+        proc["airway_stent_removal"] = True
+        result["airway_stent"] = proc
+        result.pop("airway_stent_revision", None)
+
+    # Populate action_type for stability in non-validated downstream consumers.
+    for key in ("airway_stent", "airway_stent_revision"):
+        proc = result.get(key)
+        if not isinstance(proc, dict):
+            continue
+        action = str(proc.get("action") or "").strip()
+        if action == "Placement":
+            proc["action_type"] = "placement"
+        elif action == "Removal":
+            proc["action_type"] = "removal"
+        elif action == "Revision/Repositioning":
+            proc["action_type"] = "revision"
+        elif action == "Assessment only":
+            proc["action_type"] = "assessment_only"
+
+    return result or {}
 
 
 def extract_balloon_occlusion(note_text: str) -> Dict[str, Any]:
@@ -3321,8 +3519,10 @@ def extract_percutaneous_tracheostomy(note_text: str) -> Dict[str, Any]:
 
 
 ESTABLISHED_TRACH_ROUTE_PATTERNS = [
-    r"\bvia\s+(?:an?\s+)?(?:existing\s+)?trach(?:eostomy)?\b",
-    r"\bthrough\s+(?:an?\s+)?(?:existing\s+)?trach(?:eostomy)?\b",
+    r"\bvia\s+(?:(?:the|an?)\s+)?(?:existing\s+)?trach(?:eostomy)?\b",
+    r"\bthrough\s+(?:(?:the|an?)\s+)?(?:existing\s+)?trach(?:eostomy)?\b",
+    r"\bvia\s+(?:(?:the|an?)\s+)?(?:existing\s+)?trach(?:eostomy)?\s+tube\b",
+    r"\bbronchoscopy\b[^.\n]{0,80}\bvia\b[^.\n]{0,40}\b(?:existing\s+)?trach(?:eostomy)?\s+tube\b",
     r"\bbronchoscopy\b[^.\n]{0,80}\bthrough\b[^.\n]{0,40}\btrach(?:eostomy)?\s+tube\b",
     r"\btrach(?:eostomy)?\s+(?:stoma|tube)\b[^.\n]{0,40}\b(?:used|accessed|entered|through)\b",
     r"\bbronchoscope\b[^.\n]{0,60}\btrach(?:eostomy)?\b",

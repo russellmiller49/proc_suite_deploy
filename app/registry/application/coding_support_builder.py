@@ -95,7 +95,7 @@ def default_evidence_prefixes_for_code(code: str) -> list[str]:
         "31635": ["procedures_performed.foreign_body_removal"],
         "31636": ["procedures_performed.airway_stent"],
         "31637": ["procedures_performed.airway_stent"],
-        "31638": ["procedures_performed.airway_stent"],
+        "31638": ["procedures_performed.airway_stent_revision", "procedures_performed.airway_stent"],
         "31640": ["procedures_performed.mechanical_debulking"],
         "31641": [
             "procedures_performed.thermal_ablation",

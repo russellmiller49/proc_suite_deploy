@@ -711,7 +711,96 @@ class RegistryService:
         meta["extraction_engine"] = extraction_engine
 
         raw_note_text = note_text
-        masked_note_text, mask_meta = mask_extraction_noise(raw_note_text)
+        preprocessed_note_text = raw_note_text
+
+        # Optional vendor fingerprinting + cleanup (offset-preserving).
+        # This runs on already-extracted text (ideally already scrubbed by the client),
+        # and must not log or emit raw clinical text.
+        try:
+            from app.document_fingerprint.registry import fingerprint_document, split_pdf_fulltext
+
+            doc = split_pdf_fulltext(raw_note_text)
+            fp = fingerprint_document(raw_note_text, doc.page_texts)
+            meta["document_fingerprint"] = {
+                "vendor": fp.vendor,
+                "template_family": fp.template_family,
+                "confidence": fp.confidence,
+                "page_types": fp.page_types,
+            }
+
+            if fp.vendor != "unknown":
+                counts: dict[str, int] = {}
+                for t in (fp.page_types or []):
+                    counts[t] = counts.get(t, 0) + 1
+                top_types = ", ".join(f"{k}={v}" for k, v in sorted(counts.items()))
+                warnings.append(
+                    f"DOC_FINGERPRINT: vendor={fp.vendor} family={fp.template_family} "
+                    f"conf={fp.confidence:.2f} pages={len(doc.pages)} {top_types}".strip()
+                )
+
+            # Only apply cleaners when the fingerprint is confident enough.
+            if fp.vendor == "endosoft" and fp.confidence >= 0.75:
+                from app.text_cleaning.endosoft_cleaner import (
+                    EndoSoftCleanMeta,
+                    clean_endosoft_page_with_meta,
+                )
+
+                totals = EndoSoftCleanMeta()
+                cleaned_bodies: list[str] = []
+                for body, page_type in zip(doc.page_texts, fp.page_types or [], strict=False):
+                    clean_body, page_meta = clean_endosoft_page_with_meta(body, page_type)
+                    cleaned_bodies.append(clean_body)
+                    totals.masked_footer_lines += page_meta.masked_footer_lines
+                    totals.masked_caption_lines += page_meta.masked_caption_lines
+                    totals.masked_dedup_blocks += page_meta.masked_dedup_blocks
+
+                if cleaned_bodies:
+                    preprocessed_note_text = doc.reassemble(cleaned_page_bodies=cleaned_bodies)
+                    meta["document_cleaning"] = {
+                        "vendor": "endosoft",
+                        "masked_footer_lines": totals.masked_footer_lines,
+                        "masked_caption_lines": totals.masked_caption_lines,
+                        "masked_dedup_blocks": totals.masked_dedup_blocks,
+                    }
+                    warnings.append(
+                        "DOC_CLEAN: endosoft "
+                        f"footers={totals.masked_footer_lines} "
+                        f"captions={totals.masked_caption_lines} "
+                        f"dedup_blocks={totals.masked_dedup_blocks}"
+                    )
+
+            elif fp.vendor == "provation" and fp.confidence >= 0.75:
+                from app.text_cleaning.provation_cleaner import clean_provation
+
+                page_meta = clean_provation(doc.page_texts, fp.page_types)
+                cleaned_bodies = [p.clean_text for p in page_meta]
+                if cleaned_bodies:
+                    preprocessed_note_text = doc.reassemble(cleaned_page_bodies=cleaned_bodies)
+                    sums = {
+                        "masked_boilerplate_lines": 0,
+                        "masked_caption_lines": 0,
+                        "masked_consecutive_line_dupes": 0,
+                        "masked_block_dupes": 0,
+                    }
+                    for p in page_meta:
+                        metrics = p.metrics or {}
+                        for k in list(sums.keys()):
+                            try:
+                                sums[k] += int(metrics.get(k, 0) or 0)
+                            except (TypeError, ValueError):
+                                continue
+                    meta["document_cleaning"] = {"vendor": "provation", **sums}
+                    warnings.append(
+                        "DOC_CLEAN: provation "
+                        f"boilerplate={sums['masked_boilerplate_lines']} "
+                        f"captions={sums['masked_caption_lines']} "
+                        f"line_dupes={sums['masked_consecutive_line_dupes']} "
+                        f"block_dupes={sums['masked_block_dupes']}"
+                    )
+        except Exception as exc:
+            warnings.append(f"DOC_PREPROCESS_FAILED: {type(exc).__name__}")
+
+        masked_note_text, mask_meta = mask_extraction_noise(preprocessed_note_text)
         meta["masked_note_text"] = masked_note_text
         meta["masking_meta"] = mask_meta
 
@@ -1452,10 +1541,37 @@ class RegistryService:
                                         abnormalities.append("Vocal cord abnormality")
                                         found.append("vocal_cord_abnormality")
 
+                            # Blood/clot mentions (often missed by the LLM when templated under "Findings").
+                            # Be conservative: require "clot" in an airway/obstruction context.
+                            if "Blood" not in abnormalities:
+                                if re.search(r"(?i)\b(?:blood|blot)\s+clot\b", full_text) or re.search(
+                                    r"(?i)\bclot\b[^.\n]{0,80}\b(?:obstruct|occlud|block|plug|remov|evacuat|extract)\w*\b",
+                                    full_text,
+                                ):
+                                    abnormalities.append("Blood")
+                                    found.append("blood_clot")
+
+                            # Extrinsic compression / submucosal infiltration (malignant airway disease burden).
+                            if "Extrinsic compression" not in abnormalities:
+                                if re.search(
+                                    r"(?i)\bextrin(?:sic|sec)\s+compression\b|\bexternal\s+compression\b",
+                                    full_text,
+                                ):
+                                    abnormalities.append("Extrinsic compression")
+                                    found.append("extrinsic_compression")
+                            if "Mucosal abnormality" not in abnormalities:
+                                if re.search(r"(?i)\bsubmucosal\s+infiltrat\w*\b", full_text):
+                                    abnormalities.append("Mucosal abnormality")
+                                    found.append("submucosal_infiltration")
+
                             findings_changed = False
-                            if abnormalities and proc.get("airway_abnormalities") in (None, [], {}):
+                            existing_raw = proc.get("airway_abnormalities")
+                            existing_list = existing_raw if isinstance(existing_raw, list) else None
+                            if abnormalities and existing_list != abnormalities:
                                 proc["airway_abnormalities"] = abnormalities
                                 findings_changed = True
+
+                            if findings_changed:
                                 # Evidence anchors for the abnormalities
                                 if "secretions" in found:
                                     _add_first_span_skip_cpt_headers(
@@ -1482,6 +1598,27 @@ class RegistryService:
                                         [
                                             r"\bvocal\s+cords?\b[^.\n]{0,120}\b(?:abnormal|paraly|paralysis|immobil|immobile|lesion|dysfunction)\w*\b"
                                         ],
+                                    )
+                                if "blood_clot" in found:
+                                    _add_first_span_skip_cpt_headers(
+                                        "procedures_performed.diagnostic_bronchoscopy.airway_abnormalities",
+                                        [
+                                            r"\b(?:blood|blot)\s+clot\b",
+                                            r"\bclot\b[^.\n]{0,80}\b(?:removed|evacuated|obstruct|occlud)\w*\b",
+                                        ],
+                                    )
+                                if "extrinsic_compression" in found:
+                                    _add_first_span_skip_cpt_headers(
+                                        "procedures_performed.diagnostic_bronchoscopy.airway_abnormalities",
+                                        [
+                                            r"\bextrin(?:sic|sec)\s+compression\b",
+                                            r"\bexternal\s+compression\b",
+                                        ],
+                                    )
+                                if "submucosal_infiltration" in found:
+                                    _add_first_span_skip_cpt_headers(
+                                        "procedures_performed.diagnostic_bronchoscopy.airway_abnormalities",
+                                        [r"\bsubmucosal\s+infiltrat\w*\b"],
                                     )
 
                             if not proc.get("inspection_findings"):

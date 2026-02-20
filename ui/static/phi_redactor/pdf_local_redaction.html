@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Procedure Suite - Local PDF Redaction</title>
+    <link rel="stylesheet" href="./styles.css" />
+    <script type="module" src="./pdf_local/app.js"></script>
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="title">
+        <div class="h1">Procedure Suite - PDF Local Redaction</div>
+        <div class="subtle">Layout-aware extraction + adaptive OCR + regex PHI preview. Local only.</div>
+      </div>
+      <div class="topbar-links">
+        <a class="topbar-link" href="./index.html">Dashboard</a>
+        <a class="topbar-link" href="./reporter_builder.html">Reporter Builder</a>
+        <a class="topbar-link" href="./workflow.html">Workflow</a>
+      </div>
+      <div class="status">
+        <span id="pdfLocalStatus">Loading...</span>
+        <span id="pdfLocalProgress" class="progress"></span>
+      </div>
+    </header>
+
+    <main class="layout pdf-local-layout">
+      <section class="editorPane">
+        <div class="section-header">
+          <div class="section-title">
+            <span class="section-number">1</span>
+            Upload + Adaptive Extraction
+          </div>
+        </div>
+
+        <div class="controls pdf-local-controls">
+          <input id="pdfFileInput" type="file" accept="application/pdf,.pdf" />
+          <label class="inline-toggle" title="Force OCR on every page during local extraction.">
+            <input id="forceOcrAll" type="checkbox" />
+            OCR all pages
+          </label>
+          <button id="runRegexBtn" class="primary" disabled>Run Regex PHI Detection</button>
+        </div>
+
+        <div class="warning">
+          <strong>PHI Policy:</strong> This page does not upload PDF bytes or unredacted text. Extraction and redaction are local-only.
+        </div>
+
+        <div class="dash-card">
+          <div class="dash-card-header">
+            <div class="section-title">
+              <span class="section-number">2</span>
+              Page Classification
+            </div>
+          </div>
+          <div class="dash-card-body">
+            <div id="pageDecisionWarning" class="subtle"></div>
+            <table class="dash-table pdf-local-table">
+              <thead>
+                <tr>
+                  <th width="8%">Page</th>
+                  <th width="18%">Stats</th>
+                  <th width="16%">Decision</th>
+                  <th width="40%">Reason</th>
+                  <th width="18%">Override</th>
+                </tr>
+              </thead>
+              <tbody id="pdfPagesBody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="dash-grid pdf-local-grid">
+          <div class="dash-col">
+            <div class="dash-card">
+              <div class="dash-card-header">
+                <div class="section-title">
+                  <span class="section-number">3</span>
+                  Native Extracted Text
+                </div>
+              </div>
+              <div class="dash-card-body">
+                <pre id="nativePreview" class="pdf-local-preview"></pre>
+              </div>
+            </div>
+          </div>
+
+          <div class="dash-col">
+            <div class="dash-card">
+              <div class="dash-card-header">
+                <div class="section-title">
+                  <span class="section-number">4</span>
+                  Redacted Preview
+                </div>
+              </div>
+              <div class="dash-card-body">
+                <div id="redactionSummary" class="subtle"></div>
+                <pre id="redactedPreview" class="pdf-local-preview"></pre>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>

@@ -5356,15 +5356,20 @@ def enrich_outcomes_complication_details(record: RegistryRecord, full_text: str)
 
 _BAL_STANDARD_LINE_RE = re.compile(
     r"(?i)\b(?:bronch(?:ial)?\s+alveolar\s+lavage|broncho[-\s]?alveolar\s+lavage|BAL)\b"
-    r"[^.\n]{0,80}\b(?:was\s+)?performed\b[^.\n]{0,80}\b(?:at|in)\b\s+(?P<loc>[^.\n]{3,220})"
+    r"[^.\n]{0,80}\b(?:was\s+)?performed\b[^.\n]{0,80}\b(?:at|in)\b\s+"
+    r"(?P<loc>[^.\n]{3,220}?)"
+    r"(?=\s*(?:,|;|\n|\.|\b(?:and\s+)?sent\s+for\b|\b\d{1,4}\s*(?:cc|ml)\b))"
 )
 _BAL_MINI_PREFIX_RE = re.compile(r"(?i)\bmini\s+(?:bronch(?:ial)?\s+alveolar\s+lavage|bal)\b")
 _BAL_INSTILLED_RE = re.compile(
     r"(?i)\binstill(?:ed|ation)?\s+(?P<num>\d{1,4})\s*(?:cc|ml)\b"
-    r"|\b(?P<num2>\d{1,4})\s*(?:cc|ml)\b[^.\n]{0,30}\binstillat(?:ion|ed)\b"
+    r"|\b(?P<num2>\d{1,4})\s*(?:cc|ml)\b[^.\n]{0,60}\binstill(?:ation|ed)\b"
 )
 _BAL_RETURN_RE = re.compile(
-    r"(?i)\b(?:suction\s*returned(?:\s+with)?|returned\s+with|recovered)\s+(?P<num>\d{1,4})\s*(?:cc|ml)\b"
+    r"(?i)\b(?:"
+    r"(?:suction\s*returned(?:\s+with)?|returned\s+with|returned|recovered)\s+(?P<num>\d{1,4})\s*(?:cc|ml)\b"
+    r"|(?P<num2>\d{1,4})\s*(?:cc|ml)\b(?:\s*(?:was|were|is|are))?\s*(?:returned|recovered)\b"
+    r")"
 )
 
 
@@ -5387,6 +5392,8 @@ def enrich_bal_from_procedure_detail(record: RegistryRecord, full_text: str) -> 
             continue
 
         loc_raw = (match.group("loc") or "").strip().strip(" ,;:-")
+        # Trim specimen-processing tails when the source line is templated.
+        loc_raw = re.sub(r"(?i)\b(?:and\s+)?sent\s+for\b.*$", "", loc_raw).strip(" ,;:-")
         if not loc_raw:
             continue
         if len(loc_raw) > 180:
@@ -5407,8 +5414,9 @@ def enrich_bal_from_procedure_detail(record: RegistryRecord, full_text: str) -> 
             instilled_span = (start + m_inst.start(), start + m_inst.end())
         m_ret = _BAL_RETURN_RE.search(window)
         if m_ret:
+            num_raw = m_ret.group("num") or m_ret.group("num2")
             try:
-                recovered = float(int(m_ret.group("num")))
+                recovered = float(int(num_raw)) if num_raw is not None else None
             except Exception:
                 recovered = None
             recovered_span = (start + m_ret.start(), start + m_ret.end())
@@ -5512,7 +5520,7 @@ def enrich_bal_from_procedure_detail(record: RegistryRecord, full_text: str) -> 
                         rf"(?i)\b(?:returned\s+with|suction\s*returned(?:\s+with)?|recovered)\s+{vol_int}\s*(?:cc|ml)\b",
                         full_text,
                     ) or re.search(
-                        rf"(?i)\b{vol_int}\s*(?:cc|ml)\b\s*(?:return(?:ed)?|recovered)\b",
+                        rf"(?i)\b{vol_int}\s*(?:cc|ml)\b(?:\s*(?:was|were|is|are))?\s*(?:return(?:ed)?|recovered)\b",
                         full_text,
                     )
                     if m:
@@ -5687,7 +5695,7 @@ def enrich_bal_from_procedure_detail(record: RegistryRecord, full_text: str) -> 
                     rf"(?i)\b(?:returned\s+with|suction\s*returned(?:\s+with)?|recovered)\s+{vol_int}\s*(?:cc|ml)\b",
                     full_text,
                 ) or re.search(
-                    rf"(?i)\b{vol_int}\s*(?:cc|ml)\b\s*(?:return(?:ed)?|recovered)\b",
+                    rf"(?i)\b{vol_int}\s*(?:cc|ml)\b(?:\s*(?:was|were|is|are))?\s*(?:return(?:ed)?|recovered)\b",
                     full_text,
                 )
                 if m:

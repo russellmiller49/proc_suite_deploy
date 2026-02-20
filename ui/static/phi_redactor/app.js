@@ -1,4 +1,5 @@
 /* global monaco */
+import { buildPdfDocumentModel, extractPdfAdaptive } from "./pdf_local/pdf/pipeline.js";
 
 const statusTextEl = document.getElementById("statusText");
 const progressTextEl = document.getElementById("progressText");
@@ -59,6 +60,11 @@ const focusClinicalBtn = document.getElementById("focusClinicalBtn");
 const focusBillingBtn = document.getElementById("focusBillingBtn");
 const splitReviewBtn = document.getElementById("splitReviewBtn");
 const toggleDetectionsPaneBtn = document.getElementById("toggleDetectionsPaneBtn");
+const pdfUploadInputEl = document.getElementById("pdfUploadInput");
+const pdfOcrQualitySelectEl = document.getElementById("pdfOcrQualitySelect");
+const pdfOcrMaskSelectEl = document.getElementById("pdfOcrMaskSelect");
+const pdfExtractBtn = document.getElementById("pdfExtractBtn");
+const pdfExtractSummaryEl = document.getElementById("pdfExtractSummary");
 
 let lastServerResponse = null;
 let flatTablesBase = null;
@@ -6922,6 +6928,407 @@ async function main() {
     let bundleDocs = [];
     let lastBundleResponse = null;
     let bundleBusy = false;
+    let extractingPdf = false;
+
+  function formatFileSize(bytes) {
+    if (!Number.isFinite(bytes) || bytes <= 0) return "0 B";
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  }
+
+  function setEditorText(nextText) {
+    suppressDirtyFlag = true;
+    try {
+      if (!usingPlainEditor && editor) editor.setValue(nextText);
+      else model.setValue(nextText);
+    } finally {
+      suppressDirtyFlag = false;
+    }
+  }
+
+  const PDF_UPLOAD_HELP_TEXT =
+    "Input options: paste note text directly, or upload a PDF for layout-aware local extraction with safety gating before PHI detection.";
+
+  function setPdfExtractSummary(message, tone = "neutral") {
+    if (!pdfExtractSummaryEl) return;
+    pdfExtractSummaryEl.textContent = String(message || "");
+    pdfExtractSummaryEl.classList.remove("is-warning", "is-error", "is-success");
+    if (tone === "warning") pdfExtractSummaryEl.classList.add("is-warning");
+    if (tone === "error") pdfExtractSummaryEl.classList.add("is-error");
+    if (tone === "success") pdfExtractSummaryEl.classList.add("is-success");
+  }
+
+  function formatPdfStage(stage) {
+    switch (stage) {
+      case "layout_analysis":
+        return "layout analysis";
+      case "contamination_detection":
+        return "contamination checks";
+      case "adaptive_assembly":
+        return "adaptive text assembly";
+      case "native_extraction_done":
+        return "native extraction complete";
+      case "ocr_prepare":
+        return "OCR preparation";
+      case "ocr_loading_assets":
+        return "OCR asset load";
+      case "ocr_rendering":
+        return "OCR page rendering";
+      case "ocr_recognizing":
+        return "OCR recognition";
+      case "ocr_failed":
+        return "OCR failure";
+      default:
+        return "processing";
+    }
+  }
+
+  function buildPageReasonSummary(docModel, maxPages = 3) {
+    if (!docModel || !Array.isArray(docModel.pages)) return "";
+    const reasons = docModel.pages
+      .filter((page) => page?.classification?.reason)
+      .slice(0, maxPages)
+      .map((page) => `p${page.pageIndex + 1}: ${page.classification.reason}`);
+
+    if (docModel.pages.length > maxPages) {
+      reasons.push(`+${docModel.pages.length - maxPages} more page(s)`);
+    }
+    return reasons.join(" | ");
+  }
+
+  function buildOcrDebugSummary(docModel, maxPages = 2) {
+    if (!docModel || !Array.isArray(docModel.pages)) return "";
+    const ocrPages = docModel.pages.filter((page) => page?.sourceDecision !== "native" && page?.ocrMeta);
+    if (!ocrPages.length) return "";
+
+    const maskModes = new Set();
+    let imageRegionCandidates = 0;
+    let maskedPages = 0;
+    let coverageTotal = 0;
+    let coverageCount = 0;
+    const cropBoxes = [];
+    const figureFilterModes = new Set();
+
+    for (const page of ocrPages) {
+      const masking = page.ocrMeta?.masking;
+      if (masking?.mode) maskModes.add(String(masking.mode));
+      if (masking?.applied) maskedPages += 1;
+      if (Number.isFinite(masking?.candidateCount)) {
+        imageRegionCandidates += Number(masking.candidateCount);
+      }
+      if (Number.isFinite(masking?.coverageRatio)) {
+        coverageTotal += Number(masking.coverageRatio);
+        coverageCount += 1;
+      }
+
+      const crop = page.ocrMeta?.crop;
+      if (crop?.applied && Array.isArray(crop.box) && crop.box.length === 4 && cropBoxes.length < maxPages) {
+        const [x0, y0, x1, y1] = crop.box.map((value) => Math.round(Number(value) || 0));
+        cropBoxes.push(`p${page.pageIndex + 1}[${x0},${y0},${x1},${y1}]`);
+      }
+      if (page.ocrMeta?.filterMode?.reason) {
+        figureFilterModes.add(String(page.ocrMeta.filterMode.reason));
+      }
+    }
+
+    const maskModeText = maskModes.size ? [...maskModes].join("/") : "n/a";
+    const avgCoveragePct = coverageCount ? Math.round((coverageTotal / coverageCount) * 100) : null;
+    const coverageText = avgCoveragePct !== null ? `, maskedArea~${avgCoveragePct}%` : "";
+    const cropText = cropBoxes.length ? `, crop=${cropBoxes.join(" | ")}` : ", crop=none";
+    const figureFilterText = figureFilterModes.size
+      ? `, figFilter=${[...figureFilterModes].join("/")}`
+      : "";
+
+    return ` OCR debug: mask=${maskModeText}, imageRegions=${imageRegionCandidates}, maskedPages=${maskedPages}/${ocrPages.length}${coverageText}${cropText}${figureFilterText}.`;
+  }
+
+  function buildPageMetricsSummary(docModel, maxPages = 3) {
+    const lines = Array.isArray(docModel?.qualitySummary?.pageMetrics)
+      ? docModel.qualitySummary.pageMetrics
+      : [];
+    if (!lines.length) return "";
+    const preview = lines.slice(0, maxPages);
+    if (lines.length > maxPages) {
+      preview.push(`+${lines.length - maxPages} more page(s)`);
+    }
+    return ` Metrics: ${preview.join(" | ")}`;
+  }
+
+  function buildPdfExtractionMetricsReport(docModel, context = {}) {
+    if (!docModel || !Array.isArray(docModel.pages)) return null;
+    const pages = docModel.pages.map((page) => {
+      const metrics = page?.extractionMetrics && typeof page.extractionMetrics === "object"
+        ? page.extractionMetrics
+        : {};
+      const quality = page?.qualityMetrics && typeof page.qualityMetrics === "object"
+        ? page.qualityMetrics
+        : {};
+      const before = Number(metrics.junkScoreBeforeMerge);
+      const after = Number(metrics.junkScoreAfterMerge);
+      return {
+        pageIndex: Number(page?.pageIndex) + 1,
+        nativeTextDensity: Number.isFinite(Number(metrics.nativeTextDensity)) ? Number(metrics.nativeTextDensity) : 0,
+        backfillVotes: Number(metrics.backfillVotes) || 0,
+        backfillStrongVotes: Number(metrics.backfillStrongVotes) || 0,
+        backfillScore: Number(metrics.backfillScore) || 0,
+        backfillSignals: Array.isArray(metrics.backfillSignals) ? metrics.backfillSignals : [],
+        needsOcrBackfill: Boolean(metrics.needsOcrBackfill),
+        mode: String(metrics.mode || "native_only"),
+        ocrRoiCount: Number(metrics.ocrRoiCount) || 0,
+        ocrRoiAreaPx: Number(metrics.ocrRoiAreaPx) || 0,
+        ocrRoiAreaRatio: Number.isFinite(Number(metrics.ocrRoiAreaRatio)) ? Number(metrics.ocrRoiAreaRatio) : 0,
+        junkScoreBeforeMerge: Number.isFinite(before)
+          ? before
+          : (Number.isFinite(quality.junkScoreBeforeMerge) ? Number(quality.junkScoreBeforeMerge) : 0),
+        junkScoreAfterMerge: Number.isFinite(after)
+          ? after
+          : (Number.isFinite(quality.junkScoreAfterMerge) ? Number(quality.junkScoreAfterMerge) : Number(quality.junkScore) || 0),
+      };
+    });
+
+    const byMode = pages.reduce((acc, page) => {
+      const key = String(page.mode || "unknown");
+      acc[key] = (acc[key] || 0) + 1;
+      return acc;
+    }, {});
+    const backfillPages = pages.filter((page) => page.needsOcrBackfill).map((page) => page.pageIndex);
+    const fullOcrPages = pages
+      .filter((page) => page.mode === "full_ocr")
+      .map((page) => page.pageIndex);
+
+    return {
+      generatedAt: new Date().toISOString(),
+      status: context.status || (docModel.blocked ? "blocked" : "success"),
+      blocked: Boolean(docModel.blocked),
+      blockReason: docModel.blockReason || "",
+      fileName: String(docModel.fileName || context.fileName || ""),
+      pageCount: pages.length,
+      context: {
+        ocrQualityMode: context.ocrQualityMode || "",
+        ocrMaskMode: context.ocrMaskMode || "",
+      },
+      byMode,
+      backfillPages,
+      fullOcrPages,
+      pages,
+    };
+  }
+
+  function publishPdfExtractionMetricsReport(report) {
+    if (!report) return;
+    try {
+      window.__lastPdfExtractionMetrics = report;
+      const history = Array.isArray(window.__pdfExtractionMetricsHistory)
+        ? window.__pdfExtractionMetricsHistory
+        : [];
+      history.push(report);
+      window.__pdfExtractionMetricsHistory = history.slice(-20);
+      console.info("[pdf_extract_metrics]", report);
+    } catch {
+      // Ignore diagnostics write failures.
+    }
+  }
+
+  function resetPdfUploadUi() {
+    if (pdfUploadInputEl) pdfUploadInputEl.value = "";
+    setPdfExtractSummary(PDF_UPLOAD_HELP_TEXT, "neutral");
+  }
+
+  async function extractSelectedPdfIntoEditor(file) {
+    if (!file) return;
+    if (running || bundleBusy || extractingPdf) return;
+
+    const looksLikePdf = /\.pdf$/i.test(file.name) || file.type === "application/pdf";
+    if (!looksLikePdf) {
+      setStatus("Please choose a PDF file.");
+      return;
+    }
+
+    extractingPdf = true;
+    publishPdfExtractionMetricsReport({
+      generatedAt: new Date().toISOString(),
+      status: "running",
+      fileName: file?.name || "",
+    });
+    if (runBtn) runBtn.disabled = true;
+    if (cancelBtn) cancelBtn.disabled = true;
+    if (applyBtn) applyBtn.disabled = true;
+    if (submitBtn) submitBtn.disabled = true;
+    updateZkControls();
+
+    setStatus(`Extracting text from ${file.name} with layout-aware local parser...`);
+    setProgress("Starting PDF worker...");
+    setPdfExtractSummary("Analyzing PDF layout and contamination risk locally...", "neutral");
+
+    try {
+      const rawPages = [];
+      let completedPages = 0;
+      let totalPages = 0;
+      let docModel = null;
+      let lastOcrError = "";
+      const ocrQualityMode = pdfOcrQualitySelectEl?.value === "high_accuracy"
+        ? "high_accuracy"
+        : "fast";
+      const ocrMaskMode = pdfOcrMaskSelectEl?.value === "on"
+        ? "on"
+        : pdfOcrMaskSelectEl?.value === "off"
+          ? "off"
+          : "auto";
+
+      for await (const event of extractPdfAdaptive(file, {
+        ocr: {
+          available: true,
+          enabled: true,
+          lang: "eng",
+          qualityMode: ocrQualityMode,
+          maskImages: ocrMaskMode,
+        },
+        gate: {
+          minCompletenessConfidence: 0.72,
+          maxContaminationScore: 0.24,
+          hardBlockWhenUnsafeWithoutOcr: true,
+        },
+      })) {
+        if (event.kind === "progress") {
+          completedPages = event.completedPages;
+          totalPages = event.totalPages;
+          setProgress(`PDF extraction: ${completedPages}/${totalPages} pages`);
+        } else if (event.kind === "ocr_progress") {
+          setProgress(`OCR pass: ${event.completedPages}/${event.totalPages} pages`);
+        } else if (event.kind === "ocr_status") {
+          const pct = Number.isFinite(event.progress) ? Math.round(event.progress * 100) : 0;
+          setProgress(`OCR ${event.status || "processing"} (${pct}%)`);
+        } else if (event.kind === "ocr_error") {
+          lastOcrError = String(event.error || "");
+          setStatus(`OCR failed (${event.error}); using native fallback and gate checks.`);
+        } else if (event.kind === "stage") {
+          const stageLabel = formatPdfStage(event.stage);
+          if (Number.isFinite(event.totalPages) && event.totalPages > 0) {
+            setProgress(`PDF ${stageLabel}: page ${event.pageIndex + 1}/${event.totalPages}`);
+          } else {
+            setProgress(`PDF ${stageLabel}...`);
+          }
+        } else if (event.kind === "page") {
+          rawPages[event.page.pageIndex] = event.page;
+        } else if (event.kind === "done") {
+          docModel = event.document || null;
+        }
+      }
+
+      const pages = rawPages.filter(Boolean).sort((a, b) => a.pageIndex - b.pageIndex);
+      if (!pages.length) {
+        setStatus("No text could be extracted from that PDF.");
+        setPdfExtractSummary("No extractable text was found in this PDF.", "warning");
+        setProgress("");
+        return;
+      }
+
+      if (!docModel) {
+        docModel = buildPdfDocumentModel(file, pages, {
+          ocr: {
+            available: true,
+            enabled: true,
+            lang: "eng",
+            qualityMode: ocrQualityMode,
+          },
+          gate: {
+            minCompletenessConfidence: 0.72,
+            maxContaminationScore: 0.24,
+            hardBlockWhenUnsafeWithoutOcr: true,
+          },
+        });
+      }
+
+      if (docModel.blocked) {
+        const baseSummary =
+          `Blocked loading extracted text from ${file.name}. ` +
+          `Safety gate triggered because native extraction appears incomplete and OCR is unavailable or failed.`;
+        const qualityDetail =
+          `Low-confidence pages: ${docModel.qualitySummary?.lowConfidencePages || 0}; ` +
+          `contaminated pages: ${docModel.qualitySummary?.contaminatedPages || 0}.`;
+        const reason = docModel.blockReason || "Unsafe native extraction.";
+        const ocrFailureDetail = lastOcrError ? ` OCR error: ${lastOcrError}.` : "";
+        setPdfExtractSummary(
+          `${baseSummary} ${qualityDetail} Reason: ${reason}.${ocrFailureDetail}`,
+          "error",
+        );
+        setStatus("PDF extraction blocked for safety. OCR path is required for this document.");
+        setProgress(
+          totalPages > 0
+            ? `PDF extraction blocked after ${completedPages}/${totalPages} pages`
+            : "PDF extraction blocked",
+        );
+        publishPdfExtractionMetricsReport(buildPdfExtractionMetricsReport(docModel, {
+          fileName: file.name,
+          ocrQualityMode,
+          ocrMaskMode,
+          status: "blocked",
+        }));
+        return;
+      }
+
+      const normalizedText = docModel.fullText.startsWith("\n")
+        ? docModel.fullText.slice(1)
+        : docModel.fullText;
+
+      setEditorText(normalizedText);
+      originalText = normalizedText;
+      hasRunDetection = false;
+      setScrubbedConfirmed(false);
+      clearDetections();
+      clearResultsUi();
+      resetFeedbackDraft();
+      if (runBtn) runBtn.disabled = extractingPdf || !workerReady;
+
+      const ocrNeededPages = docModel.pages.filter((page) => page.sourceDecision !== "native").length;
+      const summaryText =
+        `Loaded ${docModel.pages.length} page(s) from ${file.name} (${formatFileSize(file.size)}). ` +
+        (ocrNeededPages
+          ? `${ocrNeededPages} page(s) used OCR/hybrid recovery after layout contamination checks.`
+          : "All pages passed native layout safety checks.");
+      const ocrModeText = ` OCR mode: ${ocrQualityMode === "high_accuracy" ? "high accuracy" : "fast"}.`;
+      const ocrMaskText = ` OCR mask: ${ocrMaskMode}.`;
+      const qualityTail =
+        ` Low-confidence pages: ${docModel.qualitySummary?.lowConfidencePages || 0}; ` +
+        `contaminated pages: ${docModel.qualitySummary?.contaminatedPages || 0}.`;
+      const debugTail = buildOcrDebugSummary(docModel, 2);
+      const metricTail = buildPageMetricsSummary(docModel, 2);
+      const reasonTail = buildPageReasonSummary(docModel, 2);
+      setPdfExtractSummary(`${summaryText}${ocrModeText}${ocrMaskText}${qualityTail}${debugTail}${metricTail}${reasonTail ? ` ${reasonTail}` : ""}`, "success");
+      publishPdfExtractionMetricsReport(buildPdfExtractionMetricsReport(docModel, {
+        fileName: file.name,
+        ocrQualityMode,
+        ocrMaskMode,
+        status: "success",
+      }));
+
+      setStatus("PDF text loaded into editor. Run Detection to use the existing PHI redaction workflow.");
+      if (totalPages > 0) {
+        setProgress(`PDF extraction complete: ${completedPages}/${totalPages} pages`);
+      } else {
+        setProgress("");
+      }
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      setStatus(`PDF extraction failed: ${msg}`);
+      setPdfExtractSummary(`PDF extraction failed: ${msg}`, "error");
+      setProgress("");
+      publishPdfExtractionMetricsReport({
+        generatedAt: new Date().toISOString(),
+        status: "error",
+        fileName: file?.name || "",
+        error: msg,
+      });
+    } finally {
+      extractingPdf = false;
+      if (runBtn) runBtn.disabled = extractingPdf || !workerReady;
+      if (applyBtn) applyBtn.disabled = running || !hasRunDetection;
+      if (revertBtn) revertBtn.disabled = running || originalText === model.getValue();
+      if (submitBtn) submitBtn.disabled = !scrubbedConfirmed || running;
+      updateZkControls();
+    }
+  }
 
   if (completenessCopyBtn) {
     completenessCopyBtn.disabled = true;
@@ -6960,6 +7367,33 @@ async function main() {
         return;
       }
       window.location.href = "./reporter_builder.html";
+    });
+  }
+
+  if (pdfUploadInputEl) {
+    pdfUploadInputEl.addEventListener("change", () => {
+      const file = pdfUploadInputEl.files && pdfUploadInputEl.files[0];
+      if (!file) {
+        setPdfExtractSummary(PDF_UPLOAD_HELP_TEXT, "neutral");
+        updateZkControls();
+        return;
+      }
+
+      const looksLikePdf = /\.pdf$/i.test(file.name) || file.type === "application/pdf";
+      setPdfExtractSummary(
+        looksLikePdf
+          ? `Selected PDF: ${file.name} (${formatFileSize(file.size)}). Click "Extract PDF Text" to run local layout-aware extraction and safety gating.`
+          : `Selected file is not a PDF: ${file.name}`,
+        looksLikePdf ? "neutral" : "error",
+      );
+      updateZkControls();
+    });
+  }
+
+  if (pdfExtractBtn) {
+    pdfExtractBtn.addEventListener("click", () => {
+      const file = pdfUploadInputEl?.files?.[0];
+      extractSelectedPdfIntoEditor(file);
     });
   }
 
@@ -7021,8 +7455,9 @@ async function main() {
   }
 
   function updateZkControls() {
-    const busy = running || bundleBusy;
+    const busy = running || bundleBusy || extractingPdf;
     const hasText = Boolean(model.getValue().trim());
+    const hasPdfSelected = Boolean(pdfUploadInputEl?.files && pdfUploadInputEl.files.length > 0);
     if (chronoPreviewBtn) chronoPreviewBtn.disabled = busy || !hasRunDetection;
     if (clearCurrentNoteBtn) clearCurrentNoteBtn.disabled = busy || !hasText;
     if (genBundleIdsBtn) genBundleIdsBtn.disabled = busy;
@@ -7030,6 +7465,10 @@ async function main() {
     const hasBundleDocs = Array.isArray(bundleDocs) && bundleDocs.length > 0;
     if (submitBundleBtn) submitBundleBtn.disabled = busy || !hasBundleDocs;
     if (clearBundleBtn) clearBundleBtn.disabled = busy || !hasBundleDocs;
+    if (pdfUploadInputEl) pdfUploadInputEl.disabled = busy;
+    if (pdfOcrQualitySelectEl) pdfOcrQualitySelectEl.disabled = busy;
+    if (pdfOcrMaskSelectEl) pdfOcrMaskSelectEl.disabled = busy;
+    if (pdfExtractBtn) pdfExtractBtn.disabled = busy || !hasPdfSelected;
   }
 
   function clearDetections() {
@@ -7296,7 +7735,7 @@ async function main() {
         workerReady = true;
         setStatus("Ready (local model loaded)");
         setProgress("");
-        runBtn.disabled = !workerReady;
+        runBtn.disabled = extractingPdf || !workerReady;
         return;
       }
 
@@ -7348,7 +7787,7 @@ async function main() {
       if (msg.type === "done") {
         running = false;
         cancelBtn.disabled = true;
-        runBtn.disabled = !workerReady;
+        runBtn.disabled = extractingPdf || !workerReady;
         applyBtn.disabled = false; // Enable even with 0 detections
         revertBtn.disabled = originalText === model.getValue();
         updateZkControls();
@@ -7383,7 +7822,7 @@ async function main() {
         clearWorkerInitTimer();
         running = false;
         cancelBtn.disabled = true;
-        runBtn.disabled = !workerReady;
+        runBtn.disabled = extractingPdf || !workerReady;
         applyBtn.disabled = !hasRunDetection;
         updateZkControls();
         setStatus(`Error: ${msg.message || "unknown"}`);
@@ -7517,23 +7956,18 @@ async function main() {
 	  });
 
     function clearCurrentNote() {
-      if (running || bundleBusy) return;
-      suppressDirtyFlag = true;
-      try {
-        if (!usingPlainEditor && editor) editor.setValue("");
-        else model.setValue("");
-      } finally {
-        suppressDirtyFlag = false;
-      }
+      if (running || bundleBusy || extractingPdf) return;
+      setEditorText("");
       originalText = "";
       hasRunDetection = false;
       setScrubbedConfirmed(false);
       clearDetections();
       clearResultsUi();
+      resetPdfUploadUi();
       resetFeedbackDraft();
       setStatus("Ready for new note");
       setProgress("");
-      if (runBtn) runBtn.disabled = !workerReady;
+      if (runBtn) runBtn.disabled = extractingPdf || !workerReady;
       updateZkControls();
     }
 
@@ -8363,23 +8797,18 @@ async function main() {
 
 	  if (newNoteBtn) {
 	    newNoteBtn.addEventListener("click", () => {
-	      if (running) return;
-	      suppressDirtyFlag = true;
-	      try {
-	        if (!usingPlainEditor && editor) editor.setValue("");
-	        else model.setValue("");
-	      } finally {
-	        suppressDirtyFlag = false;
-	      }
+	      if (running || extractingPdf) return;
+	      setEditorText("");
 	      originalText = "";
 	      hasRunDetection = false;
 	      setScrubbedConfirmed(false);
 	      clearDetections();
 	      clearResultsUi();
+	      resetPdfUploadUi();
 	      resetFeedbackDraft();
 	      setStatus("Ready for new note");
 	      setProgress("");
-	      if (runBtn) runBtn.disabled = !workerReady;
+	      if (runBtn) runBtn.disabled = extractingPdf || !workerReady;
 	    });
 	  }
 

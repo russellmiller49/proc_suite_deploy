@@ -46,6 +46,31 @@ This toolkit enables:
     The UI flow is: paste note -> run PHI detection -> apply redactions -> submit scrubbed note -> review results.
     Optional: edit values in **Flattened Tables (Editable)** (generates **Edited JSON (Training)**) and export JSON/tables.
 
+### Client-Side PDF Extraction (UI)
+
+PDF upload/extraction is browser-local and worker-based (`ui/static/phi_redactor/pdf_local/`):
+
+- Native parsing/layout runs in `workers/pdf.worker.js` (pdf.js text layer + text/image region analysis).
+- Per-page native density is computed as `nativeTextDensity = charCount / pageArea`.
+  - High-density digital pages short-circuit OCR (`NATIVE_DENSE_TEXT`) and stay native.
+- OCR pages run in `workers/ocr.worker.js` with:
+  - Image masking modes: `auto`, `on`, `off`
+  - Left-column/body crop logic
+  - Header zonal OCR: top 25% split into left/right columns, OCRed independently, then recombined in zone order.
+- OCR postprocessing applies figure-overlap suppression and clinical hardening heuristics:
+  - `Lidocaine 49%` -> `Lidocaine 4%`
+  - `Atropine 9.5 mg` -> `Atropine 0.5 mg`
+  - `lyrnphadenopathy` -> `lymphadenopathy`
+  - `hytnph` -> `lymph`
+  - Lightweight Levenshtein correction for long clinical terms (e.g., `tracheobronchial`).
+- Native/OCR fusion prefers native text unless OCR adds clear missing content.
+
+Security/ops constraints:
+
+- Raw PDF bytes and unredacted extracted text do not leave the browser.
+- OCR/model assets are self-hosted same-origin (vendored under `ui/static/phi_redactor/vendor/`).
+- Debug output is metrics-only (no raw clinical text).
+
 ### Reporter Builder Quick Notes
 
 - Reporter Builder UI: `http://localhost:8000/ui/reporter_builder.html`

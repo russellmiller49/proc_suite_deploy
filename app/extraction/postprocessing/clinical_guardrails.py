@@ -1112,6 +1112,14 @@ class ClinicalGuardrails:
         current = stent.get("action")
         stent["performed"] = True
         stent["action"] = action
+        if action == "Placement":
+            stent["action_type"] = "placement"
+        elif action == "Removal":
+            stent["action_type"] = "removal"
+        elif action == "Revision/Repositioning":
+            stent["action_type"] = "revision"
+        elif action == "Assessment only":
+            stent["action_type"] = "assessment_only"
         if action.lower().startswith("remov"):
             stent["airway_stent_removal"] = True
         procedures["airway_stent"] = stent
@@ -1129,6 +1137,7 @@ class ClinicalGuardrails:
         current_removal = stent.get("airway_stent_removal")
         stent["performed"] = True
         stent["action"] = "Assessment only"
+        stent["action_type"] = "assessment_only"
         stent["airway_stent_removal"] = False
         procedures["airway_stent"] = stent
         record_data["procedures_performed"] = procedures

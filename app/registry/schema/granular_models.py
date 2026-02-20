@@ -341,16 +341,22 @@ class AirwayStentProcedure(BaseModel):
 
     @model_validator(mode="after")
     def derive_action_type(self) -> "AirwayStentProcedure":
-        if self.action_type is not None:
+        # Keep `action` and `action_type` internally consistent. Some postprocessors
+        # (and occasionally the LLM) can update one without clearing the other.
+        if self.action is None:
             return self
         if self.action == "Placement":
-            self.action_type = "placement"
+            expected = "placement"
         elif self.action == "Removal":
-            self.action_type = "removal"
+            expected = "removal"
         elif self.action == "Revision/Repositioning":
-            self.action_type = "revision"
+            expected = "revision"
         elif self.action == "Assessment only":
-            self.action_type = "assessment_only"
+            expected = "assessment_only"
+        else:
+            expected = None
+        if expected and self.action_type != expected:
+            self.action_type = expected
         return self
 
     @field_validator("action", mode="before")

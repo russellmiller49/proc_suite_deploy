@@ -32,7 +32,8 @@ _CAO_LOCATION_CONTEXT_RE = re.compile(
 _POST_CUE_RE = re.compile(
     r"(?i)\b(?:"
     r"at\s+the\s+end|end\s+of\s+the\s+procedure|at\s+conclusion|finally|"
-    r"post[-\s]?(?:procedure|intervention|treatment|op)|"
+    r"post[-\s]?procedure(?!\s+diagnosis)|"
+    r"post[-\s]?(?:intervention|treatment|op)|"
     r"post[-\s]?dilat\w*|post[-\s]?debulk\w*|"
     r"after\s+(?:debulk\w*|dilat\w*|ablat\w*|treat\w*|interven\w*)|"
     r"improv(?:ed|ement)\s+to|reduc(?:ed)?\s+to|decreas(?:ed)?\s+to"
@@ -162,7 +163,7 @@ _COMPLETE_OBSTRUCTION_OF_RE = re.compile(
     r"(?P<loc>[^,.;\n]{3,80}?)(?=\s+(?:and|with|to|from|,|\\.|;|$))"
 )
 _COMPLETELY_OBSTRUCTED_RE = re.compile(
-    r"(?i)\b(?:was|were|remained|remains)\s+(?:still\s+)?(?:completely|totally)\s+(?:obstructed|occluded|blocked)\b"
+    r"(?i)\b(?:was|were|is|are|remained|remains)\s+(?:still\s+)?(?:completely|totally)\s+(?:obstructed|occluded|blocked)\b"
 )
 
 _STENT_PLACED_RE = re.compile(
@@ -246,6 +247,10 @@ def _extract_cao_interventions_detail(
         return [], {}
     if not _CAO_HINT_RE.search(text):
         return [], {}
+
+    # Soft-wrap fix: many source notes include hard newlines mid-sentence (e.g., "90%\nobstructed")
+    # which can split obstruction/location evidence across "sentences" and mis-assign sites.
+    text = re.sub(r"(?<![.!?])\n(?=[a-z(])", " ", text)
 
     sites: dict[str, dict[str, Any]] = {}
     pct_candidates: dict[str, dict[str, set[int]]] = {}
@@ -365,9 +370,9 @@ def _extract_cao_interventions_detail(
         # 2b) Obstruction described before percent (e.g., "stenosis is 80%") without explicit location groups.
         for match in _OBSTRUCTION_WORD_BEFORE_PCT_RE.finditer(sentence):
             prefix = sentence[max(0, match.start() - 160) : match.start()]
-            loc = _infer_location_last(prefix) or current_location or fallback_location
-            if not loc and len(locations_in_sentence) == 1:
-                loc = locations_in_sentence[0]
+            prefix_loc = _infer_location_last(prefix)
+            sentence_loc = locations_in_sentence[0] if len(locations_in_sentence) == 1 else None
+            loc = prefix_loc or sentence_loc or current_location or fallback_location
             if not loc:
                 continue
             try:
@@ -612,6 +617,18 @@ def _extract_cao_interventions_detail(
                         site["notes"] = (existing + " " + addition).strip()
 
         if _STENT_PLACED_RE.search(sentence):
+            # Historical/context-only guardrail: "stent placed on <date>" in the indication/history
+            # should not be treated as a stent placement event for this procedure.
+            if re.search(r"(?i)\bplaced\s+on\b", sentence) and re.search(
+                r"(?i)(?:\d{1,2}/\d{1,2}/\d{2,4}|\d{4}-\d{2}-\d{2}|\[date)",
+                sentence,
+            ):
+                if post_context_remaining > 0:
+                    post_context_remaining -= 1
+                if pre_context_remaining > 0:
+                    pre_context_remaining -= 1
+                continue
+
             negated = bool(_STENT_NEGATION_CUES_RE.search(sentence))
             if negated and _STENT_DEPLOY_DECISION_RE.search(sentence):
                 negated = False

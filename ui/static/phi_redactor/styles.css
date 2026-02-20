@@ -1303,6 +1303,44 @@ body.ps-review-split .editorPane .result {
   border-left: 1px solid var(--border-color);
 }
 
+.pdf-upload-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: 12px;
+  padding-left: 12px;
+  border-left: 1px solid var(--border-color);
+}
+
+.pdf-upload-group input[type="file"] {
+  max-width: 320px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.pdf-upload-summary {
+  padding: 8px 16px 10px;
+  border-bottom: 1px solid var(--border-color);
+  background: var(--bg-input);
+  font-size: 12px;
+  white-space: normal;
+}
+
+.pdf-upload-summary.is-warning {
+  border-left: 3px solid var(--warning);
+  background: var(--warning-light);
+}
+
+.pdf-upload-summary.is-error {
+  border-left: 3px solid var(--danger);
+  background: var(--danger-light);
+}
+
+.pdf-upload-summary.is-success {
+  border-left: 3px solid var(--success);
+  background: var(--success-light);
+}
+
 .inline-toggle {
   display: inline-flex;
   align-items: center;
@@ -1643,6 +1681,14 @@ body.ps-review-split .editorPane .result {
   }
 
   .manual-redaction-group {
+    margin-left: 0;
+    padding-left: 0;
+    border-left: none;
+    margin-top: 10px;
+    width: 100%;
+  }
+
+  .pdf-upload-group {
     margin-left: 0;
     padding-left: 0;
     border-left: none;
@@ -2095,4 +2141,51 @@ dialog.modal::backdrop {
   .reconciliation-table tr { page-break-inside: avoid; }
   .stat-card-container { border: 1px solid #000; background: none; }
   .debug-section { display: none; } /* Hide logs on print */
+}
+
+/* PDF local extraction/redaction (Phase 1/2/5) */
+.pdf-local-layout {
+  grid-template-columns: 1fr;
+}
+
+.pdf-local-grid {
+  margin-top: 12px;
+}
+
+.pdf-local-controls {
+  gap: 12px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.pdf-local-controls input[type="file"] {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  padding: 8px;
+  color: var(--text-primary);
+}
+
+.pdf-local-table .param-select {
+  width: 100%;
+  min-width: 120px;
+}
+
+.pdf-local-preview {
+  min-height: 280px;
+  max-height: 520px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: var(--bg-input);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  padding: 12px;
+  color: var(--text-primary);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+#pdfLocalStatus.error {
+  color: var(--danger);
 }

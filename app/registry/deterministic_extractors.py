@@ -108,17 +108,75 @@ def extract_demographics(note_text: str) -> Dict[str, Any]:
     # Pattern 5: Separate age and gender mentions
     # Age
     if "patient_age" not in result:
-        age_pattern = r"(?:age|pt age|patient age)(?:\s*\(years?\))?[\s:]+(\d+)"
-        match = re.search(age_pattern, note_text, re.IGNORECASE)
+        # Word-boundary guardrail: avoid anchoring to substrings like "Page 1 of 2".
+        age_pattern = r"\b(?:age|pt\s*age|patient\s*age)(?:\s*\(years?\))?\b[\s:]+(\d{1,3})\b"
+        match = re.search(age_pattern, note_text or "", re.IGNORECASE)
         if match:
-            result["patient_age"] = int(match.group(1))
+            try:
+                age = int(match.group(1))
+            except Exception:
+                age = None
+            if age is not None and 0 <= age <= 120:
+                result["patient_age"] = age
 
     # Gender
     if "gender" not in result:
-        gender_pattern = r"(?:sex|gender)[\s:]+([MFmf]|Male|Female)"
-        match = re.search(gender_pattern, note_text, re.IGNORECASE)
+        gender_pattern = r"\b(?:sex|gender)\b[\s:]+([MFmf]|Male|Female)\b"
+        match = re.search(gender_pattern, note_text or "", re.IGNORECASE)
         if match:
             result["gender"] = normalize_gender(match.group(1))
+
+    # Pattern 6: Provation-style headers where labels and values are split across lines.
+    #
+    # Example:
+    #   Age:
+    #   Gender:
+    #   ...
+    #   83
+    #   Male
+    if "patient_age" not in result or "gender" not in result:
+        lines = (note_text or "").splitlines()
+
+        def _is_age_value(line: str) -> int | None:
+            raw = (line or "").strip()
+            if not re.fullmatch(r"\d{1,3}", raw):
+                return None
+            try:
+                age = int(raw)
+            except Exception:
+                return None
+            return age if 0 <= age <= 120 else None
+
+        def _is_gender_value(line: str) -> str | None:
+            raw = (line or "").strip()
+            if re.fullmatch(r"(?i)male|female|m|f", raw):
+                return normalize_gender(raw)
+            return None
+
+        # Prefer an explicit "Age:" label as the anchor.
+        for i, line in enumerate(lines):
+            if re.fullmatch(r"(?i)\s*age\s*:?\s*", line or ""):
+                scan_end = min(len(lines), i + 25)
+                for j in range(i + 1, scan_end):
+                    if "patient_age" not in result:
+                        age = _is_age_value(lines[j])
+                        if age is not None:
+                            result["patient_age"] = age
+                            # Commonly, gender follows shortly after the age value.
+                            if "gender" not in result:
+                                for k in range(j + 1, min(scan_end, j + 6)):
+                                    gender = _is_gender_value(lines[k])
+                                    if gender:
+                                        result["gender"] = gender
+                                        break
+                            break
+
+                    if "gender" not in result:
+                        gender = _is_gender_value(lines[j])
+                        if gender:
+                            result["gender"] = gender
+
+                break
 
     return result
 
@@ -1003,8 +1061,10 @@ IPC_PATTERNS = [
 # Therapeutic aspiration patterns (exclude routine suction)
 THERAPEUTIC_ASPIRATION_PATTERNS = [
     r"\btherapeutic\s+aspiration\b",
+    r"\btherapeutic\s+suction(?:ing)?\b",
     r"\bmucus\s+plug\s+(?:removal|aspiration|extracted|suctioned|cleared)\b",
     r"\b(?:large\s+)?(?:blood\s+)?clot\s+(?:removal|aspiration|extracted|suctioned|cleared)\b",
+    r"\b(?:blood\s+)?clot\b[^.\n]{0,60}\b(?:was\s+)?(?:successfully\s+)?(?:removed|evacuated|extracted)\b",
     r"\bairway\s+(?:cleared|cleared\s+of)\s+(?:mucus|secretions|blood|clot)\b",
     r"\b(?:copious|large\s+amount\s+of|thick|tenacious|purulent|bloody|blood-tinged)\s+secretions?\b[^.]{0,80}\b(?:suction(?:ed|ing)?|aspirat(?:ed|ion|ing)?|cleared|remov(?:ed|al))\b",
     r"\b(?:suction(?:ed|ing)?|aspirat(?:ed|ion|ing)?|cleared|remov(?:ed|al))\b[^.]{0,80}\b(?:copious|large\s+amount\s+of|thick|tenacious|purulent|bloody|blood-tinged)\s+secretions?\b",
@@ -1377,7 +1437,7 @@ def extract_bal(note_text: str) -> Dict[str, Any]:
                         pass
                 else:
                     recovered_match = re.search(
-                        r"(?i)\b(?P<num>\d{1,4})\s*(?:cc|ml)\s*(?:return(?:ed)?|recovered)\b",
+                        r"(?i)\b(?P<num>\d{1,4})\s*(?:cc|ml)\b(?:\s*(?:was|were|is|are))?\s*(?:return(?:ed)?|recovered)\b",
                         text,
                     )
                     if recovered_match:
@@ -1445,11 +1505,19 @@ def extract_therapeutic_aspiration(note_text: str) -> Dict[str, Any]:
                 material = "Mucus plug"
 
             # If the local window is sparse/header-only, prefer detail-section cues.
-            if material in {"Other", "Blood/clot"}:
+            if material == "Other":
                 if "purulent" in detail_hint_text or "pus" in detail_hint_text:
                     material = "Purulent secretions"
                 elif any(token in detail_hint_text for token in ("mucus", "mucous", "plug", "secretions")):
                     material = "Mucus plug"
+            elif material == "Blood/clot":
+                # Avoid downgrading explicit clot removal to mucus-only just because secretions
+                # appear elsewhere in the detail section.
+                if "clot" not in local_window and "blood clot" not in local_window:
+                    if "purulent" in detail_hint_text or "pus" in detail_hint_text:
+                        material = "Purulent secretions"
+                    elif any(token in detail_hint_text for token in ("mucus", "mucous", "plug", "secretions")):
+                        material = "Mucus plug"
 
             location: str | None = None
             loc_match = re.search(
@@ -2002,6 +2070,34 @@ def extract_airway_stent(note_text: str) -> Dict[str, Any]:
         elif revision_hint:
             proc["action"] = "Revision/Repositioning"
         _apply_brand_type(proc, action=str(proc.get("action") or ""))
+
+        # Existing-stent context (assessment/obstruction/cleaning): capture stent size/location
+        # when explicitly documented so downstream evidence/coding has the details.
+        size_candidate = _best_stent_size_candidate(preferred_text or "")
+        if size_candidate:
+            raw_size, diameter, length, pos = size_candidate
+            if raw_size and not proc.get("device_size"):
+                proc["device_size"] = raw_size
+            if diameter is not None and not proc.get("diameter_mm"):
+                proc["diameter_mm"] = diameter
+            if length is not None and not proc.get("length_mm"):
+                proc["length_mm"] = length
+            if not proc.get("location"):
+                lookback = (preferred_text or "")[max(0, pos - 700) : pos]
+                inferred = _infer_airway_site_last(lookback)
+                if inferred:
+                    proc["location"] = inferred
+
+        if not proc.get("location"):
+            # Best-effort: infer from the immediate stent mention window (avoid using full-note
+            # "last location" which can be polluted by other later airway targets).
+            m = re.search(r"(?i)\bstent\b", preferred_text or "")
+            if m:
+                window = (preferred_text or "")[m.start() : min(len(preferred_text or ""), m.start() + 280)]
+                inferred = _infer_airway_site_last(window)
+                if inferred:
+                    proc["location"] = inferred
+
         result["airway_stent"] = proc
 
     # Exchange/removal + placement in the same session: represent as revision on the primary stent.
@@ -2433,7 +2529,9 @@ def extract_therapeutic_injection(note_text: str) -> Dict[str, Any]:
         if bal_context_re.search(sentence) and not (med or dose):
             continue
 
-        if not (med or dose or volume_ml):
+        # Guardrail: volume-only instillation sentences are usually BAL/flush/hemostasis
+        # artifacts and should not trigger 31573 without an explicit medication/dose cue.
+        if not (med or dose):
             continue
 
         proc: dict[str, Any] = {"performed": True}

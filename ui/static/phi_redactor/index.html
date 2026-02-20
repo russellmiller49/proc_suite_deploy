@@ -88,6 +88,25 @@
             </select>
             <button id="addRedactionBtn" class="secondary" disabled>Add</button>
           </div>
+
+          <div class="pdf-upload-group">
+            <label class="manual-label" for="pdfUploadInput">PDF:</label>
+            <input id="pdfUploadInput" type="file" accept="application/pdf,.pdf" />
+            <select id="pdfOcrQualitySelect" class="param-select" title="Local OCR quality mode">
+              <option value="fast" selected>OCR Fast</option>
+              <option value="high_accuracy">OCR High Accuracy</option>
+            </select>
+            <select id="pdfOcrMaskSelect" class="param-select" title="Mask photo regions before OCR (local-only)">
+              <option value="auto" selected>Mask Auto</option>
+              <option value="on">Mask On</option>
+              <option value="off">Mask Off</option>
+            </select>
+            <button id="pdfExtractBtn" class="secondary" type="button" disabled>Extract PDF Text</button>
+          </div>
+        </div>
+
+        <div id="pdfExtractSummary" class="subtle pdf-upload-summary">
+          Input options: paste note text directly, or upload a PDF for layout-aware local extraction with safety gating before PHI detection.
         </div>
 
         <div class="warning">

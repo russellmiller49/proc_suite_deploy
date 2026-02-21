@@ -7,7 +7,10 @@ import json
 import sys
 from pathlib import Path
 
-VENDOR_DIR = Path("ui/static/phi_redactor/vendor/phi_distilbert_ner_quant")
+CORE_VENDOR_DIR = Path("ui/static/phi_redactor/vendor")
+PHI_VENDOR_DIR = CORE_VENDOR_DIR / "phi_distilbert_ner_quant"
+TESSERACT_DIR = CORE_VENDOR_DIR / "tesseract"
+PDFJS_DIR = CORE_VENDOR_DIR / "pdfjs"
 
 
 def _error(message: str, errors: list[str]) -> None:
@@ -17,25 +20,51 @@ def _error(message: str, errors: list[str]) -> None:
 def main() -> int:
     errors: list[str] = []
 
-    if not VENDOR_DIR.exists():
-        _error(f"Missing vendor directory: {VENDOR_DIR}", errors)
-    elif not VENDOR_DIR.is_dir():
-        _error(f"Vendor path is not a directory: {VENDOR_DIR}", errors)
+    if not CORE_VENDOR_DIR.exists():
+        _error(f"Missing vendor directory: {CORE_VENDOR_DIR}", errors)
+    elif not CORE_VENDOR_DIR.is_dir():
+        _error(f"Vendor path is not a directory: {CORE_VENDOR_DIR}", errors)
 
-    config_path = VENDOR_DIR / "config.json"
+    if not TESSERACT_DIR.exists() or not TESSERACT_DIR.is_dir():
+        _error(f"Missing Tesseract vendor directory: {TESSERACT_DIR}", errors)
+    else:
+        for rel in (
+            "worker.min.js",
+            "tesseract.esm.min.js",
+            "tesseract-core-simd.wasm.js",
+            "tessdata/eng.traineddata",
+        ):
+            path = TESSERACT_DIR / rel
+            if not path.exists():
+                _error(f"Missing Tesseract asset: {path}", errors)
+
+    if not PDFJS_DIR.exists() or not PDFJS_DIR.is_dir():
+        _error(f"Missing pdf.js vendor directory: {PDFJS_DIR}", errors)
+    else:
+        for rel in ("pdf.mjs", "pdf.worker.mjs"):
+            path = PDFJS_DIR / rel
+            if not path.exists():
+                _error(f"Missing pdf.js asset: {path}", errors)
+
+    if not PHI_VENDOR_DIR.exists():
+        _error(f"Missing PHI model directory: {PHI_VENDOR_DIR}", errors)
+    elif not PHI_VENDOR_DIR.is_dir():
+        _error(f"PHI model path is not a directory: {PHI_VENDOR_DIR}", errors)
+
+    config_path = PHI_VENDOR_DIR / "config.json"
     if not config_path.exists():
         _error(f"Missing config.json: {config_path}", errors)
 
-    onnx_dir = VENDOR_DIR / "onnx"
+    onnx_dir = PHI_VENDOR_DIR / "onnx"
     onnx_model = onnx_dir / "model.onnx"
     if not onnx_model.exists():
         _error(f"Missing model.onnx: {onnx_model}", errors)
 
-    tokenizer_json = VENDOR_DIR / "tokenizer.json"
-    tokenizer_config = VENDOR_DIR / "tokenizer_config.json"
-    vocab_txt = VENDOR_DIR / "vocab.txt"
-    vocab_json = VENDOR_DIR / "vocab.json"
-    merges_txt = VENDOR_DIR / "merges.txt"
+    tokenizer_json = PHI_VENDOR_DIR / "tokenizer.json"
+    tokenizer_config = PHI_VENDOR_DIR / "tokenizer_config.json"
+    vocab_txt = PHI_VENDOR_DIR / "vocab.txt"
+    vocab_json = PHI_VENDOR_DIR / "vocab.json"
+    merges_txt = PHI_VENDOR_DIR / "merges.txt"
 
     has_tokenizer_bundle = tokenizer_json.exists()
     has_tokenizer_parts = tokenizer_config.exists() and (vocab_txt.exists() or vocab_json.exists() or merges_txt.exists())

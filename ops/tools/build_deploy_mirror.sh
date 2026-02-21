@@ -46,7 +46,9 @@ copy_allowlisted_path() {
       --exclude ".ruff_cache/"
     )
     if [[ "${rel_path}" == "ui/static" && "${INCLUDE_VENDOR}" != "1" ]]; then
-      rsync_args+=(--exclude "phi_redactor/vendor/")
+      # Keep core OCR runtime web assets (pdfjs/tesseract) in slim mirrors,
+      # but exclude heavyweight PHI model folders by default.
+      rsync_args+=(--exclude "phi_redactor/vendor/phi_distilbert_ner*/")
     fi
     rsync "${rsync_args[@]}" "${src_path}/" "${dst_path}/"
   else

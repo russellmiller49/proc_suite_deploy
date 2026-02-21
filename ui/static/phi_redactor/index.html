@@ -102,12 +102,14 @@
               <option value="off">Mask Off</option>
             </select>
             <button id="pdfExtractBtn" class="secondary" type="button" disabled>Extract PDF Text</button>
+            <button id="cameraScanBtn" class="secondary" type="button">Scan Photo</button>
           </div>
         </div>
 
         <div id="pdfExtractSummary" class="subtle pdf-upload-summary">
           Input options: paste note text directly, or upload a PDF for layout-aware local extraction with safety gating before PHI detection.
         </div>
+        <div id="cameraScanSummary" class="subtle pdf-upload-summary camera-upload-summary hidden"></div>
 
         <div class="warning">
           <strong>PHI Policy:</strong> This page runs detection locally in your browser.
@@ -540,5 +542,122 @@
         </div>
       </form>
     </dialog>
+
+    <dialog id="cameraScanModal" class="modal modal-wide">
+      <form method="dialog" class="modal-content camera-modal-content">
+        <h3>Camera Scan (Local OCR)</h3>
+        <p class="subtle">
+          Captured images and OCR run entirely in your browser. No raw camera images or unredacted text are uploaded.
+        </p>
+
+        <div class="camera-modal-body">
+          <div class="camera-preview-wrap">
+            <video id="cameraPreview" autoplay playsinline muted></video>
+            <div id="cameraGuideOverlay" class="camera-guide-overlay">
+              <div class="camera-guide-frame"></div>
+              <div id="cameraGuideHint" class="camera-guide-hint">Align document inside frame. Hold steady and reduce glare.</div>
+            </div>
+          </div>
+
+          <div class="camera-options-row">
+            <label class="manual-label" for="cameraOcrQualitySelect">OCR:</label>
+            <select id="cameraOcrQualitySelect" class="param-select" title="Camera OCR quality mode">
+              <option value="fast" selected>Fast</option>
+              <option value="high_accuracy">High Accuracy</option>
+            </select>
+
+            <label class="manual-label" for="cameraEnhanceSelect">Enhance:</label>
+            <select id="cameraEnhanceSelect" class="param-select" title="Image preprocessing mode">
+              <option value="auto" selected>Auto (Recommended)</option>
+              <option value="grayscale">Grayscale</option>
+              <option value="bw_high_contrast">B/W High Contrast</option>
+              <option value="off">Off</option>
+            </select>
+
+            <label class="manual-label" for="cameraSceneHintSelect">Capture:</label>
+            <select id="cameraSceneHintSelect" class="param-select" title="Capture source optimization">
+              <option value="auto" selected>Auto (Recommended)</option>
+              <option value="monitor">Computer Monitor</option>
+              <option value="document">Paper Document</option>
+            </select>
+          </div>
+
+          <div class="camera-actions-row">
+            <button id="cameraStartBtn" type="button" class="secondary">Start Camera</button>
+            <button id="cameraCaptureBtn" type="button" class="secondary" disabled>Capture Page</button>
+            <button id="cameraRetakeBtn" type="button" class="secondary" disabled>Retake Last</button>
+            <button id="cameraClearBtn" type="button" class="secondary" disabled>Clear All</button>
+            <button id="cameraRunOcrBtn" type="button" class="primary" disabled>Run OCR</button>
+          </div>
+
+          <div class="camera-status-row">
+            <span id="cameraStatusText" class="subtle">Start camera to capture pages.</span>
+            <span id="cameraProgressText" class="progress"></span>
+          </div>
+
+          <div id="cameraWarningList" class="camera-warning-list"></div>
+          <div id="cameraThumbStrip" class="camera-thumb-strip" aria-live="polite"></div>
+
+          <div id="cameraCropPanel" class="camera-crop-panel hidden">
+            <div class="camera-crop-header">Crop Before OCR (Client-side)</div>
+            <div class="subtle">
+              Optional: crop out monitor background/images before text extraction. Cropping happens locally in your browser.
+            </div>
+
+            <div class="camera-options-row">
+              <label class="manual-label" for="cameraCropPageSelect">Page:</label>
+              <select id="cameraCropPageSelect" class="param-select"></select>
+            </div>
+
+            <div id="cameraCropPreviewStage" class="camera-crop-preview-stage">
+              <img id="cameraCropPreviewImg" alt="Crop preview" />
+              <div id="cameraCropPreviewBox" class="camera-crop-preview-box">
+                <span class="camera-crop-handle camera-crop-handle-nw" data-crop-handle="nw" aria-hidden="true"></span>
+                <span class="camera-crop-handle camera-crop-handle-ne" data-crop-handle="ne" aria-hidden="true"></span>
+                <span class="camera-crop-handle camera-crop-handle-se" data-crop-handle="se" aria-hidden="true"></span>
+                <span class="camera-crop-handle camera-crop-handle-sw" data-crop-handle="sw" aria-hidden="true"></span>
+              </div>
+            </div>
+
+            <div id="cameraCropZoomWrap" class="camera-crop-zoom hidden">
+              <div class="camera-crop-zoom-label">Zoomed Crop Preview</div>
+              <img id="cameraCropZoomImg" alt="Zoomed cropped preview" />
+            </div>
+
+            <div class="camera-crop-grid">
+              <div class="camera-crop-field">
+                <label for="cameraCropTopRange">Top <span id="cameraCropTopValue">0%</span></label>
+                <input id="cameraCropTopRange" type="range" min="0" max="45" step="1" value="0" />
+              </div>
+              <div class="camera-crop-field">
+                <label for="cameraCropRightRange">Right <span id="cameraCropRightValue">0%</span></label>
+                <input id="cameraCropRightRange" type="range" min="0" max="45" step="1" value="0" />
+              </div>
+              <div class="camera-crop-field">
+                <label for="cameraCropBottomRange">Bottom <span id="cameraCropBottomValue">0%</span></label>
+                <input id="cameraCropBottomRange" type="range" min="0" max="45" step="1" value="0" />
+              </div>
+              <div class="camera-crop-field">
+                <label for="cameraCropLeftRange">Left <span id="cameraCropLeftValue">0%</span></label>
+                <input id="cameraCropLeftRange" type="range" min="0" max="45" step="1" value="0" />
+              </div>
+            </div>
+
+            <div class="camera-actions-row">
+              <button id="cameraCropApplyBtn" type="button" class="secondary">Apply To Page</button>
+              <button id="cameraCropApplyAllBtn" type="button" class="secondary">Apply To All</button>
+              <button id="cameraCropResetBtn" type="button" class="secondary">Reset Page</button>
+              <button id="cameraCropResetAllBtn" type="button" class="secondary">Reset All</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="modal-actions">
+          <button id="cameraCloseBtn" value="close" class="secondary">Close</button>
+        </div>
+      </form>
+    </dialog>
+
+    <div id="privacyShield" class="privacy-shield" aria-hidden="true" tabindex="0">Private - tap to resume</div>
   </body>
 </html>

@@ -7,6 +7,7 @@ export const OCR_BOILERPLATE_PATTERNS = Object.freeze([
   /\bProvation\s+MD\b/i,
   /\bProvation\b.*\b(?:Suite|Road|Street|Drive|Avenue|Blvd|Lane|Court|Way)\b/i,
   /^\s*Page\s+\d+\s+of\s+\d+\s*$/i,
+  /^\s*Page\s*[0-9Il]{1,3}\s*[o0]f\s*[0-9Il]{1,3}\s*$/i,
   /\bAMA\b.*\bcopyright\b/i,
   /\bAmerican\s+Medical\s+Association\b/i,
 ]);

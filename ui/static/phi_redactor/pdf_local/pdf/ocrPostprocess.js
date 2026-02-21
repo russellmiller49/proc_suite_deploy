@@ -5,11 +5,32 @@ function safeText(value) {
   return typeof value === "string" ? value : "";
 }
 
+function safeNumber(value, fallback = 0) {
+  return Number.isFinite(value) ? Number(value) : fallback;
+}
+
 const EXACT_CLINICAL_REPLACEMENTS = Object.freeze([
   { re: /\bLidocaine\s+49\%(?=$|[\s,.;:])/gi, replace: "Lidocaine 4%" },
   { re: /\bAtropine\s+9\.5\s+mg\b/gi, replace: "Atropine 0.5 mg" },
   { re: /\bfrom the mouth\s+nose\b/gi, replace: "from the mouth or nose" },
   { re: /\bmouth\s+nose\b/gi, replace: "mouth or nose" },
+  { re: /\bProceduratist\(s\)\b/gi, replace: "Proceduralist(s)" },
+  { re: /\bProceduratist\b/gi, replace: "Proceduralist" },
+  { re: /\bJouroscopy\b/gi, replace: "fluoroscopy" },
+  { re: /\bpleurescopy\b/gi, replace: "pleuroscopy" },
+  { re: /\bmierventon\b/gi, replace: "intervention" },
+  { re: /\bIncrson\b/gi, replace: "Incision" },
+  { re: /\binsion\b/gi, replace: "incision" },
+  { re: /\bdecubwtus\b/gi, replace: "decubitus" },
+  { re: /\bChioraprep\b/gi, replace: "ChloraPrep" },
+  { re: /\bpiyysical\b/gi, replace: "physical" },
+  { re: /\bhestopathology\b/gi, replace: "histopathology" },
+  { re: /\beumone\b/gi, replace: "cultures" },
+  { re: /\bexetenssive\b/gi, replace: "extensive" },
+  { re: /\bne[ée]dle\b/gi, replace: "needle" },
+  { re: /\bFodings\b/gi, replace: "Findings" },
+  { re: /\bwih\b/gi, replace: "with" },
+  { re: /\ballematives\b/gi, replace: "alternatives" },
   { re: /\blyrnphadenopathy\b/gi, replace: "lymphadenopathy" },
   { re: /\bhytnph/gi, replace: "lymph" },
 ]);
@@ -212,6 +233,165 @@ function shouldDropProvationHeaderNoise(text, line) {
   return false;
 }
 
+function hasTrustedClinicalOrHeaderKeyword(text) {
+  return /\b(?:patient|procedure|mrn|gender|age|date|findings|local|anesthesia|incision|biops(?:y|ies)|pleura|pleural|ultrasound|lidocaine|university|texas|anderson|cancer|center|cultures?|histopathology|forceps|samples?|axillary|decubitus|needle|port|studding|adhesions?)\b/i.test(
+    safeText(text),
+  );
+}
+
+function alphaTokenList(text) {
+  return safeText(text)
+    .split(/\s+/)
+    .map((token) => token.replace(/[^A-Za-z]/g, ""))
+    .filter(Boolean);
+}
+
+function uniqueCharRatio(token) {
+  const source = safeText(token).toLowerCase();
+  if (!source) return 0;
+  const set = new Set(source.split(""));
+  return set.size / Math.max(1, source.length);
+}
+
+function maxRepeatedAlphaRun(text) {
+  const alpha = safeText(text).replace(/[^A-Za-z]/g, "");
+  if (!alpha) return 0;
+  let longest = 1;
+  let current = 1;
+  for (let i = 1; i < alpha.length; i += 1) {
+    if (alpha[i].toLowerCase() === alpha[i - 1].toLowerCase()) {
+      current += 1;
+      if (current > longest) longest = current;
+    } else {
+      current = 1;
+    }
+  }
+  return longest;
+}
+
+function isLikelyEdgeNoiseLine(text, confidence) {
+  const source = cleanOcrLineEdgeArtifacts(text);
+  if (!source) return true;
+  if (hasTrustedClinicalOrHeaderKeyword(source)) return false;
+  if (Number.isFinite(confidence) && confidence >= 90) return false;
+
+  const tokens = alphaTokenList(source);
+  if (!tokens.length) {
+    return /[~|_\\/:;`'".,\-]/.test(source);
+  }
+
+  const tokenCount = tokens.length;
+  const singleCharFrac = tokens.filter((token) => token.length === 1).length / tokenCount;
+  const shortTokenFrac = tokens.filter((token) => token.length <= 2).length / tokenCount;
+  const lowDiversityFrac = tokens.filter((token) => token.length >= 6 && uniqueCharRatio(token) < 0.46).length / tokenCount;
+
+  const alphaCount = (source.match(/[A-Za-z]/g) || []).length;
+  const symbolCount = (source.match(/[^A-Za-z0-9\s]/g) || []).length;
+  const symbolRatio = symbolCount / Math.max(1, source.length);
+  const repeatRun = maxRepeatedAlphaRun(source);
+  const vowelCount = (source.match(/[aeiou]/gi) || []).length;
+  const vowelFrac = vowelCount / Math.max(1, alphaCount);
+
+  if (singleCharFrac > 0.42 && shortTokenFrac > 0.62) return true;
+  if (lowDiversityFrac > 0.3 && shortTokenFrac > 0.4) return true;
+  if (repeatRun >= 4 && alphaCount >= 10) return true;
+  if (symbolRatio > 0.22 && alphaCount < 14) return true;
+  if (
+    Number.isFinite(confidence) &&
+    confidence < 84 &&
+    shortTokenFrac > 0.58 &&
+    (vowelFrac < 0.22 || vowelFrac > 0.82)
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
+function cleanOcrLineEdgeArtifacts(text) {
+  let source = safeText(text).replace(/\s+/g, " ").trim();
+  if (!source) return "";
+  source = source
+    .replace(/^[~|_*=+`]+/g, "")
+    .replace(/[~|_*=+`]+$/g, "")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+  return source;
+}
+
+function looksLikePageFooterArtifact(text) {
+  const normalized = safeText(text).toLowerCase().replace(/[\s|~_\-.:;]+/g, "");
+  if (!normalized.includes("page")) return false;
+  return /page[0-9il]{1,3}[o0]f[0-9il]{1,3}/.test(normalized);
+}
+
+function isLikelyArtifactLine(text, confidence) {
+  const source = cleanOcrLineEdgeArtifacts(text);
+  if (!source) return true;
+  if (looksLikePageFooterArtifact(source)) return true;
+  if (/^[~|_*=+`]+$/.test(source)) return true;
+
+  const alphaCount = (source.match(/[A-Za-z]/g) || []).length;
+  const digitCount = (source.match(/[0-9]/g) || []).length;
+  const symbolCount = (source.match(/[^A-Za-z0-9\s]/g) || []).length;
+  const tokenCount = source.split(/\s+/).filter(Boolean).length;
+  const length = source.length;
+  const symbolRatio = symbolCount / Math.max(1, length);
+
+  if (alphaCount + digitCount <= 2 && length <= 6) return true;
+  if (symbolRatio > 0.4 && alphaCount < 5) return true;
+  if (Number.isFinite(confidence) && confidence < 28 && length < 12 && alphaCount < 5) return true;
+  if (tokenCount <= 2 && length <= 8 && Number.isFinite(confidence) && confidence < 38) {
+    const vowelCount = (source.match(/[aeiou]/gi) || []).length;
+    if (digitCount === 0 && vowelCount <= 1) return true;
+  }
+
+  const alphaOnly = source.replace(/[^A-Za-z]/g, "");
+  if (alphaOnly.length >= 14) {
+    let longestRun = 1;
+    let currentRun = 1;
+    for (let i = 1; i < alphaOnly.length; i += 1) {
+      if (alphaOnly[i].toLowerCase() === alphaOnly[i - 1].toLowerCase()) {
+        currentRun += 1;
+        if (currentRun > longestRun) longestRun = currentRun;
+      } else {
+        currentRun = 1;
+      }
+    }
+    const upperCount = (source.match(/[A-Z]/g) || []).length;
+    const upperFrac = upperCount / Math.max(1, alphaOnly.length);
+    const vowelCount = (alphaOnly.match(/[aeiou]/gi) || []).length;
+    const vowelFrac = vowelCount / Math.max(1, alphaOnly.length);
+    const hasCommonClinicalSignal = /\b(?:patient|procedure|findings|pleura|anesthesia|biopsy|incision|ultrasound|entry|site)\b/i.test(source);
+    if (
+      longestRun >= 5 &&
+      upperFrac > 0.6 &&
+      !hasCommonClinicalSignal &&
+      (vowelFrac < 0.2 || vowelFrac > 0.78 || Number.isFinite(confidence) && confidence < 72)
+    ) {
+      return true;
+    }
+  }
+
+  const tokens = alphaTokenList(source);
+  if (tokens.length >= 4 && !hasTrustedClinicalOrHeaderKeyword(source)) {
+    const shortTokenFrac = tokens.filter((token) => token.length <= 3).length / tokens.length;
+    const lowDiversityCount = tokens.filter((token) => token.length >= 8 && uniqueCharRatio(token) < 0.42).length;
+    const upperCount = (source.match(/[A-Z]/g) || []).length;
+    const alphaCountTotal = Math.max(1, (source.match(/[A-Za-z]/g) || []).length);
+    const upperFrac = upperCount / alphaCountTotal;
+
+    if (
+      (lowDiversityCount >= 1 && upperFrac > 0.45 && Number.isFinite(confidence) && confidence < 86) ||
+      (shortTokenFrac > 0.45 && upperFrac > 0.55 && Number.isFinite(confidence) && confidence < 82)
+    ) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 function normalizeBBox(bbox) {
   const normalized = normalizeRect(bbox || { x: 0, y: 0, width: 0, height: 0 });
   if (!Number.isFinite(normalized.x) || !Number.isFinite(normalized.y)) {
@@ -224,7 +404,7 @@ function normalizeBBox(bbox) {
 }
 
 function normalizeLine(line) {
-  const text = applyClinicalOcrHeuristics(safeText(line?.text)).replace(/\s+/g, " ").trim();
+  const text = cleanOcrLineEdgeArtifacts(applyClinicalOcrHeuristics(safeText(line?.text)));
   const cleanedText = shouldDropProvationHeaderNoise(text, line) ? "" : text;
   return {
     text: cleanedText,
@@ -322,8 +502,17 @@ export function filterOcrLinesDetailed(lines, figureRegions, opts = {}) {
   const normalizedRegions = (Array.isArray(figureRegions) ? figureRegions : []).map(normalizeBBox);
   const dropped = [];
   const kept = [];
+  const normalizedLines = dedupeConsecutiveLines(lines);
+  let pageBottom = 0;
+  for (const rawLine of normalizedLines) {
+    const line = normalizeLine(rawLine);
+    const y = safeNumber(line?.bbox?.y, 0);
+    const h = Math.max(0, safeNumber(line?.bbox?.height, 0));
+    pageBottom = Math.max(pageBottom, y + h);
+  }
+  const pageHeightEstimate = Math.max(1, pageBottom);
 
-  for (const rawLine of dedupeConsecutiveLines(lines)) {
+  for (const rawLine of normalizedLines) {
     const line = normalizeLine(rawLine);
     if (!line.text) continue;
 
@@ -348,6 +537,40 @@ export function filterOcrLinesDetailed(lines, figureRegions, opts = {}) {
     const textLen = line.text.length;
     if (Number.isFinite(line.confidence) && line.confidence < shortLowConfThreshold && textLen < 6) {
       dropped.push({ line, reason: "low_conf_short" });
+      continue;
+    }
+
+    const lineTop = safeNumber(line?.bbox?.y, 0);
+    const lineHeight = Math.max(0, safeNumber(line?.bbox?.height, 0));
+    const lineBottom = lineTop + lineHeight;
+    const topFrac = lineTop / pageHeightEstimate;
+    const bottomFrac = lineBottom / pageHeightEstimate;
+    const alphaCount = (line.text.match(/[A-Za-z]/g) || []).length;
+    const upperCount = (line.text.match(/[A-Z]/g) || []).length;
+    const upperFrac = upperCount / Math.max(1, alphaCount);
+    if (
+      topFrac <= 0.16 &&
+      !hasTrustedClinicalOrHeaderKeyword(line.text) &&
+      Number.isFinite(line.confidence) &&
+      line.confidence < 88 &&
+      alphaCount >= 5 &&
+      upperFrac > 0.45 &&
+      !/\d{2,}/.test(line.text)
+    ) {
+      dropped.push({ line, reason: "header_artifact" });
+      continue;
+    }
+
+    if (
+      (topFrac <= 0.12 || bottomFrac >= 0.84) &&
+      isLikelyEdgeNoiseLine(line.text, line.confidence)
+    ) {
+      dropped.push({ line, reason: topFrac <= 0.12 ? "header_artifact" : "footer_artifact" });
+      continue;
+    }
+
+    if (isLikelyArtifactLine(line.text, line.confidence)) {
+      dropped.push({ line, reason: "artifact" });
       continue;
     }
 

@@ -64,6 +64,8 @@ def _pipeline_config(payload: UnifiedProcessRequest) -> dict[str, Any]:
         "include_financials": bool(payload.include_financials),
         "explain": bool(payload.explain),
         "include_v3_event_log": bool(payload.include_v3_event_log),
+        "source_type": payload.source_type,
+        "ocr_correction_applied": bool(payload.ocr_correction_applied),
         "locality": payload.locality,
         "registry_schema_version": _schema_version(),
         "registry_extraction_engine": os.getenv("REGISTRY_EXTRACTION_ENGINE", "").strip(),
@@ -125,6 +127,16 @@ class RegistryRunCreateRequest(BaseModel):
     include_v3_event_log: bool = Field(
         False,
         description="If true, include raw event-log V3 output in the persisted response payload.",
+    )
+    source_type: str | None = Field(
+        None,
+        description=(
+            "Optional client-declared source type (e.g., camera_ocr, pdf_local, manual_entry)."
+        ),
+    )
+    ocr_correction_applied: bool = Field(
+        False,
+        description="Whether optional post-redaction OCR correction was applied client-side.",
     )
     submitter_name: str | None = Field(
         None, description="Free-text submitter name (no auth yet)", max_length=255
@@ -198,6 +210,8 @@ async def create_registry_run(
         include_financials=payload.include_financials,
         explain=payload.explain,
         include_v3_event_log=payload.include_v3_event_log,
+        source_type=payload.source_type,
+        ocr_correction_applied=payload.ocr_correction_applied,
     )
 
     result, scrubbed_note_text_used, meta = await run_unified_pipeline_logic(

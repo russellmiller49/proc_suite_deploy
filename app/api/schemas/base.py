@@ -234,6 +234,63 @@ class UnifiedProcessRequest(BaseModel):
             "event payload under `registry_v3_event_log`."
         ),
     )
+    source_type: str | None = Field(
+        None,
+        description=(
+            "Optional client-declared source type (e.g., camera_ocr, pdf_local, manual_entry). "
+            "Used for traceability and source-specific guardrails."
+        ),
+    )
+    ocr_correction_applied: bool = Field(
+        False,
+        description=(
+            "True when the client applied the optional post-redaction OCR correction step "
+            "before extraction."
+        ),
+    )
+
+
+class CameraOcrCorrectionRequest(BaseModel):
+    """Request schema for optional post-redaction camera OCR correction."""
+
+    text: str = Field(..., description="Scrubbed camera OCR text to correct.")
+    already_scrubbed: bool = Field(
+        False,
+        description=(
+            "Must be true. This endpoint is only for post-redaction text and should never "
+            "receive raw PHI."
+        ),
+    )
+    source_type: Literal["camera_ocr"] = Field(
+        "camera_ocr",
+        description="Source discriminator for correction guardrails (currently camera_ocr only).",
+    )
+
+
+class CameraOcrCorrectionResponse(BaseModel):
+    """Response schema for optional camera OCR correction."""
+
+    cleaned_text: str = Field(..., description="Corrected note text.")
+    changed: bool = Field(
+        default=False,
+        description="Whether the corrected text differs from the input text.",
+    )
+    correction_applied: bool = Field(
+        default=False,
+        description=(
+            "True when the correction pass succeeded and its output passed safety guards. "
+            "False indicates fallback to the original text."
+        ),
+    )
+    source_type: str = Field("camera_ocr")
+    model: str | None = Field(
+        default=None,
+        description="Model identifier used for the correction pass.",
+    )
+    warnings: list[str] = Field(
+        default_factory=list,
+        description="Non-fatal warnings (e.g., guard-triggered fallback).",
+    )
 
 
 class BundleTimepointRole(str, Enum):
@@ -426,6 +483,8 @@ __all__ = [
     "CoderRequest",
     "CoderResponse",
     "CodeSuggestionSummary",
+    "CameraOcrCorrectionRequest",
+    "CameraOcrCorrectionResponse",
     "MissingFieldPrompt",
     "HybridPipelineMetadata",
     "KnowledgeMeta",

@@ -24,6 +24,7 @@ let serverResponseEl = document.getElementById("serverResponse");
 const runBtn = document.getElementById("runBtn");
 const cancelBtn = document.getElementById("cancelBtn");
 const applyBtn = document.getElementById("applyBtn");
+const correctOcrBtn = document.getElementById("correctOcrBtn");
 const revertBtn = document.getElementById("revertBtn");
 const submitBtn = document.getElementById("submitBtn");
 const exportBtn = document.getElementById("exportBtn");
@@ -7132,8 +7133,10 @@ async function main() {
 	  setRegistryGridMonacoGetter(() => window.editor);
 
   const reporterTransfer = consumeReporterTransferPayload();
+  let noteSourceType = "manual_entry";
   if (reporterTransfer?.note) {
     model.setValue(reporterTransfer.note);
+    noteSourceType = "reporter_transfer";
     setStatus("Reporter note loaded. Run detection, apply redactions, then submit.");
     setProgress("");
   }
@@ -7142,6 +7145,8 @@ async function main() {
 	  let hasRunDetection = false;
 	  let scrubbedConfirmed = false;
 	  let suppressDirtyFlag = false;
+    let ocrCorrectionApplied = false;
+    let correctingCameraOcr = false;
     let bundleDocs = [];
     let lastBundleResponse = null;
     let bundleBusy = false;
@@ -7173,6 +7178,12 @@ async function main() {
     } finally {
       suppressDirtyFlag = false;
     }
+  }
+
+  function setNoteSourceType(nextSourceType) {
+    const normalized = String(nextSourceType || "").trim();
+    noteSourceType = normalized || "manual_entry";
+    updateZkControls();
   }
 
   const PDF_UPLOAD_HELP_TEXT =
@@ -7680,7 +7691,7 @@ async function main() {
 
   function beginCameraCropDrag(pointerEvent) {
     if (!cameraCropPreviewStageEl || !cameraCropPreviewBoxEl) return;
-    if (running || bundleBusy || extractingPdf || extractingCamera) return;
+    if (running || bundleBusy || extractingPdf || extractingCamera || correctingCameraOcr) return;
     const pages = Array.isArray(cameraQueue.pages) ? cameraQueue.pages : [];
     if (!pages.length) return;
 
@@ -7937,7 +7948,7 @@ async function main() {
   function updateCameraControls() {
     const hasPages = Array.isArray(cameraQueue.pages) && cameraQueue.pages.length > 0;
     const hasStream = Boolean(cameraStream);
-    const busy = running || bundleBusy || extractingPdf || extractingCamera;
+    const busy = running || bundleBusy || extractingPdf || extractingCamera || correctingCameraOcr;
     const cropDisabled = busy || !hasPages;
 
     if (cameraStartBtn) cameraStartBtn.disabled = busy || hasStream;
@@ -8110,7 +8121,7 @@ async function main() {
   }
 
   async function startCameraPreview() {
-    if (running || bundleBusy || extractingPdf || extractingCamera) return;
+    if (running || bundleBusy || extractingPdf || extractingCamera || correctingCameraOcr) return;
     if (!cameraPreviewEl) return;
 
     try {
@@ -8182,7 +8193,7 @@ async function main() {
   }
 
   async function runCameraOcrAndLoadEditor() {
-    if (running || bundleBusy || extractingPdf || extractingCamera) return;
+    if (running || bundleBusy || extractingPdf || extractingCamera || correctingCameraOcr) return;
     const pagesForOcr = cameraQueue.exportForOcr();
     if (!pagesForOcr.length) {
       setCameraStatus("Capture at least one page before running OCR.");
@@ -8247,6 +8258,8 @@ async function main() {
       setEditorText(mergedText);
       originalText = mergedText;
       hasRunDetection = false;
+      ocrCorrectionApplied = false;
+      setNoteSourceType("camera_ocr");
       setScrubbedConfirmed(false);
       clearDetections();
       clearResultsUi();
@@ -8282,7 +8295,7 @@ async function main() {
 
   async function extractSelectedPdfIntoEditor(file) {
     if (!file) return;
-    if (running || bundleBusy || extractingPdf || extractingCamera) return;
+    if (running || bundleBusy || extractingPdf || extractingCamera || correctingCameraOcr) return;
 
     const looksLikePdf = /\.pdf$/i.test(file.name) || file.type === "application/pdf";
     if (!looksLikePdf) {
@@ -8420,11 +8433,13 @@ async function main() {
       setEditorText(normalizedText);
       originalText = normalizedText;
       hasRunDetection = false;
+      ocrCorrectionApplied = false;
+      setNoteSourceType("pdf_local");
       setScrubbedConfirmed(false);
       clearDetections();
       clearResultsUi();
       resetFeedbackDraft();
-      if (runBtn) runBtn.disabled = extractingPdf || extractingCamera || !workerReady;
+      if (runBtn) runBtn.disabled = extractingPdf || extractingCamera || correctingCameraOcr || !workerReady;
 
       const ocrNeededPages = docModel.pages.filter((page) => page.sourceDecision !== "native").length;
       const summaryText =
@@ -8467,10 +8482,13 @@ async function main() {
       });
     } finally {
       extractingPdf = false;
-      if (runBtn) runBtn.disabled = extractingPdf || extractingCamera || !workerReady;
+      if (runBtn) runBtn.disabled = extractingPdf || extractingCamera || correctingCameraOcr || !workerReady;
       if (applyBtn) applyBtn.disabled = running || !hasRunDetection;
       if (revertBtn) revertBtn.disabled = running || originalText === model.getValue();
-      if (submitBtn) submitBtn.disabled = !scrubbedConfirmed || running;
+      if (submitBtn) {
+        submitBtn.disabled =
+          !scrubbedConfirmed || running || bundleBusy || extractingPdf || extractingCamera || correctingCameraOcr;
+      }
       updateZkControls();
     }
   }
@@ -8778,26 +8796,53 @@ async function main() {
 
   function setScrubbedConfirmed(value) {
     scrubbedConfirmed = value;
-    submitBtn.disabled = !scrubbedConfirmed || running;
-    if (completenessOpenReporterBtn) completenessOpenReporterBtn.disabled = !scrubbedConfirmed || running;
+    const submitBusy = running || bundleBusy || extractingPdf || extractingCamera || correctingCameraOcr;
+    submitBtn.disabled = !scrubbedConfirmed || submitBusy;
+    if (completenessOpenReporterBtn) {
+      completenessOpenReporterBtn.disabled = !scrubbedConfirmed || submitBusy;
+    }
     // Update button title for better UX
     if (submitBtn.disabled) {
-      if (running) {
-        submitBtn.title = "Wait for detection to complete";
+      if (submitBusy) {
+        submitBtn.title = "Wait for current operation to complete";
       } else if (!scrubbedConfirmed) {
         submitBtn.title = "Click 'Apply redactions' first";
       }
     } else {
       submitBtn.title = "Submit the scrubbed note to the server";
     }
+    updateOcrCorrectionButton();
     updateZkControls();
   }
 
+  function updateOcrCorrectionButton() {
+    if (!correctOcrBtn) return;
+    const busy = running || bundleBusy || extractingPdf || extractingCamera || correctingCameraOcr;
+    const hasText = Boolean(model.getValue().trim());
+    const isCameraSource = noteSourceType === "camera_ocr";
+    correctOcrBtn.disabled = busy || !scrubbedConfirmed || !hasText || !isCameraSource;
+    if (correctOcrBtn.disabled) {
+      if (!isCameraSource) {
+        correctOcrBtn.title = "Available for camera OCR notes after redactions are applied";
+      } else if (!scrubbedConfirmed) {
+        correctOcrBtn.title = "Apply redactions first";
+      } else if (busy) {
+        correctOcrBtn.title = "Wait for current operation to finish";
+      } else {
+        correctOcrBtn.title = "No scrubbed text available";
+      }
+      return;
+    }
+    correctOcrBtn.title = "Optional post-redaction OCR cleanup using gpt-5-mini";
+  }
+
   function updateZkControls() {
-    const busy = running || bundleBusy || extractingPdf || extractingCamera;
+    const busy = running || bundleBusy || extractingPdf || extractingCamera || correctingCameraOcr;
     const hasText = Boolean(model.getValue().trim());
     const hasPdfSelected = Boolean(pdfUploadInputEl?.files && pdfUploadInputEl.files.length > 0);
     const cameraSupport = canUseCameraScan();
+    if (submitBtn) submitBtn.disabled = !scrubbedConfirmed || busy;
+    if (completenessOpenReporterBtn) completenessOpenReporterBtn.disabled = !scrubbedConfirmed || busy;
     if (chronoPreviewBtn) chronoPreviewBtn.disabled = busy || !hasRunDetection;
     if (clearCurrentNoteBtn) clearCurrentNoteBtn.disabled = busy || !hasText;
     if (genBundleIdsBtn) genBundleIdsBtn.disabled = busy;
@@ -8811,6 +8856,7 @@ async function main() {
     if (pdfExtractBtn) pdfExtractBtn.disabled = busy || !hasPdfSelected;
     if (cameraScanBtn) cameraScanBtn.disabled = busy || !cameraSupport.ok;
     updateCameraControls();
+    updateOcrCorrectionButton();
   }
 
   function clearDetections() {
@@ -8942,12 +8988,14 @@ async function main() {
   if (!usingPlainEditor && typeof model?.onDidChangeContent === "function") {
     model.onDidChangeContent(() => {
       if (suppressDirtyFlag) return;
+      ocrCorrectionApplied = false;
       setScrubbedConfirmed(false);
       revertBtn.disabled = running || originalText === model.getValue();
     });
   } else if (fallbackTextarea) {
     fallbackTextarea.addEventListener("input", () => {
       if (suppressDirtyFlag) return;
+      ocrCorrectionApplied = false;
       setScrubbedConfirmed(false);
       revertBtn.disabled = running || originalText === model.getValue();
     });
@@ -9071,7 +9119,7 @@ async function main() {
         workerReady = true;
         setStatus("Ready (local model loaded)");
         setProgress("");
-        runBtn.disabled = extractingPdf || extractingCamera || !workerReady;
+        runBtn.disabled = extractingPdf || extractingCamera || correctingCameraOcr || !workerReady;
         return;
       }
 
@@ -9123,7 +9171,7 @@ async function main() {
       if (msg.type === "done") {
         running = false;
         cancelBtn.disabled = true;
-        runBtn.disabled = extractingPdf || extractingCamera || !workerReady;
+        runBtn.disabled = extractingPdf || extractingCamera || correctingCameraOcr || !workerReady;
         applyBtn.disabled = false; // Enable even with 0 detections
         revertBtn.disabled = originalText === model.getValue();
         updateZkControls();
@@ -9158,7 +9206,7 @@ async function main() {
         clearWorkerInitTimer();
         running = false;
         cancelBtn.disabled = true;
-        runBtn.disabled = extractingPdf || extractingCamera || !workerReady;
+        runBtn.disabled = extractingPdf || extractingCamera || correctingCameraOcr || !workerReady;
         applyBtn.disabled = !hasRunDetection;
         updateZkControls();
         setStatus(`Error: ${msg.message || "unknown"}`);
@@ -9268,6 +9316,99 @@ async function main() {
     revertBtn.disabled = false;
   });
 
+  async function runCameraOcrCorrection() {
+    if (running || bundleBusy || extractingPdf || extractingCamera || correctingCameraOcr) return;
+    if (!scrubbedConfirmed) {
+      setStatus("Apply redactions before OCR correction.");
+      return;
+    }
+    if (noteSourceType !== "camera_ocr") {
+      setStatus("OCR correction is available for camera OCR notes only.");
+      return;
+    }
+
+    const noteText = model.getValue();
+    if (!String(noteText || "").trim()) {
+      setStatus("No scrubbed note text available for OCR correction.");
+      return;
+    }
+
+    correctingCameraOcr = true;
+    updateZkControls();
+    setStatus("Correcting camera OCR artifacts with gpt-5-mini…");
+    setProgress("Running post-redaction OCR cleanup...");
+
+    try {
+      const res = await fetch("/api/v1/ocr/correct", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          text: noteText,
+          already_scrubbed: true,
+          source_type: "camera_ocr",
+        }),
+      });
+
+      const bodyText = await res.text();
+      let data;
+      try {
+        data = bodyText ? JSON.parse(bodyText) : null;
+      } catch (parseErr) {
+        console.error("Failed to parse OCR correction response:", parseErr);
+        data = { error: "Invalid JSON response", raw: bodyText };
+      }
+
+      if (!res.ok) {
+        console.error("OCR correction request failed:", res.status, data);
+        setStatus(`OCR correction failed (${res.status})`);
+        return;
+      }
+
+      const cleanedText = typeof data?.cleaned_text === "string" ? data.cleaned_text : "";
+      const changed = Boolean(data?.changed);
+      const correctionApplied = Boolean(data?.correction_applied);
+      const warnings = Array.isArray(data?.warnings)
+        ? data.warnings.map((item) => String(item || "").trim()).filter(Boolean)
+        : [];
+
+      if (cleanedText && cleanedText !== noteText) {
+        setEditorText(cleanedText);
+        originalText = cleanedText;
+        hasRunDetection = false;
+        clearDetections();
+      }
+
+      ocrCorrectionApplied = correctionApplied;
+      setScrubbedConfirmed(true);
+
+      if (changed) {
+        setStatus("OCR correction applied. Review cleaned text, then submit.");
+      } else if (correctionApplied) {
+        setStatus("OCR correction completed. No changes were needed.");
+      } else {
+        setStatus("OCR correction skipped by guardrails. Using original scrubbed text.");
+      }
+
+      if (warnings.length > 0) {
+        setProgress(warnings[0]);
+      } else {
+        setProgress("");
+      }
+    } catch (err) {
+      console.error("OCR correction error:", err);
+      setStatus("OCR correction error - check console for details");
+    } finally {
+      correctingCameraOcr = false;
+      updateZkControls();
+    }
+  }
+
+  if (correctOcrBtn) {
+    correctOcrBtn.addEventListener("click", () => {
+      runCameraOcrCorrection();
+    });
+  }
+
 	  revertBtn.addEventListener("click", () => {
 	    suppressDirtyFlag = true;
 	    try {
@@ -9284,10 +9425,12 @@ async function main() {
 	  });
 
     function clearCurrentNote() {
-      if (running || bundleBusy || extractingPdf || extractingCamera) return;
+      if (running || bundleBusy || extractingPdf || extractingCamera || correctingCameraOcr) return;
       setEditorText("");
       originalText = "";
       hasRunDetection = false;
+      ocrCorrectionApplied = false;
+      setNoteSourceType("manual_entry");
       setScrubbedConfirmed(false);
       clearDetections();
       clearResultsUi();
@@ -9300,7 +9443,7 @@ async function main() {
       }
       setStatus("Ready for new note");
       setProgress("");
-      if (runBtn) runBtn.disabled = extractingPdf || extractingCamera || !workerReady;
+      if (runBtn) runBtn.disabled = extractingPdf || extractingCamera || correctingCameraOcr || !workerReady;
       updateZkControls();
     }
 
@@ -9720,7 +9863,10 @@ async function main() {
         } finally {
           bundleBusy = false;
           updateZkControls();
-          if (submitBtn) submitBtn.disabled = !scrubbedConfirmed || running;
+          if (submitBtn) {
+            submitBtn.disabled =
+              !scrubbedConfirmed || running || bundleBusy || extractingPdf || extractingCamera || correctingCameraOcr;
+          }
         }
       });
     }
@@ -9800,6 +9946,8 @@ async function main() {
 	      const processBody = {
 	        note: noteText,
 	        already_scrubbed: true,
+          source_type: noteSourceType,
+          ocr_correction_applied: Boolean(ocrCorrectionApplied),
 	      };
 	      // Force backend to return evidence spans
 	      processBody.explain = true;
@@ -10130,10 +10278,12 @@ async function main() {
 
 	  if (newNoteBtn) {
 	    newNoteBtn.addEventListener("click", () => {
-	      if (running || extractingPdf || extractingCamera) return;
+	      if (running || extractingPdf || extractingCamera || correctingCameraOcr) return;
 	      setEditorText("");
 	      originalText = "";
 	      hasRunDetection = false;
+        ocrCorrectionApplied = false;
+        setNoteSourceType("manual_entry");
 	      setScrubbedConfirmed(false);
 	      clearDetections();
 	      clearResultsUi();
@@ -10146,7 +10296,7 @@ async function main() {
 	      }
 	      setStatus("Ready for new note");
 	      setProgress("");
-	      if (runBtn) runBtn.disabled = extractingPdf || extractingCamera || !workerReady;
+	      if (runBtn) runBtn.disabled = extractingPdf || extractingCamera || correctingCameraOcr || !workerReady;
 	    });
 	  }
 

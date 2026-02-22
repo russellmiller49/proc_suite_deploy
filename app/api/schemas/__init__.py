@@ -7,6 +7,8 @@ This package contains all Pydantic schemas for the FastAPI integration layer.
 from app.api.schemas.base import (
     BundleDocResponse,
     BundleTimepointRole,
+    CameraOcrCorrectionRequest,
+    CameraOcrCorrectionResponse,
     CoderRequest,
     CoderResponse,
     CodeSuggestionSummary,
@@ -47,6 +49,8 @@ __all__ = [
     # Base schemas
     "BundleDocResponse",
     "BundleTimepointRole",
+    "CameraOcrCorrectionRequest",
+    "CameraOcrCorrectionResponse",
     "CoderRequest",
     "CoderResponse",
     "CodeSuggestionSummary",

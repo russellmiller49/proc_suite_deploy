@@ -8,6 +8,7 @@ This is used by:
 from __future__ import annotations
 
 import logging
+import os
 import re
 import time
 from typing import Any
@@ -33,6 +34,46 @@ from app.registry.application.registry_service import RegistryExtractionResult, 
 logger = logging.getLogger(__name__)
 
 
+def _truthy_env(name: str, default: str = "0") -> bool:
+    return os.getenv(name, default).strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
+def _camera_ocr_fuzzy_normalization_enabled() -> bool:
+    # Feature-flagged and camera-source only. Default ON for camera_ocr to improve OCR resilience.
+    return _truthy_env("CAMERA_OCR_FUZZY_NORMALIZE_ENABLED", "1")
+
+
+def apply_camera_ocr_fuzzy_normalization(note_text: str) -> tuple[str, list[str], dict[str, Any]]:
+    """Apply a narrow fuzzy normalization pass for camera OCR notes."""
+    from app.text_cleaning.camera_ocr_fuzzy import normalize_camera_ocr_for_extraction
+
+    result = normalize_camera_ocr_for_extraction(note_text)
+    if result.replacement_count <= 0:
+        return note_text, [], {"replacement_count": 0}
+
+    top = ", ".join(
+        f"{item.original!r}->{item.replacement!r}({item.score:.1f})"
+        for item in result.replacements[:3]
+    )
+    warnings = [
+        "CAMERA_OCR_FUZZY_NORMALIZE: "
+        f"replacements={result.replacement_count}; "
+        f"examples={top}"
+    ]
+    meta = {
+        "replacement_count": result.replacement_count,
+        "examples": [
+            {
+                "original": item.original,
+                "replacement": item.replacement,
+                "score": item.score,
+            }
+            for item in result.replacements[:8]
+        ],
+    }
+    return result.text, warnings, meta
+
+
 async def run_unified_pipeline_logic(
     *,
     payload: UnifiedProcessRequest,
@@ -53,6 +94,8 @@ async def run_unified_pipeline_logic(
     redaction_was_scrubbed = False
     redaction_entity_count = 0
     redaction_warning = None
+    camera_ocr_fuzzy_warnings: list[str] = []
+    camera_ocr_fuzzy_meta: dict[str, Any] | None = None
     registry_v3_event_log: dict[str, Any] | None = None
     v3_event_log_warning: str | None = None
 
@@ -64,6 +107,24 @@ async def run_unified_pipeline_logic(
         redaction_was_scrubbed = bool(redaction.was_scrubbed)
         redaction_entity_count = int(redaction.entity_count)
         redaction_warning = redaction.warning
+
+    # Optional narrow fuzzy normalization for camera OCR notes.
+    # This is intentionally constrained to a small phrase set and feature-flagged.
+    if (
+        str(payload.source_type or "").strip().lower() == "camera_ocr"
+        and _camera_ocr_fuzzy_normalization_enabled()
+        and isinstance(note_text, str)
+        and note_text.strip()
+    ):
+        try:
+            normalized_text, fuzzy_warnings, fuzzy_meta = apply_camera_ocr_fuzzy_normalization(note_text)
+            note_text = normalized_text
+            camera_ocr_fuzzy_warnings.extend(fuzzy_warnings or [])
+            camera_ocr_fuzzy_meta = fuzzy_meta or None
+        except Exception as exc:
+            camera_ocr_fuzzy_warnings.append(
+                f"CAMERA_OCR_FUZZY_NORMALIZE_FAILED: {type(exc).__name__}"
+            )
 
     # 2) Run Registry Extraction (includes CPT coding via Hybrid Orchestrator)
     try:
@@ -204,6 +265,7 @@ async def run_unified_pipeline_logic(
     all_warnings: list[str] = []
     all_warnings.extend(getattr(result, "warnings", None) or [])
     all_warnings.extend(getattr(result, "audit_warnings", None) or [])
+    all_warnings.extend(camera_ocr_fuzzy_warnings)
     all_warnings.extend(derivation_warnings)
     if payload.include_financials and codes:
         all_warnings.extend(financial_warnings or [])
@@ -335,6 +397,9 @@ async def run_unified_pipeline_logic(
         "redaction_was_scrubbed": redaction_was_scrubbed,
         "redaction_entity_count": redaction_entity_count,
         "redaction_warning": redaction_warning,
+        "source_type": payload.source_type,
+        "ocr_correction_applied": bool(payload.ocr_correction_applied),
+        "camera_ocr_fuzzy_meta": camera_ocr_fuzzy_meta,
     }
 
     return response_model, note_text, meta

@@ -88,6 +88,19 @@ class StartupBootstrap:
             except Exception as exc:  # noqa: BLE001
                 self.logger.warning("Registry model bundle bootstrap skipped/failed: %s", exc)
 
+        def _warm_umls_store() -> None:
+            try:
+                from config.settings import UmlsSettings
+
+                if not UmlsSettings().enable_linker:
+                    return
+                from app.umls.ip_umls_store import get_ip_umls_store
+
+                _ = get_ip_umls_store()
+                self.logger.info("UMLS store warmup completed")
+            except Exception as exc:  # noqa: BLE001
+                self.logger.warning("UMLS store warmup failed: %s", exc)
+
         if settings.skip_warmup or _should_skip_warmup():
             self.logger.info("Skipping heavy NLP warmup (disabled via environment)")
             self.app.state.model_ready = True
@@ -111,6 +124,7 @@ class StartupBootstrap:
             self.app.state.ready_event.set()
 
         loop.run_in_executor(self.app.state.cpu_executor, _bootstrap_registry_models)
+        loop.run_in_executor(self.app.state.cpu_executor, _warm_umls_store)
 
     async def shutdown(self) -> None:
         llm_http = getattr(self.app.state, "llm_http", None)

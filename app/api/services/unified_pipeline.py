@@ -254,6 +254,47 @@ async def run_unified_pipeline_logic(
     except Exception:
         missing_field_prompts = []
 
+    umls_normalization: dict[str, Any] | None = None
+    try:
+        from config.settings import UmlsSettings
+
+        if UmlsSettings().enable_linker:
+            from app.umls.ip_umls_store import get_ip_umls_store
+
+            store = get_ip_umls_store()
+            dumped = record.model_dump(exclude_none=True)
+            out: dict[str, Any] = {}
+
+            clinical = dumped.get("clinical_context") or {}
+            if isinstance(clinical, dict):
+                lesion_location = clinical.get("lesion_location")
+                if isinstance(lesion_location, str) and lesion_location.strip():
+                    match = store.match(lesion_location, category="anatomy")
+                    if match:
+                        out["/registry/clinical_context/lesion_location"] = match
+
+            granular = dumped.get("granular_data") or {}
+            if isinstance(granular, dict):
+                nav_targets = granular.get("navigation_targets") or []
+                if isinstance(nav_targets, list):
+                    for idx, target in enumerate(nav_targets[:10]):
+                        if not isinstance(target, dict):
+                            continue
+                        segment = target.get("target_segment")
+                        if isinstance(segment, str) and segment.strip():
+                            match = store.match(segment, category="anatomy")
+                            if match:
+                                out[f"/registry/granular_data/navigation_targets/{idx}/target_segment"] = match
+                        location_text = target.get("target_location_text")
+                        if isinstance(location_text, str) and location_text.strip() and len(location_text) <= 80:
+                            match = store.match(location_text, category="anatomy")
+                            if match:
+                                out[f"/registry/granular_data/navigation_targets/{idx}/target_location_text"] = match
+
+            umls_normalization = out or None
+    except Exception:
+        umls_normalization = None
+
     needs_manual_review = result.needs_manual_review
     if is_phi_review_required():
         review_status = "pending_phi_review"
@@ -269,6 +310,7 @@ async def run_unified_pipeline_logic(
         registry=record.model_dump(exclude_none=True),
         registry_v3_event_log=registry_v3_event_log,
         evidence=evidence_payload,
+        umls_normalization=umls_normalization,
         missing_field_prompts=missing_field_prompts,
         cpt_codes=codes,
         suggestions=suggestions,

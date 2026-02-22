@@ -68,6 +68,7 @@ const registryLegacyRootEl = document.getElementById("registryLegacyRoot");
 const registryLegacyRightRootEl = document.getElementById("registryLegacyRightRoot");
 const completenessPromptsCardEl = document.getElementById("completenessPromptsCard");
 const completenessPromptsBodyEl = document.getElementById("completenessPromptsBody");
+const completenessToggleBtn = document.getElementById("completenessToggleBtn");
 const completenessCopyBtn = document.getElementById("completenessCopyBtn");
 const completenessOpenReporterBtn = document.getElementById("completenessOpenReporterBtn");
 const focusClinicalBtn = document.getElementById("focusClinicalBtn");
@@ -153,6 +154,7 @@ let registryGridMonacoGetter = () => null;
 let registryGridMounted = false;
 let registryGridLoadPromise = null;
 let lastCompletenessPrompts = [];
+let completenessPromptsCollapsed = false;
 let completenessEdits = null; // {edited_patch, edited_fields} generated from completeness inputs
 let completenessRawValueByPath = new Map(); // key: effective dotted path (with indices), value: raw string
 let completenessSelectedIndexByPromptPath = new Map(); // key: prompt.path (with [*]), value: selected index (number)
@@ -240,6 +242,7 @@ function isReactRegistryGridEnabled() {
 const UI_REVIEW_FOCUS_LS_KEY = "ui.reviewFocus";
 const UI_REVIEW_SPLIT_LS_KEY = "ui.reviewSplit";
 const UI_DETECTIONS_COLLAPSED_LS_KEY = "ui.detectionsCollapsed";
+const UI_COMPLETENESS_COLLAPSED_LS_KEY = "ui.completenessCollapsed";
 const REPORTER_DASHBOARD_TRANSFER_KEY = "ps.reporter_to_dashboard_note_v1";
 const DASHBOARD_REPORTER_TRANSFER_KEY = "ps.dashboard_to_reporter_note_v1";
 
@@ -383,6 +386,38 @@ function applyDetectionsCollapsed(enabled, opts = {}) {
   syncLayoutControls();
 }
 
+function syncCompletenessToggle() {
+  if (!completenessToggleBtn) return;
+  const collapsed = Boolean(completenessPromptsCollapsed);
+  completenessToggleBtn.textContent = collapsed ? "Expand" : "Collapse";
+  completenessToggleBtn.setAttribute("aria-expanded", collapsed ? "false" : "true");
+  const label = collapsed ? "Expand suggested missing fields" : "Collapse suggested missing fields";
+  completenessToggleBtn.title = label;
+  completenessToggleBtn.setAttribute("aria-label", label);
+}
+
+function applyCompletenessCollapsed(enabled, opts = {}) {
+  const { persist = true } = opts;
+  completenessPromptsCollapsed = Boolean(enabled);
+  if (completenessPromptsCardEl) {
+    completenessPromptsCardEl.classList.toggle("ps-completeness-collapsed", completenessPromptsCollapsed);
+  }
+  if (persist) {
+    safeSetLocalStorageItem(UI_COMPLETENESS_COLLAPSED_LS_KEY, completenessPromptsCollapsed ? "1" : "0");
+  }
+  syncCompletenessToggle();
+}
+
+function initCompletenessControls() {
+  const collapsed = readBoolSetting("completenessCollapsed", UI_COMPLETENESS_COLLAPSED_LS_KEY, false);
+  applyCompletenessCollapsed(collapsed, { persist: false });
+  if (!completenessToggleBtn) return;
+  completenessToggleBtn.disabled = true;
+  completenessToggleBtn.addEventListener("click", () => {
+    applyCompletenessCollapsed(!completenessPromptsCollapsed);
+  });
+}
+
 function syncLayoutControls() {
   const body = document.body;
   if (!body) return;
@@ -456,6 +491,7 @@ function initLayoutControls() {
 }
 
 applyInitialLayoutPrefs();
+initCompletenessControls();
 
 function showRegistryGridUi() {
   if (registryLegacyRightRootEl) registryLegacyRightRootEl.classList.add("hidden");
@@ -1150,35 +1186,86 @@ function buildDateRedactionReplacement(raw, { translateDates, indexYmd }) {
   return buildDateToken(offsetDays);
 }
 
+function ensureEvidenceContextVisible(opts = {}) {
+  try {
+    const autoEnableSplit = opts?.autoEnableSplit !== false;
+    if (autoEnableSplit && document.body && !document.body.classList.contains("ps-review-split")) {
+      applySplitReview(true);
+    }
+
+    const host = document.getElementById("editor") || document.querySelector(".editorPane");
+    if (!host || typeof host.scrollIntoView !== "function") return;
+    const reduceMotion = globalThis.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
+    host.scrollIntoView({
+      block: document.body?.classList.contains("ps-review-split") ? "nearest" : "start",
+      inline: "nearest",
+      behavior: reduceMotion ? "auto" : "smooth",
+    });
+  } catch (err) {
+    console.warn("Failed to ensure evidence context is visible", err);
+  }
+}
+
 function highlightSpanInEditor(start, end) {
   try {
+    const rawStart = Math.trunc(Number(start));
+    const rawEnd = Math.trunc(Number(end));
+    if (!Number.isFinite(rawStart) || !Number.isFinite(rawEnd) || rawEnd <= rawStart) return;
+
+    ensureEvidenceContextVisible();
+
     // Fallback: if Monaco is still loading/unavailable, highlight in the basic textarea.
     if (!window.editor) {
       const ta = document.getElementById("fallbackTextarea");
       if (!ta) return;
       const textLength = ta.value.length;
-      const s = clamp(Number(start) || 0, 0, textLength);
-      const e = clamp(Number(end) || 0, 0, textLength);
+      const s = clamp(rawStart, 0, textLength);
+      const e = clamp(rawEnd, 0, textLength);
+      if (e <= s) return;
       ta.focus();
       ta.setSelectionRange(s, e);
+      const lineHeightRaw = Number.parseFloat(globalThis.getComputedStyle?.(ta)?.lineHeight || "");
+      const lineHeight = Number.isFinite(lineHeightRaw) && lineHeightRaw > 0 ? lineHeightRaw : 18;
+      const lineNumber = ta.value.slice(0, s).split("\n").length;
+      ta.scrollTop = Math.max(0, (lineNumber - 3) * lineHeight);
       return;
     }
 
     const model = window.editor.getModel();
     if (!model) return;
 
-    const s = model.getPositionAt(Math.max(0, start));
-    const e = model.getPositionAt(Math.max(0, end));
+    const textLength = typeof model.getValue === "function" ? String(model.getValue() || "").length : Number.MAX_SAFE_INTEGER;
+    const startOffset = clamp(rawStart, 0, textLength);
+    const endOffset = clamp(rawEnd, 0, textLength);
+    if (endOffset <= startOffset) return;
+
+    const s = model.getPositionAt(startOffset);
+    const e = model.getPositionAt(endOffset);
     const range = new monaco.Range(s.lineNumber, s.column, e.lineNumber, e.column);
 
     window.editor.setSelection(range);
-    window.editor.revealRangeInCenter(range);
+    const revealRange = () => {
+      if (typeof window.editor.revealRangeInCenterIfOutsideViewport === "function") {
+        window.editor.revealRangeInCenterIfOutsideViewport(range);
+        return;
+      }
+      if (typeof window.editor.revealRangeInCenter === "function") {
+        window.editor.revealRangeInCenter(range);
+        return;
+      }
+      if (typeof window.editor.revealRange === "function") {
+        window.editor.revealRange(range);
+      }
+    };
+    revealRange();
+    if (typeof requestAnimationFrame === "function") requestAnimationFrame(revealRange);
     window.editor.focus();
   } catch (err) {
     console.warn("Failed to highlight evidence span", err);
   }
 }
 
+window.__ensureEvidenceContextVisible = (opts = {}) => ensureEvidenceContextVisible(opts);
 window.__highlightEvidence = (start, end) => highlightSpanInEditor(start, end);
 
 function normalizeSpans(spans) {
@@ -1838,7 +1925,12 @@ function resolvePromptPath(registry, promptPath) {
   return { effectivePath: base.replaceAll("[*]", `[${idx}]`), hasWildcard: true, wildcardCount: count };
 }
 
+function normalizeCompletenessPromptPath(promptPath) {
+  return String(promptPath || "").trim().replace(/\[\d+\]/g, "[*]");
+}
+
 function getCompletenessInputSpec(promptPath) {
+  const normalizedPromptPath = normalizeCompletenessPromptPath(promptPath);
   const map = {
     "patient_demographics.age_years": { type: "integer", placeholder: "e.g., 67" },
     "patient.age": { type: "integer", placeholder: "e.g., 67" },
@@ -1889,6 +1981,7 @@ function getCompletenessInputSpec(promptPath) {
     "granular_data.linear_ebus_stations_detail[*].number_of_passes": { type: "integer", placeholder: "passes" },
     "granular_data.linear_ebus_stations_detail[*].short_axis_mm": { type: "number", placeholder: "mm" },
     "granular_data.linear_ebus_stations_detail[*].lymphocytes_present": { type: "boolean" },
+    "procedures_performed.linear_ebus.node_events[*].passes": { type: "integer", placeholder: "passes" },
 
     // Pleural / chest ultrasound
     "pleural_procedures.chest_ultrasound.hemithorax": {
@@ -1940,7 +2033,7 @@ function getCompletenessInputSpec(promptPath) {
     },
   };
 
-  return map[String(promptPath || "")] || { type: "string", placeholder: "Enter value" };
+  return map[normalizedPromptPath] || map[String(promptPath || "")] || { type: "string", placeholder: "Enter value" };
 }
 
 function coerceCompletenessValue(spec, rawValue) {
@@ -2145,10 +2238,45 @@ function applyCompletenessValueToFlatTables(targetEffectivePath, coercedValue) {
     const key = ebusMatch[2];
     if (!Number.isFinite(rowIndex) || rowIndex < 0) return false;
     const table = getFlatTableStateById("linear_ebus_stations_detail");
-    if (!table || !Array.isArray(table.rows) || rowIndex >= table.rows.length) return false;
+    if (!table || !Array.isArray(table.rows)) return false;
+    if (rowIndex >= table.rows.length) {
+      for (let i = table.rows.length; i <= rowIndex; i += 1) {
+        const newRow = {};
+        (Array.isArray(table.columns) ? table.columns : []).forEach((col) => {
+          if (!col?.key) return;
+          newRow[col.key] = "";
+        });
+        table.rows.push(newRow);
+      }
+    }
     const row = table.rows[rowIndex];
 
     const baseTable = getFlatTableBaseById("linear_ebus_stations_detail");
+    const baseRow = Array.isArray(baseTable?.rows) ? baseTable.rows[rowIndex] : null;
+
+    if (restoreBase) {
+      row[key] = baseRow ? baseRow[key] ?? "" : "";
+      return true;
+    }
+
+    if (typeof coercedValue === "boolean") row[key] = toYesNo(coercedValue);
+    else if (typeof coercedValue === "number") row[key] = Number.isFinite(coercedValue) ? String(coercedValue) : "";
+    else if (Array.isArray(coercedValue))
+      row[key] = coercedValue.map((v) => String(v || "").trim()).filter((v) => v !== "").join(", ");
+    else row[key] = String(coercedValue ?? "");
+    return true;
+  }
+
+  const ebusNodeEventMatch = path.match(/^procedures_performed\.linear_ebus\.node_events\[(\d+)\]\.([^.]+)$/);
+  if (ebusNodeEventMatch) {
+    const rowIndex = Number.parseInt(ebusNodeEventMatch[1], 10);
+    const key = ebusNodeEventMatch[2];
+    if (!Number.isFinite(rowIndex) || rowIndex < 0) return false;
+    const table = getFlatTableStateById("ebus_node_events");
+    if (!table || !Array.isArray(table.rows) || rowIndex >= table.rows.length) return false;
+    const row = table.rows[rowIndex];
+
+    const baseTable = getFlatTableBaseById("ebus_node_events");
     const baseRow = Array.isArray(baseTable?.rows) ? baseTable.rows[rowIndex] : null;
 
     if (restoreBase) {
@@ -2190,12 +2318,15 @@ function renderCompletenessPrompts(data) {
 
   if (!prompts.length || data?.error) {
     completenessPromptsCardEl.classList.add("hidden");
+    if (completenessToggleBtn) completenessToggleBtn.disabled = true;
     if (completenessCopyBtn) completenessCopyBtn.disabled = true;
     return;
   }
 
   completenessPromptsCardEl.classList.remove("hidden");
+  if (completenessToggleBtn) completenessToggleBtn.disabled = false;
   if (completenessCopyBtn) completenessCopyBtn.disabled = false;
+  applyCompletenessCollapsed(completenessPromptsCollapsed, { persist: false });
 
   const counts = { required: 0, recommended: 0 };
   prompts.forEach((p) => {
@@ -5183,6 +5314,9 @@ function renderFlatTablesFromState() {
       header.appendChild(actions);
       section.appendChild(header);
 
+      const tableScroll = document.createElement("div");
+      tableScroll.className = "flat-table-scroll";
+
       const tableEl = document.createElement("table");
       tableEl.className = "flat-table";
 
@@ -5365,7 +5499,8 @@ function renderFlatTablesFromState() {
       }
 
       tableEl.appendChild(tbody);
-      section.appendChild(tableEl);
+      tableScroll.appendChild(tableEl);
+      section.appendChild(tableScroll);
 
       if (table.note) {
         const note = document.createElement("div");
@@ -6274,6 +6409,7 @@ function clearResultsUi() {
   lastServerResponse = null;
   lastCompletenessPrompts = [];
   if (completenessPromptsCardEl) completenessPromptsCardEl.classList.add("hidden");
+  if (completenessToggleBtn) completenessToggleBtn.disabled = true;
   if (completenessPromptsBodyEl) clearEl(completenessPromptsBodyEl);
   if (completenessCopyBtn) completenessCopyBtn.disabled = true;
   resetRunState();
@@ -9075,6 +9211,24 @@ async function main() {
         });
       });
 
+  function buildRedactedText(baseText, spans, { translateDates, indexYmd }) {
+    let text = baseText;
+    // Apply replacements from the end so original offsets stay valid.
+    for (const d of spans) {
+      const start = clamp(Number(d.start) || 0, 0, text.length);
+      const end = clamp(Number(d.end) || 0, 0, text.length);
+      if (end <= start) continue;
+      const raw = baseText.slice(start, end);
+      const label = String(d.label || "").toUpperCase().replace(/^[BI]-/, "");
+      const replacement =
+        label === "DATE"
+          ? buildDateRedactionReplacement(raw, { translateDates, indexYmd })
+          : "[REDACTED]";
+      text = `${text.slice(0, start)}${replacement}${text.slice(end)}`;
+    }
+    return text;
+  }
+
   applyBtn.addEventListener("click", () => {
     if (!hasRunDetection) return;
 
@@ -9086,50 +9240,24 @@ async function main() {
     const translateDates = Boolean(translateDatesToggleEl?.checked);
     const indexYmd = parseIsoDateInput(indexDateInputEl?.value);
     const baseText = model.getValue();
+    const redactedText = buildRedactedText(baseText, spans, { translateDates, indexYmd });
 
     suppressDirtyFlag = true;
     try {
       if (!usingPlainEditor && editor) {
-        const lineStarts = buildLineStartOffsets(baseText);
-        const textLength = baseText.length;
-
-        const edits = spans.map((d) => {
-          const startPos = offsetToPosition(d.start, lineStarts, textLength);
-          const endPos = offsetToPosition(d.end, lineStarts, textLength);
-          const raw = baseText.slice(d.start, d.end);
-          const label = String(d.label || "").toUpperCase().replace(/^[BI]-/, "");
-          const replacement =
-            label === "DATE"
-              ? buildDateRedactionReplacement(raw, { translateDates, indexYmd })
-              : "[REDACTED]";
-          return {
-            range: new monaco.Range(
-              startPos.lineNumber,
-              startPos.column,
-              endPos.lineNumber,
-              endPos.column
-            ),
-            text: replacement,
-          };
-        });
-
-        editor.executeEdits("phi-redactor", edits);
-      } else {
-        let text = baseText;
-        // Apply replacements from the end to preserve offsets.
-        for (const d of spans) {
-          const start = clamp(d.start, 0, text.length);
-          const end = clamp(d.end, 0, text.length);
-          if (end <= start) continue;
-          const raw = baseText.slice(start, end);
-          const label = String(d.label || "").toUpperCase().replace(/^[BI]-/, "");
-          const replacement =
-            label === "DATE"
-              ? buildDateRedactionReplacement(raw, { translateDates, indexYmd })
-              : "[REDACTED]";
-          text = `${text.slice(0, start)}${replacement}${text.slice(end)}`;
+        const fullRange =
+          typeof model.getFullModelRange === "function"
+            ? model.getFullModelRange()
+            : new monaco.Range(1, 1, model.getLineCount(), model.getLineMaxColumn(model.getLineCount()));
+        try {
+          // Apply as one edit to avoid Monaco overlap failures on mixed-source detections.
+          editor.executeEdits("phi-redactor", [{ range: fullRange, text: redactedText }]);
+        } catch (err) {
+          console.warn("Monaco edit failed during redaction; falling back to model.setValue", err);
+          model.setValue(redactedText);
         }
-        model.setValue(text);
+      } else {
+        model.setValue(redactedText);
       }
     } finally {
       suppressDirtyFlag = false;

@@ -155,14 +155,21 @@ PROCEDURE
 {% set _show_monitoring = not (_is_ebus_only or _is_short_kv or _has_tunneled_pleural_catheter or (_is_long_note and ("ATTENDING" not in _note_upper) and (not _is_structured_bracket) and (not _is_preformatted_op_report))) %}
 {% set _show_ebl = not (_is_ebus_only or _is_short_kv or _has_pigtail or "DX THORACOSCOPY" in _note_upper) %}
 {% set _show_complications = not (_is_ebus_only or _is_short_kv) %}
+{% set _anesthesia_type = ((anesthesia.type if anesthesia else "") | default("", true)) | lower %}
+{% set _sedation_type = ((sedation.type if sedation else "") | default("", true)) | lower %}
+{% set _ga_explicit = ("general" in _anesthesia_type) or ("general" in _sedation_type) %}
 
 {% if _show_anesthesia %}
-{% if anesthesia or sedation %}
-ANESTHESIA {{ (anesthesia.description or anesthesia.type) if anesthesia else (sedation.description or sedation.type) }}
+{% if _ga_explicit %}
+ANESTHESIA {{ (anesthesia.description or anesthesia.type or sedation.description or sedation.type or "General anesthesia") }}
+{% elif sedation %}
+ANESTHESIA {{ sedation.description or sedation.type }}
+{% elif anesthesia and (anesthesia.description or anesthesia.type) %}
+ANESTHESIA {{ anesthesia.description or anesthesia.type }}
 {% elif _has_pleural and not _has_bronchoscopy %}
 ANESTHESIA Local anesthesia (Lidocaine 1%)
 {% else %}
-ANESTHESIA General anesthesia
+ANESTHESIA Not documented
 {% endif %}
 {% endif %}
 
@@ -178,7 +185,7 @@ ESTIMATED BLOOD LOSS {{ proc.estimated_blood_loss or estimated_blood_loss or "Mi
 COMPLICATIONS {{ proc.complications_text or complications_text or "None" }}
 {% endif %}
 
-PROCEDURE IN DETAIL After induction of anesthesia, a timeout was performed confirming patient identity, planned procedures, and laterality. Relevant procedural images were saved to the medical record.
+PROCEDURE IN DETAIL {% if _ga_explicit %}After induction of general anesthesia,{% elif sedation %}After adequate sedation was achieved,{% else %}After appropriate local anesthesia and preparation,{% endif %} a timeout was performed confirming patient identity, planned procedures, and laterality. Relevant procedural images were saved to the medical record.
 
 {{ procedure_details_block }}
 

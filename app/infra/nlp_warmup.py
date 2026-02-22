@@ -130,22 +130,34 @@ def _do_heavy_warmup() -> None:
     # Initialize sectionizer (uses medspaCy)
     _ = get_sectionizer()
 
-    # Also warm up the UMLS linker from proc_nlp if available
-    # Check env var first to save memory on Railway
-    enable_umls = os.getenv("ENABLE_UMLS_LINKER", "true").lower() in ("true", "1", "yes")
+    # UMLS warmup: backend-aware (default: distilled, no spaCy/scispaCy required).
+    try:
+        from config.settings import UmlsSettings
 
-    if enable_umls:
+        umls_settings = UmlsSettings()
+    except Exception:  # noqa: BLE001
+        umls_settings = None
+
+    if not umls_settings or not umls_settings.enable_linker:
+        _logger.info("UMLS warmup skipped (linker disabled)")
+    elif (umls_settings.linker_backend or "distilled").strip().lower() == "scispacy":
         try:
             from proc_nlp.umls_linker import _load_model
 
             model_name = os.getenv("PROCSUITE_SPACY_MODEL", "en_core_sci_sm")
-            _logger.info("Warming up UMLS linker with model: %s", model_name)
+            _logger.info("Warming up scispaCy UMLS linker with model: %s", model_name)
             _load_model(model_name)
-            _logger.info("UMLS linker warmed up successfully")
+            _logger.info("scispaCy UMLS linker warmed up successfully")
         except Exception as exc:
-            _logger.warning("UMLS linker warmup skipped: %s", exc)
+            _logger.warning("scispaCy UMLS linker warmup skipped: %s", exc)
     else:
-        _logger.info("UMLS linker warmup skipped (ENABLE_UMLS_LINKER=false)")
+        try:
+            from app.umls.ip_umls_store import get_ip_umls_store
+
+            _ = get_ip_umls_store()
+            _logger.info("Distilled UMLS store warmed up successfully")
+        except Exception as exc:
+            _logger.warning("Distilled UMLS store warmup skipped: %s", exc)
 
     _logger.info("Heavy NLP resources warmed up successfully")
     _nlp_warmup_successful = True

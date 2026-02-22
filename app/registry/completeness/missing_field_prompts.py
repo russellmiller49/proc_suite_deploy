@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import re
 from typing import Any, Iterable, Literal
 
 from app.registry.schema import RegistryRecord
 
 PromptSeverity = Literal["required", "recommended"]
+
+_STATION_TOKEN_RE = re.compile(r"\b(?:[1-9]|1[0-2])(?:[LR](?:[SI])?)?\b", re.IGNORECASE)
 
 
 @dataclass(frozen=True)
@@ -115,6 +118,172 @@ def _get_bool(data: dict[str, Any], path: str) -> bool | None:
         if isinstance(value, bool):
             return value
     return None
+
+
+def _normalize_station_token(value: object) -> str | None:
+    if _is_missing_scalar(value):
+        return None
+    raw = str(value).strip().upper()
+    if not raw:
+        return None
+    match = _STATION_TOKEN_RE.search(raw)
+    if not match:
+        compact = re.sub(r"[\s_\-]+", "", raw)
+        match = _STATION_TOKEN_RE.search(compact)
+    if not match:
+        return None
+    return match.group(0).upper()
+
+
+def _station_sort_key(station: str) -> tuple[int, str]:
+    m = re.match(r"^(?P<num>\d+)(?P<suffix>[A-Z]*)$", str(station).upper())
+    if not m:
+        return (999, str(station))
+    try:
+        num = int(m.group("num"))
+    except (TypeError, ValueError):
+        num = 999
+    return (num, m.group("suffix") or "")
+
+
+def _is_meaningful(value: object) -> bool:
+    return not _is_missing_value(value)
+
+
+def _to_int_or_none(value: object) -> int | None:
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value)
+    s = str(value).strip()
+    if not s:
+        return None
+    try:
+        return int(float(s))
+    except (TypeError, ValueError):
+        return None
+
+
+def _build_ebus_station_contexts(
+    data: dict[str, Any],
+) -> tuple[list[dict[str, Any]], bool]:
+    contexts: dict[str, dict[str, Any]] = {}
+
+    def ensure_ctx(station: str) -> dict[str, Any]:
+        existing = contexts.get(station)
+        if existing is not None:
+            return existing
+        created: dict[str, Any] = {
+            "station": station,
+            "sampled": False,
+            "detail_index": None,
+            "node_event_index": None,
+            "has_needle_gauge": False,
+            "has_passes": False,
+            "has_short_axis": False,
+            "has_adequacy": False,
+        }
+        contexts[station] = created
+        return created
+
+    linear_ebus = (
+        (data.get("procedures_performed") or {}).get("linear_ebus") if isinstance(data, dict) else None
+    )
+    if not isinstance(linear_ebus, dict):
+        linear_ebus = {}
+
+    global_needle_gauge_present = _is_meaningful(linear_ebus.get("needle_gauge"))
+
+    sampled_stations = linear_ebus.get("stations_sampled")
+    if isinstance(sampled_stations, list):
+        for token in sampled_stations:
+            station = _normalize_station_token(token)
+            if not station:
+                continue
+            ensure_ctx(station)["sampled"] = True
+
+    node_events = linear_ebus.get("node_events")
+    if isinstance(node_events, list):
+        for idx, event in enumerate(node_events):
+            if not isinstance(event, dict):
+                continue
+            station = _normalize_station_token(event.get("station"))
+            if not station:
+                continue
+            ctx = ensure_ctx(station)
+            if ctx["node_event_index"] is None:
+                ctx["node_event_index"] = idx
+
+            action = str(event.get("action") or "").strip().lower()
+            if action and (
+                "needle" in action
+                or "tbna" in action
+                or "fna" in action
+                or "biops" in action
+                or "aspirat" in action
+                or "sample" in action
+            ):
+                ctx["sampled"] = True
+
+            passes_values = [
+                event.get("passes"),
+                event.get("pass_count"),
+                event.get("number_of_passes"),
+            ]
+            if any(_is_meaningful(v) for v in passes_values):
+                ctx["has_passes"] = True
+                ctx["sampled"] = True
+
+            if _is_meaningful(event.get("outcome")):
+                ctx["has_adequacy"] = True
+                ctx["sampled"] = True
+
+    granular = data.get("granular_data") if isinstance(data, dict) else None
+    details = (granular or {}).get("linear_ebus_stations_detail") if isinstance(granular, dict) else None
+    if isinstance(details, list):
+        for idx, row in enumerate(details):
+            if not isinstance(row, dict):
+                continue
+            station = _normalize_station_token(row.get("station"))
+            if not station:
+                continue
+            ctx = ensure_ctx(station)
+            if ctx["detail_index"] is None:
+                ctx["detail_index"] = idx
+
+            sampled = row.get("sampled")
+            if sampled is True:
+                ctx["sampled"] = True
+            elif sampled is None and any(
+                _is_meaningful(v)
+                for v in (
+                    row.get("needle_gauge"),
+                    row.get("number_of_passes"),
+                    row.get("rose_result"),
+                    row.get("short_axis_mm"),
+                )
+            ):
+                ctx["sampled"] = True
+
+            if _is_meaningful(row.get("needle_gauge")):
+                ctx["has_needle_gauge"] = True
+            if _is_meaningful(row.get("number_of_passes")):
+                ctx["has_passes"] = True
+            if _is_meaningful(row.get("short_axis_mm")):
+                ctx["has_short_axis"] = True
+            if (
+                isinstance(row.get("lymphocytes_present"), bool)
+                or isinstance(row.get("rose_adequacy"), bool)
+                or _is_meaningful(row.get("rose_result"))
+            ):
+                ctx["has_adequacy"] = True
+
+    ordered = sorted(contexts.values(), key=lambda c: _station_sort_key(str(c.get("station") or "")))
+    return ordered, global_needle_gauge_present
 
 
 def generate_missing_field_prompts(record: RegistryRecord) -> list[MissingFieldPrompt]:
@@ -428,8 +597,22 @@ def generate_missing_field_prompts(record: RegistryRecord) -> list[MissingFieldP
     if not ebus_performed:
         stations = _iter_path_values(data, "granular_data.linear_ebus_stations_detail")
         ebus_performed = any(isinstance(v, list) and len(v) > 0 for v in stations)
+    if not ebus_performed:
+        node_events = _iter_path_values(data, "procedures_performed.linear_ebus.node_events")
+        ebus_performed = any(isinstance(v, list) and len(v) > 0 for v in node_events)
+    if not ebus_performed:
+        sampled = _iter_path_values(data, "procedures_performed.linear_ebus.stations_sampled")
+        ebus_performed = any(isinstance(v, list) and len(v) > 0 for v in sampled)
 
     if ebus_performed:
+        existing_detail_rows = _iter_path_values(data, "granular_data.linear_ebus_stations_detail")
+        detail_row_count = 0
+        for value in existing_detail_rows:
+            if isinstance(value, list):
+                detail_row_count = len(value)
+                break
+        next_detail_idx = detail_row_count
+
         add_prompt_if_missing(
             group="EBUS",
             path="granular_data.linear_ebus_stations_detail[*].station",
@@ -437,34 +620,109 @@ def generate_missing_field_prompts(record: RegistryRecord) -> list[MissingFieldP
             severity="required",
             message="No per-station EBUS detail was captured. Document stations inspected/sampled (e.g., 4R, 7, 11L).",
         )
-        add_prompt_if_missing(
-            group="EBUS",
-            path="granular_data.linear_ebus_stations_detail[*].needle_gauge",
-            label="Needle gauge (per station)",
-            severity="recommended",
-            message="Needle gauge was not captured. Document gauge (19/21/22/25G) when stated.",
-        )
-        add_prompt_if_missing(
-            group="EBUS",
-            path="granular_data.linear_ebus_stations_detail[*].number_of_passes",
-            label="Passes (per station)",
-            severity="recommended",
-            message="Passes per station were not captured. Document number of passes per station when stated.",
-        )
-        add_prompt_if_missing(
-            group="EBUS",
-            path="granular_data.linear_ebus_stations_detail[*].short_axis_mm",
-            label="Node size short axis (mm)",
-            severity="recommended",
-            message="Short-axis node size was not captured. Document node measurements when stated.",
-        )
-        add_prompt_if_missing(
-            group="EBUS",
-            path="granular_data.linear_ebus_stations_detail[*].lymphocytes_present",
-            label="Adequacy: lymphocytes present",
-            severity="recommended",
-            message="Station adequacy (lymphocytes present) was not captured. Document ROSE/pathology adequacy when stated.",
-        )
+        station_contexts, global_needle_gauge_present = _build_ebus_station_contexts(data)
+        sampled_contexts = [ctx for ctx in station_contexts if ctx.get("sampled") is True]
+        station_targets = sampled_contexts or station_contexts
+
+        for ctx in station_targets:
+            station = str(ctx.get("station") or "").upper()
+            if not station:
+                continue
+            detail_idx = _to_int_or_none(ctx.get("detail_index"))
+            node_event_idx = _to_int_or_none(ctx.get("node_event_index"))
+            detail_row_missing = detail_idx is None
+
+            if detail_row_missing:
+                detail_idx = next_detail_idx
+                next_detail_idx += 1
+                prompts.append(
+                    MissingFieldPrompt(
+                        group="EBUS",
+                        path="granular_data.linear_ebus_stations_detail[*].station",
+                        target_path=f"granular_data.linear_ebus_stations_detail[{detail_idx}].station",
+                        label=f"Per-station detail row (station {station})",
+                        severity="recommended",
+                        message=(
+                            f"Station {station} appears sampled, but no per-station detail row is present. "
+                            "Add a station row to capture size, passes, and adequacy consistently."
+                        ),
+                    )
+                )
+
+            if not ctx.get("has_needle_gauge") and not global_needle_gauge_present:
+                target_path = (
+                    f"granular_data.linear_ebus_stations_detail[{detail_idx}].needle_gauge"
+                    if detail_idx is not None
+                    else "granular_data.linear_ebus_stations_detail[*].needle_gauge"
+                )
+                prompts.append(
+                    MissingFieldPrompt(
+                        group="EBUS",
+                        path="granular_data.linear_ebus_stations_detail[*].needle_gauge",
+                        target_path=target_path,
+                        label=f"Needle gauge (station {station})",
+                        severity="recommended",
+                        message=f"Needle gauge for station {station} was not captured. Document 19/21/22/25G when stated.",
+                    )
+                )
+
+            if not ctx.get("has_passes"):
+                if detail_idx is not None:
+                    target_path = f"granular_data.linear_ebus_stations_detail[{detail_idx}].number_of_passes"
+                elif node_event_idx is not None:
+                    target_path = f"procedures_performed.linear_ebus.node_events[{node_event_idx}].passes"
+                else:
+                    # If no detail row and no node event exists, ask for row creation only.
+                    target_path = ""
+                if not target_path:
+                    continue
+                prompts.append(
+                    MissingFieldPrompt(
+                        group="EBUS",
+                        path="granular_data.linear_ebus_stations_detail[*].number_of_passes",
+                        target_path=target_path,
+                        label=f"Passes (station {station})",
+                        severity="recommended",
+                        message=f"Pass count for station {station} was not captured. Document number of needle passes when stated.",
+                    )
+                )
+
+            if not ctx.get("has_short_axis"):
+                target_path = (
+                    f"granular_data.linear_ebus_stations_detail[{detail_idx}].short_axis_mm"
+                    if detail_idx is not None
+                    else "granular_data.linear_ebus_stations_detail[*].short_axis_mm"
+                )
+                prompts.append(
+                    MissingFieldPrompt(
+                        group="EBUS",
+                        path="granular_data.linear_ebus_stations_detail[*].short_axis_mm",
+                        target_path=target_path,
+                        label=f"Node size short axis (station {station})",
+                        severity="recommended",
+                        message=f"Short-axis node size for station {station} was not captured. Document node size when stated.",
+                    )
+                )
+
+            if not ctx.get("has_adequacy"):
+                target_path = (
+                    f"granular_data.linear_ebus_stations_detail[{detail_idx}].lymphocytes_present"
+                    if detail_idx is not None
+                    else "granular_data.linear_ebus_stations_detail[*].lymphocytes_present"
+                )
+                prompts.append(
+                    MissingFieldPrompt(
+                        group="EBUS",
+                        path="granular_data.linear_ebus_stations_detail[*].lymphocytes_present",
+                        target_path=target_path,
+                        label=f"Adequacy/ROSE (station {station})",
+                        severity="recommended",
+                        message=(
+                            f"Adequacy/ROSE for station {station} was not captured in per-station detail. "
+                            "Document lymphocytes present or station-level ROSE adequacy when stated."
+                        ),
+                    )
+                )
 
     # Complications: pneumothorax intervention level
     if _get_bool(data, "complications.pneumothorax.occurred") is True:

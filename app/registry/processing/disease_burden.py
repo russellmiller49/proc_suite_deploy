@@ -512,7 +512,7 @@ def apply_disease_burden_overrides(
         def _find_pct_span(pct: int, *, allow_open: bool) -> Span | None:
             # Prefer explicit obstruction language; fall back to "% open" for derived post values.
             obstruction_re = re.compile(
-                rf"(?i)\b{pct}\s*%\s*(?:obstruct(?:ed|ion)?|occlud(?:ed|ing|e)?|stenos(?:is|ed)|narrow(?:ed|ing)?|block(?:ed|ing)?|obstruction|occlusion)\b"
+                rf"(?i)\b{pct}\s*%\s*(?:obstruct(?:ed|ion|ive)?|occlud(?:ed|ing|e)?|stenos(?:is|ed)|narrow(?:ed|ing)?|block(?:ed|ing)?|obstruction|occlusion)\b"
             )
             m = obstruction_re.search(note_text)
             if m:

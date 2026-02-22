@@ -56,6 +56,7 @@ from app.api.routes.qa import router as qa_router
 from app.api.routes.registry_runs import router as registry_runs_router
 from app.api.routes.reporting import router as reporting_router
 from app.api.routes.unified_process import router as unified_process_router
+from app.api.routes.umls import router as umls_router
 from app.api.routes_registry import router as registry_extract_router
 from app.api.schemas import KnowledgeMeta
 from app.common.knowledge import knowledge_hash, knowledge_version
@@ -136,6 +137,8 @@ app.include_router(registry_extract_router, tags=["registry"])
 app.include_router(registry_runs_router, prefix="/api", tags=["registry-runs"])
 # Unified process router (UI entry point)
 app.include_router(unified_process_router, prefix="/api")
+# UMLS term suggestion / concept lookup
+app.include_router(umls_router, prefix="/api")
 # Bundle process router (multi-doc ZK ingestion)
 app.include_router(process_bundle_router, prefix="/api")
 # Legacy/API support routers split from this composition root.

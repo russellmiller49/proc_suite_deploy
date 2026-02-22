@@ -6,7 +6,7 @@
 {% macro emn_bronchoscopy(navigation_system, emn_catheter, lung_segment, target_size_cm, distance_from_target_cm=1.0) %}
 Electromagnetic navigation bronchoscopy was performed to target a lesion. Registration was completed; the navigation catheter was advanced. Radial EBUS confirmed intraparenchymal position. Samples were obtained. The patient tolerated the procedure well.
 
-Performed with {{ navigation_system }}. Automatic registration was used. {{ emn_catheter }} was used to engage the {{ lung_segment }}. Target lesion is about {{ target_size_cm }} cm in diameter. Under navigational guidance the catheter was advanced to {{ distance_from_target_cm }} cm away from the planned target.
+Performed with {{ navigation_system }}. Automatic registration was used. {{ emn_catheter }} was used to engage the {{ lung_segment | umls_pref('anatomy') }}. Target lesion is about {{ target_size_cm }} cm in diameter. Under navigational guidance the catheter was advanced to {{ distance_from_target_cm }} cm away from the planned target.
 {% endmacro %}
 
 
@@ -37,7 +37,7 @@ The following features were noted:
 
 {# --- Robotic Navigational Bronchoscopy (Ion/Intuitive) --- #}
 {% macro robotic_bronchoscopy_ion(vent_params=None, sampling_details=None, cbct_performed=true, lesion_location=None, lesion_size_cm=None, radial_pattern=None, notes=None) %}
-Robotic navigation bronchoscopy was performed using the Intuitive Ion system. A navigation plan from the pre-procedure CT was loaded and registration completed. The Ion catheter was advanced under navigational guidance to {{ lesion_location or "[lesion segment e.g., RB1/RB3]" }}{% if lesion_size_cm %} targeting a {{ lesion_size_cm }} cm nodule{% endif %}. Radial EBUS confirmed {{ radial_pattern or "[radial pattern]" }} position. {% if cbct_performed %}Cone-beam CT was performed for trajectory verification. {% endif %}Sampling was obtained through the extended working channel as detailed. Hemostasis was confirmed. The patient tolerated the procedure well without immediate complications.
+Robotic navigation bronchoscopy was performed using the Intuitive Ion system. A navigation plan from the pre-procedure CT was loaded and registration completed. The Ion catheter was advanced under navigational guidance to {% if lesion_location %}{{ lesion_location | umls_pref('anatomy') }}{% else %}[lesion segment e.g., RB1/RB3]{% endif %}{% if lesion_size_cm %} targeting a {{ lesion_size_cm }} cm nodule{% endif %}. Radial EBUS confirmed {{ radial_pattern or "[radial pattern]" }} position. {% if cbct_performed %}Cone-beam CT was performed for trajectory verification. {% endif %}Sampling was obtained through the extended working channel as detailed. Hemostasis was confirmed. The patient tolerated the procedure well without immediate complications.
 
 CT Chest scan was placed on separate planning station to generate 3D rendering of the pathway to target. The navigational plan was reviewed and verified. This was then loaded into robotic bronchoscopy platform.
 {% if notes %}

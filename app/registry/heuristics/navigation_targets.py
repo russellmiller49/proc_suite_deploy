@@ -192,6 +192,8 @@ def apply_navigation_target_heuristics(
                     if value is True and out.get(key) is not True:
                         out[key] = True
                         updated = True
+                        if parsed_evidence and key in parsed_evidence:
+                            _add_nav_evidence(idx, key, parsed_evidence.get(key))
                     continue
                 if out.get(key) in (None, "", [], {}):
                     out[key] = value

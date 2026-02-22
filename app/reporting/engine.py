@@ -5,6 +5,7 @@ from __future__ import annotations
 import datetime as dt
 import hashlib
 import json
+import logging
 import os
 import re
 from dataclasses import dataclass, field
@@ -15,6 +16,8 @@ from typing import Any, Dict, Iterable, List, Sequence, Tuple, Literal
 
 from jinja2 import Environment, FileSystemLoader, Template, TemplateNotFound, select_autoescape
 from pydantic import BaseModel
+
+from config.settings import UmlsSettings
 
 import proc_schemas.clinical.airway as airway_schemas
 import proc_schemas.clinical.pleural as pleural_schemas
@@ -106,21 +109,63 @@ _ENV.globals["list_addon_slugs"] = list_addon_slugs
 
 def _enable_umls_linker() -> bool:
     """Return True if UMLS linking should be attempted for report metadata."""
-    return os.getenv("ENABLE_UMLS_LINKER", "true").strip().lower() in ("1", "true", "yes")
+    return UmlsSettings().enable_linker
 
 
-def _safe_umls_link(text: str) -> list[Any]:
-    """Best-effort UMLS linking.
+_UMLS_SKIP_KEYS = {"source_text", "note_text", "raw_note", "narrative"}
+_UMLS_MAX_TERM_LEN = 80
+_UMLS_MAX_TERMS = 80
 
-    We avoid importing scispaCy/spaCy at module import time (startup performance).
-    When disabled via ENABLE_UMLS_LINKER=false, this returns an empty list.
-    """
+
+def _collect_umls_terms_from_payload(obj: Any) -> list[str]:
+    terms: list[str] = []
+    seen: set[str] = set()
+
+    def _add_term(value: str) -> None:
+        if len(terms) >= _UMLS_MAX_TERMS:
+            return
+        clean = re.sub(r"\s+", " ", (value or "").strip())
+        if not clean or len(clean) > _UMLS_MAX_TERM_LEN:
+            return
+        key = clean.casefold()
+        if key in seen:
+            return
+        seen.add(key)
+        terms.append(clean)
+
+    def _walk(node: Any) -> None:
+        if len(terms) >= _UMLS_MAX_TERMS:
+            return
+        if isinstance(node, BaseModel):
+            try:
+                node = node.model_dump(mode="python", exclude_none=True)
+            except Exception:
+                return
+        if isinstance(node, dict):
+            for k, v in node.items():
+                if str(k) in _UMLS_SKIP_KEYS:
+                    continue
+                _walk(v)
+            return
+        if isinstance(node, (list, tuple, set)):
+            for item in node:
+                _walk(item)
+            return
+        if isinstance(node, str):
+            _add_term(node)
+
+    _walk(obj)
+    return terms
+
+
+def _safe_umls_link_terms(terms: Iterable[str]) -> list[Any]:
+    """Best-effort UMLS linking for a small set of short extracted terms."""
     if not _enable_umls_linker():
         return []
     try:
-        from proc_nlp.umls_linker import umls_link as _umls_link  # heavy optional import
+        from proc_nlp.umls_linker import umls_link_terms as _umls_link_terms
 
-        return list(_umls_link(text))
+        return list(_umls_link_terms(list(terms)))
     except Exception:
         # UMLS is optional and should not break report composition.
         return []
@@ -131,7 +176,8 @@ def compose_report_from_text(text: str, hints: Dict[str, Any] | None = None) -> 
     hints = deepcopy(hints or {})
     normalized_core = normalize_dictation(text, hints)
     procedure_core = ProcedureCore(**normalized_core)
-    umls = [_serialize_concept(concept) for concept in _safe_umls_link(text)]
+    umls_terms = _collect_umls_terms_from_payload({"hints": hints, "procedure_core": procedure_core})
+    umls = [_serialize_concept(concept) for concept in _safe_umls_link_terms(umls_terms)]
     paragraph_hashes = _hash_paragraphs(text)
     nlp = NLPTrace(paragraph_hashes=paragraph_hashes, umls=umls)
 
@@ -164,9 +210,12 @@ def compose_report_from_form(form: Dict[str, Any] | ProcedureReport) -> Tuple[Pr
             payload["nlp"] = NLPTrace(**nlp_payload)
         elif not nlp_payload:
             text = _extract_text(payload)
+            umls_terms = _collect_umls_terms_from_payload(
+                {"procedure_core": core, "indication": payload.get("indication"), "postop": payload.get("postop")}
+            )
             payload["nlp"] = NLPTrace(
                 paragraph_hashes=_hash_paragraphs(text),
-                umls=[_serialize_concept(concept) for concept in _safe_umls_link(text)],
+                umls=[_serialize_concept(concept) for concept in _safe_umls_link_terms(umls_terms)],
             )
         report = ProcedureReport(**payload)
     note_md = _render_note(report)
@@ -216,6 +265,7 @@ def _serialize_concept(concept: Any) -> Dict[str, Any]:
 # Path is: app/reporting/engine.py -> reporting -> app -> repo_root
 _CONFIG_TEMPLATE_ROOT = Path(__file__).resolve().parents[2] / "configs" / "report_templates"
 _DEFAULT_ORDER_PATH = _CONFIG_TEMPLATE_ROOT / "procedure_order.json"
+_LOGGER = logging.getLogger(__name__)
 
 
 def join_nonempty(values: Iterable[str], sep: str = ", ") -> str:
@@ -272,6 +322,10 @@ def _build_structured_env(template_root: Path) -> Environment:
     env.filters["pronoun"] = _pronoun
     env.filters["fmt_ml"] = _fmt_ml
     env.filters["fmt_unit"] = _fmt_unit
+    from app.reporting.umls_filters import umls_cui, umls_pref
+
+    env.filters["umls_pref"] = umls_pref
+    env.filters["umls_cui"] = umls_cui
     # Add addon functions as globals
     env.globals["get_addon_body"] = get_addon_body
     env.globals["get_addon_metadata"] = get_addon_metadata
@@ -551,7 +605,9 @@ class ReporterEngine:
             key=lambda proc: (
                 _group(proc.proc_type),
                 self.procedure_order.get(proc.proc_type, 10_000),
+                proc.sequence if proc.sequence is not None else 10_000,
                 proc.proc_type,
+                proc.proc_id or "",
             ),
         )
 
@@ -1096,18 +1152,114 @@ def _extract_encounter(raw: dict[str, Any]) -> EncounterInfo:
     )
 
 
+def _combined_source_text(raw: dict[str, Any]) -> str:
+    chunks: list[str] = []
+    for key in ("source_text", "note_text", "raw_note", "narrative", "procedure_text"):
+        value = raw.get(key)
+        if isinstance(value, str) and value.strip():
+            chunks.append(value.strip())
+    return "\n".join(chunks)
+
+
+def _normalize_sedation_type(value: Any) -> str | None:
+    if value in (None, "", [], {}):
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    lowered = text.lower()
+    if "general" in lowered:
+        return "General anesthesia"
+    if "moderate" in lowered or re.search(r"\bmod(?:erate)?\s*sed\b", lowered):
+        return "Moderate sedation"
+    if "local" in lowered:
+        return "Local anesthesia"
+    return text
+
+
+def _extract_sedation_time(text: str, marker: str) -> str | None:
+    if not text:
+        return None
+    pattern = rf"(?i)\b{marker}\b\s*(?:time)?\s*[:=]?\s*(\d{{1,2}}:\d{{2}})\b"
+    match = re.search(pattern, text)
+    if not match:
+        return None
+    return match.group(1)
+
+
 def _extract_sedation_details(raw: dict[str, Any]) -> tuple[SedationInfo | None, AnesthesiaInfo | None]:
-    sedation = SedationInfo(type=raw.get("sedation_type")) if raw.get("sedation_type") else None
+    note_text = _combined_source_text(raw)
+    note_lower = note_text.lower()
+
+    sedation_type = _normalize_sedation_type(raw.get("sedation_type"))
+    has_moderate_phrase = bool(re.search(r"\bmoderate\s+sedation\b|\bmod(?:erate)?\s*sed\b", note_lower))
+    has_midazolam = bool(re.search(r"\b(?:midazolam|versed)\b", note_lower))
+    has_fentanyl = bool(re.search(r"\bfentanyl\b", note_lower))
+    has_sedation_times = bool(re.search(r"\bsedation\s*(?:start|end)\b", note_lower))
+    if not sedation_type and (
+        has_moderate_phrase
+        or (has_midazolam and has_fentanyl)
+        or (has_sedation_times and (has_midazolam or has_fentanyl))
+    ):
+        sedation_type = "Moderate sedation"
+
+    sedation_description = None
+    raw_sedation_description = raw.get("sedation_description")
+    if isinstance(raw_sedation_description, str) and raw_sedation_description.strip():
+        sedation_description = raw_sedation_description.strip()
+    elif sedation_type == "Moderate sedation":
+        medication_chunks: list[str] = []
+        midazolam_match = re.search(r"(?i)\b(?:midazolam|versed)\b(?:\s*(\d+(?:\.\d+)?)\s*(mg|mcg|ug|µg))?", note_text)
+        if midazolam_match:
+            if midazolam_match.group(1) and midazolam_match.group(2):
+                medication_chunks.append(f"midazolam {midazolam_match.group(1)} {midazolam_match.group(2)}")
+            else:
+                medication_chunks.append("midazolam")
+        fentanyl_match = re.search(r"(?i)\bfentanyl\b(?:\s*(\d+(?:\.\d+)?)\s*(mg|mcg|ug|µg))?", note_text)
+        if fentanyl_match:
+            if fentanyl_match.group(1) and fentanyl_match.group(2):
+                medication_chunks.append(f"fentanyl {fentanyl_match.group(1)} {fentanyl_match.group(2)}")
+            else:
+                medication_chunks.append("fentanyl")
+        sedation_start = _extract_sedation_time(note_text, "sedation\\s*start")
+        sedation_end = _extract_sedation_time(note_text, "sedation\\s*end")
+        detail_chunks: list[str] = []
+        if medication_chunks:
+            detail_chunks.append(", ".join(medication_chunks))
+        if sedation_start and sedation_end:
+            detail_chunks.append(f"{sedation_start}-{sedation_end}")
+        elif has_sedation_times:
+            detail_chunks.append("sedation start/end documented")
+        sedation_description = "Moderate sedation"
+        if detail_chunks:
+            sedation_description += f" ({'; '.join(detail_chunks)})"
+
+    sedation = None
+    if sedation_type or sedation_description:
+        sedation = SedationInfo(type=sedation_type, description=sedation_description)
+
     anesthesia_desc = None
     agents = raw.get("anesthesia_agents")
-    if agents:
-        anesthesia_desc = ", ".join(agents)
+    if isinstance(agents, list):
+        agent_tokens = [str(agent).strip() for agent in agents if str(agent).strip()]
+        if agent_tokens:
+            anesthesia_desc = ", ".join(agent_tokens)
+    elif isinstance(agents, str) and agents.strip():
+        anesthesia_desc = agents.strip()
+
     airway_type = raw.get("airway_type") or raw.get("ventilation_mode")
     airway_size_mm = raw.get("airway_size_mm")
     duration_minutes = raw.get("anesthesia_duration_minutes")
     asa_class = raw.get("asa_class")
 
-    if not anesthesia_desc and raw.get("sedation_type") == "General":
+    anesthesia_type = _normalize_sedation_type(raw.get("anesthesia_type"))
+    general_explicit = (
+        (sedation_type is not None and "general" in sedation_type.lower())
+        or (anesthesia_type is not None and "general" in anesthesia_type.lower())
+        or (anesthesia_desc is not None and "general" in anesthesia_desc.lower())
+    )
+
+    if not anesthesia_desc and general_explicit:
         upper = str(airway_type).strip().upper()
         if upper in ("ETT", "ENDOTRACHEAL", "ENDOTRACHEAL TUBE"):
             anesthesia_desc = "General endotracheal anesthesia"
@@ -1146,12 +1298,15 @@ def _extract_sedation_details(raw: dict[str, Any]) -> tuple[SedationInfo | None,
                     duration_int = None
                 if duration_int and duration_int > 0:
                     anesthesia_desc += f" Duration: {duration_int} minutes."
+
     anesthesia = None
-    if raw.get("sedation_type") or anesthesia_desc:
+    if general_explicit:
         anesthesia = AnesthesiaInfo(
-            type=raw.get("sedation_type"),
-            description=anesthesia_desc,
+            type="General anesthesia",
+            description=anesthesia_desc or "General anesthesia",
         )
+    elif anesthesia_type or anesthesia_desc:
+        anesthesia = AnesthesiaInfo(type=anesthesia_type, description=anesthesia_desc)
     return sedation, anesthesia
 
 
@@ -1182,6 +1337,13 @@ def _coerce_prebuilt_procedures(entries: Any, cpt_candidates: list[str | int]) -
         schema_id = entry.get("schema_id")
         data = entry.get("data", {})
         proc_id = entry.get("proc_id")
+        sequence_raw = entry.get("sequence")
+        sequence = None
+        if sequence_raw not in (None, "", []):
+            try:
+                sequence = int(sequence_raw)
+            except Exception:
+                sequence = None
         if proc_type and schema_id:
             identifier = proc_id or f"{proc_type}_{len(procedures) + 1}"
             procedures.append(
@@ -1191,6 +1353,7 @@ def _coerce_prebuilt_procedures(entries: Any, cpt_candidates: list[str | int]) -
                     proc_id=identifier,
                     data=data,
                     cpt_candidates=list(cpt_candidates),
+                    sequence=sequence,
                 )
             )
     return procedures
@@ -1218,6 +1381,105 @@ def _procedures_from_adapters(
             )
         )
     return procedures
+
+
+_BIOPSY_GATE_PROC_TYPES = {
+    "transbronchial_biopsy",
+    "transbronchial_lung_biopsy",
+    "transbronchial_cryobiopsy",
+}
+
+_BIOPSY_GATE_POSITIVE_PATTERNS: dict[str, str] = {
+    "transbronchial_biopsy": r"\b(?:transbronchial(?:\s+lung)?\s+biops(?:y|ies)|tbbx|tblb|tb\s*bx|forceps\s+biops(?:y|ies))\b",
+    "transbronchial_lung_biopsy": r"\b(?:transbronchial(?:\s+lung)?\s+biops(?:y|ies)|tbbx|tblb|tb\s*bx|forceps\s+biops(?:y|ies))\b",
+    "transbronchial_cryobiopsy": r"\b(?:transbronchial\s+cryo(?:biops(?:y|ies)?)?|cryobiops(?:y|ies)|cryo-?tbb)\b",
+}
+
+_BIOPSY_GATE_NEGATION_PATTERN = (
+    r"\b(?:no|without|declined|deferred)\b[^.\n]{0,80}\b(?:transbronchial|tbbx|tblb|tb\s*bx|biops(?:y|ies)|cryobiops(?:y|ies)|cryo-?tbb)\b"
+    r"|\b(?:transbronchial|tbbx|tblb|tb\s*bx|biops(?:y|ies)|cryobiops(?:y|ies)|cryo-?tbb)\b[^.\n]{0,80}\b(?:not\s+(?:performed|done|obtained)|aborted|unable\s+to\s+perform)\b"
+)
+
+_PLANNED_NOT_PERFORMED_PATTERN = re.compile(
+    r"(?i)\b(?:planned\s+not\s+done|not\s+performed|aborted|unable\s+to\s+perform)\b"
+)
+_CPT_CODE_PATTERN = re.compile(r"\b\d{5}\b")
+_CPT_LABELS = {
+    "32555": "Thoracentesis",
+    "32551": "Chest tube placement",
+    "31628": "Transbronchial biopsy",
+    "31629": "Transbronchial needle aspiration",
+    "31627": "Navigational bronchoscopy",
+}
+
+
+def _has_positive_biopsy_evidence(note_text: str, proc_type: str) -> bool:
+    pattern = _BIOPSY_GATE_POSITIVE_PATTERNS.get(proc_type)
+    if not pattern:
+        return False
+    return bool(re.search(pattern, note_text, flags=re.IGNORECASE))
+
+
+def _has_negated_biopsy_evidence(note_text: str) -> bool:
+    return bool(re.search(_BIOPSY_GATE_NEGATION_PATTERN, note_text, flags=re.IGNORECASE))
+
+
+def _apply_reporter_evidence_gating(procedures: list[ProcedureInput], *, note_text: str) -> list[ProcedureInput]:
+    if not _truthy_env("REPORTER_EVIDENCE_GATING", "1"):
+        return procedures
+    if not note_text.strip():
+        return procedures
+
+    filtered: list[ProcedureInput] = []
+    for proc in procedures:
+        if proc.proc_type not in _BIOPSY_GATE_PROC_TYPES:
+            filtered.append(proc)
+            continue
+        has_positive = _has_positive_biopsy_evidence(note_text, proc.proc_type)
+        has_negative = _has_negated_biopsy_evidence(note_text)
+        if has_positive and not has_negative:
+            filtered.append(proc)
+            continue
+        _LOGGER.warning(
+            "REPORTER_EVIDENCE_GATING: dropped %s due to missing or negated evidence",
+            proc.proc_type,
+        )
+    return filtered
+
+
+def _procedure_label_from_sentence(sentence: str) -> str:
+    lowered = sentence.lower()
+    if "thoracentesis" in lowered:
+        return "Thoracentesis"
+    if "chest tube" in lowered:
+        return "Chest tube placement"
+    if "bronchoscopy" in lowered:
+        return "Bronchoscopy"
+    return "Procedure"
+
+
+def _extract_planned_not_performed_lines(note_text: str) -> list[str]:
+    if not note_text.strip():
+        return []
+
+    lines: list[str] = []
+    seen: set[str] = set()
+    for sentence in re.split(r"(?<=[\.\n;])\s+", note_text):
+        sentence_clean = sentence.strip()
+        if not sentence_clean or not _PLANNED_NOT_PERFORMED_PATTERN.search(sentence_clean):
+            continue
+        code_match = _CPT_CODE_PATTERN.search(sentence_clean)
+        if code_match:
+            code = code_match.group(0)
+            label = _CPT_LABELS.get(code, "Procedure")
+            line = f"{label} (CPT {code}) was planned but not performed."
+        else:
+            line = f"{_procedure_label_from_sentence(sentence_clean)} was planned but not performed."
+        if line in seen:
+            continue
+        seen.add(line)
+        lines.append(line)
+    return lines
 
 
 
@@ -1544,6 +1806,9 @@ def build_procedure_bundle_from_extraction(
             },
         )
 
+    procedures = _apply_reporter_evidence_gating(procedures, note_text=note_text)
+    existing_proc_types = {proc.proc_type for proc in procedures}
+
     # Recompute indication after reporter-only enrichments
     indication_text = raw.get("primary_indication") or raw.get("indication") or raw.get("radiographic_findings")
 
@@ -1673,7 +1938,7 @@ def build_procedure_bundle_from_extraction(
         impression_plan = "\n\n".join(lines)
 
     cryo_payload = raw.get("transbronchial_cryobiopsy")
-    if isinstance(cryo_payload, dict) and cryo_payload:
+    if "transbronchial_cryobiopsy" in existing_proc_types and isinstance(cryo_payload, dict) and cryo_payload:
         seg_text = str(cryo_payload.get("lung_segment") or "").strip()
         seg_upper = seg_text.upper()
         lobe = None
@@ -1713,6 +1978,14 @@ def build_procedure_bundle_from_extraction(
                 "Recover per protocol; obtain post-procedure chest imaging to assess for late pneumothorax per local workflow."
             )
             impression_plan = "\n\n".join(lines)
+
+    planned_not_performed = _extract_planned_not_performed_lines(note_text)
+    if planned_not_performed:
+        planned_block = "\n\n".join(planned_not_performed)
+        if impression_plan and planned_block not in impression_plan:
+            impression_plan = f"{impression_plan}\n\n{planned_block}"
+        elif not impression_plan:
+            impression_plan = planned_block
 
     bundle = ProcedureBundle(
         patient=patient,

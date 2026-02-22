@@ -59,6 +59,38 @@ class KnowledgeSettings(BaseSettings):
         return self
 
 
+class UmlsSettings(BaseSettings):
+    enable_linker: bool = Field(
+        default=True,
+        validation_alias=AliasChoices("UMLS_ENABLE_LINKER", "ENABLE_UMLS_LINKER"),
+    )
+    linker_backend: str = Field(default="distilled")  # distilled | scispacy
+
+    # Highest priority explicit local override (dev/testing)
+    ip_umls_map_local_path: Path | None = Field(
+        default=None,
+        validation_alias=AliasChoices("UMLS_IP_UMLS_MAP_LOCAL_PATH", "IP_UMLS_MAP_PATH"),
+    )
+
+    # Prod source-of-truth
+    ip_umls_map_s3_uri: str | None = Field(default=None)
+
+    # Cache destination for downloaded S3 file
+    ip_umls_map_cache_path: Path = Field(default=Path("/tmp/procsuite/ip_umls_map.json"))
+
+    # If true: redownload on boot even if cache exists
+    force_refresh: bool = Field(default=False)
+
+    model_config = {"env_prefix": "UMLS_", "extra": "ignore"}
+
+    @model_validator(mode="after")
+    def _resolve_paths(self) -> "UmlsSettings":
+        if self.ip_umls_map_local_path:
+            self.ip_umls_map_local_path = _resolve_repo_path(self.ip_umls_map_local_path)
+        self.ip_umls_map_cache_path = _resolve_repo_path(self.ip_umls_map_cache_path)
+        return self
+
+
 class CoderSettings(BaseSettings):
     """Settings for the CPT coding pipeline."""
 

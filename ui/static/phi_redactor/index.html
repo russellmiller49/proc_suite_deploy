@@ -379,6 +379,16 @@
 		                      Suggested Missing Fields (Completeness)
 		                    </div>
 		                    <div class="dash-card-actions no-print">
+		                      <button
+		                        id="completenessToggleBtn"
+		                        type="button"
+		                        class="secondary small-btn"
+		                        title="Collapse suggested missing fields"
+		                        aria-expanded="true"
+		                        aria-controls="completenessPromptsContent"
+		                      >
+		                        Collapse
+		                      </button>
 		                      <button id="completenessCopyBtn" type="button" class="secondary small-btn" title="Copy checklist to clipboard">
 		                        Copy checklist
 		                      </button>
@@ -387,7 +397,7 @@
 		                      </button>
 		                    </div>
 		                  </div>
-		                  <div class="dash-card-body padded">
+		                  <div id="completenessPromptsContent" class="dash-card-body padded">
 		                    <div id="completenessPromptsBody"></div>
 		                  </div>
 		                </div>

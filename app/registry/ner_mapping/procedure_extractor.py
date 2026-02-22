@@ -336,11 +336,14 @@ class ProcedureExtractor:
                 return "Silicone - Hood"
             if "hybrid" in t:
                 return "Hybrid"
-            if "partially" in t and "cover" in t:
+            # Important: "uncovered" contains the substring "covered".
+            if re.search(r"\buncovered\b|\bbare\b|\bbare[-\s]?metal\b", t):
+                return "SEMS - Uncovered"
+            if re.search(r"\b(?:partially|semi)[-\s]+covered\b", t) or ("partially" in t and "cover" in t):
                 return "SEMS - Partially covered"
-            if "cover" in t:
+            if re.search(r"\bcovered\b|\bfully[-\s]+covered\b", t) or ("cover" in t and "uncover" not in t):
                 return "SEMS - Covered"
-            if "bare" in t or "uncovered" in t or "metal" in t or "metallic" in t:
+            if "metal" in t or "metallic" in t:
                 return "SEMS - Uncovered"
             return None
 

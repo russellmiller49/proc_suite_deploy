@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from proc_schemas.clinical import airway as airway_schemas
@@ -49,6 +50,23 @@ def _station_size_mm(source: dict[str, Any]) -> float | None:
         if size_cm:
             return round(size_cm * 10, 2)
     return None
+
+
+def _has_station_scoped_rose_text(source: dict[str, Any], stations: list[str]) -> bool:
+    text = str(source.get("source_text") or source.get("note_text") or "").strip()
+    if not text:
+        return False
+    for station in stations:
+        station_text = str(station or "").strip().upper()
+        if not station_text:
+            continue
+        if re.search(
+            rf"(?is)\b(?:station|ln|node)\s*{re.escape(station_text)}\b[^.\n]{{0,80}}\brose\b"
+            rf"|\brose\b[^.\n]{{0,80}}\b(?:station|ln|node)\s*{re.escape(station_text)}\b",
+            text,
+        ):
+            return True
+    return False
 
 
 class BronchoscopyShellAdapter(ExtractionAdapter):
@@ -312,10 +330,15 @@ class EBUSTBNAAdapter(ExtractionAdapter):
         station_size = _station_size_mm(source) if len(stations) == 1 else None
         use_forceps = bool(source.get("ebus_intranodal_forceps_used"))
         detail_map = {}
+        has_station_rose_from_detail = False
         for item in source.get("ebus_stations_detail") or []:
             name = (item.get("station") or "").upper() if isinstance(item, dict) else None
             if name:
                 detail_map[name] = item
+                if item.get("rose_result"):
+                    has_station_rose_from_detail = True
+
+        station_scoped_rose = has_station_rose_from_detail or _has_station_scoped_rose_text(source, stations)
 
         station_entries = []
         passes_global = source.get("ebus_passes")
@@ -337,7 +360,7 @@ class EBUSTBNAAdapter(ExtractionAdapter):
                     "passes": detail.get("passes") if has_detail else passes_global,
                     "echo_features": source.get("ebus_echo_features") or source.get("ebus_elastography_pattern"),
                     "biopsy_tools": tools,
-                    "rose_result": detail.get("rose_result") if has_detail else source.get("ebus_rose_result"),
+                    "rose_result": detail.get("rose_result") if has_detail else None,
                 }
             )
         return {
@@ -345,8 +368,8 @@ class EBUSTBNAAdapter(ExtractionAdapter):
             "stations": station_entries,
             "elastography_used": source.get("ebus_elastography_used") or source.get("ebus_elastography"),
             "elastography_pattern": source.get("ebus_elastography_pattern"),
-            "rose_available": source.get("ebus_rose_available"),
-            "overall_rose_diagnosis": source.get("ebus_rose_result"),
+            "rose_available": True if station_scoped_rose else None,
+            "overall_rose_diagnosis": source.get("ebus_rose_result") if station_scoped_rose else None,
         }
 
 

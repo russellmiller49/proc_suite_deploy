@@ -751,9 +751,17 @@ def derive_all_codes_with_meta(
                     )
 
     # Radial EBUS (add-on code for peripheral lesion localization)
-    if _performed(_proc(record, "radial_ebus")):
-        codes.append("31654")
-        rationales["31654"] = "radial_ebus.performed=true"
+    radial_ebus = _proc(record, "radial_ebus")
+    if _performed(radial_ebus):
+        probe_position = _get(radial_ebus, "probe_position")
+        probe_text = str(probe_position or "").strip().lower()
+        if probe_text.startswith("not"):
+            warnings.append(
+                "Suppressed 31654: radial EBUS documented but probe_position indicates not visualized."
+            )
+        else:
+            codes.append("31654")
+            rationales["31654"] = "radial_ebus.performed=true"
         # Optional documentation QA: radial EBUS is typically used as an adjunct to peripheral sampling/therapy.
         has_peripheral_sampling = any(
             _performed(_proc(record, name))

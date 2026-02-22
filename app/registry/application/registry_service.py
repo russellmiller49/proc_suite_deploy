@@ -964,9 +964,11 @@ class RegistryService:
                         CRYOTHERAPY_PATTERNS,
                         CRYOBIOPSY_PATTERN,
                         DIAGNOSTIC_BRONCHOSCOPY_PATTERNS,
+                        LINEAR_EBUS_PATTERNS,
                         ESTABLISHED_TRACH_ROUTE_PATTERNS,
                         FOREIGN_BODY_REMOVAL_PATTERNS,
                         IPC_PATTERNS,
+                        MECHANICAL_DEBULKING_PATTERNS,
                         NAVIGATIONAL_BRONCHOSCOPY_PATTERNS,
                         PERIPHERAL_ABLATION_PATTERNS,
                         RIGID_BRONCHOSCOPY_PATTERNS,
@@ -1183,7 +1185,31 @@ class RegistryService:
                             clinical_changed = False
 
                             primary_indication = seed_data.get("primary_indication")
-                            if primary_indication and not clinical.get("primary_indication"):
+                            def _needs_indication_override(value: Any) -> bool:
+                                raw = str(value or "").strip()
+                                if not raw:
+                                    return True
+                                lowered = raw.lower()
+                                if lowered in {
+                                    "for operation:",
+                                    "operation:",
+                                    "indication:",
+                                    "indication for operation:",
+                                    "indication for procedure:",
+                                }:
+                                    return True
+                                if lowered.endswith(":") and len(lowered) <= 24:
+                                    return True
+                                if re.fullmatch(
+                                    r"(diagnostic(?:\s+and\s+staging)?|staging(?:\s+and\s+diagnostic)?|diagnostic\s*/\s*staging)",
+                                    lowered,
+                                ):
+                                    return True
+                                if not re.search(r"[a-z]{3}", lowered):
+                                    return True
+                                return False
+
+                            if primary_indication and _needs_indication_override(clinical.get("primary_indication")):
                                 clinical["primary_indication"] = primary_indication
                                 clinical_changed = True
                                 _add_first_literal(
@@ -1196,7 +1222,7 @@ class RegistryService:
                                 procedure = record_data.get("procedure") or {}
                                 if not isinstance(procedure, dict):
                                     procedure = {}
-                                if not procedure.get("indication"):
+                                if _needs_indication_override(procedure.get("indication")):
                                     procedure["indication"] = primary_indication
                                     record_data["procedure"] = procedure
                                     other_modified = True
@@ -1704,7 +1730,7 @@ class RegistryService:
                                         )
 
                             # Cone-beam CT usage
-                            if equipment.get("cbct_used") is None:
+                            if equipment.get("cbct_used") is not True:
                                 if re.search(
                                     r"(?i)\bcone[-\s]?beam\s+ct\b|\bcbct\b|\bcios\b|\bspin\s+system\b|\blow\s+dose\s+spin\b",
                                     masked_note_text or "",
@@ -1723,7 +1749,7 @@ class RegistryService:
                                     )
 
                             # 3D rendering / reconstruction (proxy via augmented_fluoroscopy flag)
-                            if equipment.get("augmented_fluoroscopy") is None:
+                            if equipment.get("augmented_fluoroscopy") is not True:
                                 if re.search(
                                     r"(?i)\b3[-\s]?d\s+(?:reconstruction|reconstructions|rendering)\b|\b3d\s+(?:reconstruction|rendering)\b",
                                     masked_note_text or "",
@@ -1742,7 +1768,7 @@ class RegistryService:
                                     )
 
                             # Fluoroscopy is commonly present when CBCT/fiducials are used.
-                            if equipment.get("fluoroscopy_used") is None:
+                            if equipment.get("fluoroscopy_used") is not True:
                                 if (
                                     equipment.get("cbct_used") is True
                                     or "fluoroscopy" in lowered
@@ -1753,6 +1779,79 @@ class RegistryService:
 
                             if changed:
                                 record_data["equipment"] = equipment
+                                other_modified = True
+
+                        def _add_performed_evidence(proc_name: str) -> None:
+                            nonlocal other_modified
+                            field_key = f"procedures_performed.{proc_name}.performed"
+                            if evidence.get(field_key):
+                                return
+                            before_count = len(evidence.get(field_key) or [])
+
+                            if proc_name == "bal":
+                                _add_first_span(field_key, list(BAL_PATTERNS))
+                            elif proc_name == "endobronchial_biopsy":
+                                _add_first_span(field_key, list(ENDOBRONCHIAL_BIOPSY_PATTERNS))
+                            elif proc_name == "radial_ebus":
+                                _add_first_span(field_key, list(RADIAL_EBUS_PATTERNS))
+                            elif proc_name == "linear_ebus":
+                                _add_first_span_skip_cpt_headers(field_key, list(LINEAR_EBUS_PATTERNS))
+                            elif proc_name == "navigational_bronchoscopy":
+                                _add_first_span(field_key, list(NAVIGATIONAL_BRONCHOSCOPY_PATTERNS))
+                            elif proc_name == "tbna_conventional":
+                                _add_first_span(field_key, list(TBNA_CONVENTIONAL_PATTERNS))
+                            elif proc_name == "peripheral_tbna":
+                                _add_first_span(field_key, list(TBNA_CONVENTIONAL_PATTERNS))
+                            elif proc_name == "brushings":
+                                _add_first_span(field_key, list(BRUSHINGS_PATTERNS))
+                            elif proc_name == "rigid_bronchoscopy":
+                                _add_first_span(field_key, list(RIGID_BRONCHOSCOPY_PATTERNS))
+                            elif proc_name == "transbronchial_biopsy":
+                                _add_first_span(field_key, list(TRANSBRONCHIAL_BIOPSY_PATTERNS))
+                            elif proc_name == "transbronchial_cryobiopsy":
+                                _add_first_span(field_key, list(TRANSBRONCHIAL_CRYOBIOPSY_PATTERNS))
+                            elif proc_name == "airway_dilation":
+                                _add_first_span(field_key, list(AIRWAY_DILATION_PATTERNS))
+                            elif proc_name == "airway_stent":
+                                _add_first_span(field_key, list(AIRWAY_STENT_DEVICE_PATTERNS))
+                            elif proc_name == "blvr":
+                                _add_first_span_skip_cpt_headers(
+                                    field_key,
+                                    list(BLVR_PATTERNS) + list(BALLOON_OCCLUSION_PATTERNS),
+                                )
+                            elif proc_name == "foreign_body_removal":
+                                _add_first_span(field_key, list(FOREIGN_BODY_REMOVAL_PATTERNS))
+                            elif proc_name == "percutaneous_tracheostomy":
+                                _add_first_span_skip_cpt_headers(
+                                    field_key,
+                                    list(TRACHEAL_PUNCTURE_PATTERNS)
+                                    + [
+                                        r"\bpercutaneous\s+(?:dilatational\s+)?tracheostomy\b",
+                                        r"\bperc\s+trach\b",
+                                        r"\btracheostomy\b[^.\n]{0,60}\b(?:performed|placed|inserted|created)\b",
+                                    ],
+                                )
+                            elif proc_name == "peripheral_ablation":
+                                _add_first_span(field_key, list(PERIPHERAL_ABLATION_PATTERNS))
+                            elif proc_name == "mechanical_debulking":
+                                _add_first_span_skip_cpt_headers(field_key, list(MECHANICAL_DEBULKING_PATTERNS))
+                            elif proc_name == "thermal_ablation":
+                                _add_first_span_skip_cpt_headers(field_key, list(THERMAL_ABLATION_PATTERNS))
+                            elif proc_name == "cryotherapy":
+                                cryo_patterns = list(CRYOTHERAPY_PATTERNS)
+                                if not re.search(
+                                    CRYOBIOPSY_PATTERN,
+                                    masked_note_text or "",
+                                    re.IGNORECASE,
+                                ):
+                                    cryo_patterns.append(CRYOPROBE_PATTERN)
+                                _add_first_span_skip_cpt_headers(field_key, cryo_patterns)
+                            elif proc_name == "diagnostic_bronchoscopy":
+                                _add_first_span_skip_cpt_headers(field_key, list(DIAGNOSTIC_BRONCHOSCOPY_PATTERNS))
+                            elif proc_name == "chest_ultrasound":
+                                _add_first_span(field_key, list(CHEST_ULTRASOUND_PATTERNS))
+
+                            if len(evidence.get(field_key) or []) > before_count:
                                 other_modified = True
 
                         if isinstance(seed_procs, dict):
@@ -1858,99 +1957,8 @@ class RegistryService:
                                     record_procs[proc_name] = existing
                                     proc_modified = True
 
-                                if not already_performed:
-                                    field_key = f"procedures_performed.{proc_name}.performed"
-                                    if proc_name == "bal":
-                                        _add_first_span(field_key, list(BAL_PATTERNS))
-                                    elif proc_name == "endobronchial_biopsy":
-                                        _add_first_span(
-                                            field_key,
-                                            list(ENDOBRONCHIAL_BIOPSY_PATTERNS),
-                                        )
-                                    elif proc_name == "radial_ebus":
-                                        _add_first_span(field_key, list(RADIAL_EBUS_PATTERNS))
-                                    elif proc_name == "navigational_bronchoscopy":
-                                        _add_first_span(
-                                            field_key,
-                                            list(NAVIGATIONAL_BRONCHOSCOPY_PATTERNS),
-                                        )
-                                    elif proc_name == "tbna_conventional":
-                                        _add_first_span(
-                                            field_key,
-                                            list(TBNA_CONVENTIONAL_PATTERNS),
-                                        )
-                                    elif proc_name == "peripheral_tbna":
-                                        _add_first_span(
-                                            field_key,
-                                            list(TBNA_CONVENTIONAL_PATTERNS),
-                                        )
-                                    elif proc_name == "brushings":
-                                        _add_first_span(field_key, list(BRUSHINGS_PATTERNS))
-                                    elif proc_name == "rigid_bronchoscopy":
-                                        _add_first_span(
-                                            field_key,
-                                            list(RIGID_BRONCHOSCOPY_PATTERNS),
-                                        )
-                                    elif proc_name == "transbronchial_biopsy":
-                                        _add_first_span(
-                                            field_key,
-                                            list(TRANSBRONCHIAL_BIOPSY_PATTERNS),
-                                        )
-                                    elif proc_name == "transbronchial_cryobiopsy":
-                                        _add_first_span(
-                                            field_key,
-                                            list(TRANSBRONCHIAL_CRYOBIOPSY_PATTERNS),
-                                        )
-                                    elif proc_name == "airway_dilation":
-                                        _add_first_span(field_key, list(AIRWAY_DILATION_PATTERNS))
-                                    elif proc_name == "airway_stent":
-                                        _add_first_span(field_key, list(AIRWAY_STENT_DEVICE_PATTERNS))
-                                    elif proc_name == "blvr":
-                                        _add_first_span_skip_cpt_headers(
-                                            field_key,
-                                            list(BLVR_PATTERNS) + list(BALLOON_OCCLUSION_PATTERNS),
-                                        )
-                                    elif proc_name == "foreign_body_removal":
-                                        _add_first_span(field_key, list(FOREIGN_BODY_REMOVAL_PATTERNS))
-                                    elif proc_name == "percutaneous_tracheostomy":
-                                        _add_first_span_skip_cpt_headers(
-                                            field_key,
-                                            list(TRACHEAL_PUNCTURE_PATTERNS)
-                                            + [
-                                                r"\bpercutaneous\s+(?:dilatational\s+)?tracheostomy\b",
-                                                r"\bperc\s+trach\b",
-                                                r"\btracheostomy\b[^.\n]{0,60}\b(?:performed|placed|inserted|created)\b",
-                                            ],
-                                        )
-                                    elif proc_name == "peripheral_ablation":
-                                        _add_first_span(
-                                            field_key,
-                                            list(PERIPHERAL_ABLATION_PATTERNS),
-                                        )
-                                    elif proc_name == "thermal_ablation":
-                                        _add_first_span_skip_cpt_headers(
-                                            field_key,
-                                            list(THERMAL_ABLATION_PATTERNS),
-                                        )
-                                    elif proc_name == "cryotherapy":
-                                        cryo_patterns = list(CRYOTHERAPY_PATTERNS)
-                                        if not re.search(
-                                            CRYOBIOPSY_PATTERN,
-                                            masked_note_text or "",
-                                            re.IGNORECASE,
-                                        ):
-                                            cryo_patterns.append(CRYOPROBE_PATTERN)
-                                        _add_first_span_skip_cpt_headers(field_key, cryo_patterns)
-                                    elif proc_name == "diagnostic_bronchoscopy":
-                                        _add_first_span_skip_cpt_headers(
-                                            field_key,
-                                            list(DIAGNOSTIC_BRONCHOSCOPY_PATTERNS),
-                                        )
-                                    elif proc_name == "chest_ultrasound":
-                                        _add_first_span(
-                                            field_key,
-                                            list(CHEST_ULTRASOUND_PATTERNS),
-                                        )
+                                if existing.get("performed") is True:
+                                    _add_performed_evidence(proc_name)
 
                         # Procedure setting: backfill rigid barrel size from rigid bronchoscopy scope size.
                         rigid_proc = record_procs.get("rigid_bronchoscopy") or {}

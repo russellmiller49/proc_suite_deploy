@@ -179,11 +179,18 @@
   border: 1px solid var(--border-color);
   border-radius: var(--radius-md);
   background: var(--bg-input);
+  flex-wrap: wrap;
+}
+
+.completeness-item > .status-badge {
+  flex: 0 0 auto;
+  align-self: flex-start;
 }
 
 .completeness-item-controls {
   min-width: 220px;
   max-width: 280px;
+  flex: 0 1 280px;
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -199,20 +206,22 @@
 }
 
 .completeness-item-main {
-  min-width: 0;
-  flex: 1;
+  min-width: 220px;
+  flex: 1 1 320px;
 }
 
 .completeness-item-label {
   font-weight: 700;
   color: var(--text-primary);
   margin-bottom: 2px;
+  overflow-wrap: anywhere;
 }
 
 .completeness-item-message {
   color: var(--text-secondary);
   font-size: 12px;
   line-height: 1.35;
+  overflow-wrap: anywhere;
 }
 
 .completeness-item-path {
@@ -761,6 +770,10 @@ body.ps-focus-billing .dash-grid > .dash-col:last-child {
 .small-btn {
   padding: 6px 10px;
   font-size: 12px;
+}
+
+#completenessPromptsCard.ps-completeness-collapsed .dash-card-body {
+  display: none;
 }
 
 .dash-table {
@@ -1507,6 +1520,12 @@ body.ps-review-split .editorPane .result {
   gap: 8px;
 }
 
+.flat-table-scroll {
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
 .flat-table {
   width: 100%;
   border-collapse: collapse;
@@ -1699,6 +1718,18 @@ body.ps-review-split .editorPane .result {
     flex-wrap: wrap;
   }
 
+  .dash-card-body {
+    overflow-x: auto;
+  }
+
+  .dash-table {
+    min-width: 640px;
+  }
+
+  .flat-table {
+    min-width: 720px;
+  }
+
   .manual-redaction-group {
     margin-left: 0;
     padding-left: 0;
@@ -1874,6 +1905,49 @@ body.ps-review-split .editorPane .result {
     width: 100%;
     min-width: 0;
   }
+
+  .completeness-item {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+
+  .completeness-item-main,
+  .completeness-item-controls {
+    min-width: 0;
+    max-width: none;
+    width: 100%;
+    flex: 1 1 auto;
+  }
+
+  .completeness-item-controls .flat-input,
+  .completeness-item-controls .flat-select {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .registry-group-body {
+    padding: 10px;
+    gap: 12px;
+  }
+
+  .flat-table-section {
+    padding: 10px;
+  }
+
+  .flat-table-header {
+    flex-wrap: wrap;
+    align-items: flex-start;
+  }
+
+  .flat-table-actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .flat-table {
+    min-width: 640px;
+  }
 }
 
 @media (max-width: 480px) {
@@ -1901,6 +1975,18 @@ body.ps-review-split .editorPane .result {
   .param-select,
   .pdf-upload-group input[type="file"] {
     font-size: 12px;
+  }
+
+  .dash-table {
+    min-width: 520px;
+  }
+
+  .flat-table {
+    min-width: 540px;
+  }
+
+  .completeness-item {
+    padding: 10px;
   }
 }
 

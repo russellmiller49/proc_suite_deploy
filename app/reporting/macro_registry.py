@@ -54,12 +54,17 @@ def load_schema(schema_path: Path) -> dict[str, Any]:
 
 
 def build_env(template_root: Path) -> Environment:
-    return Environment(
+    env = Environment(
         loader=FileSystemLoader(str(template_root)),
         trim_blocks=True,
         lstrip_blocks=True,
         keep_trailing_newline=True,
     )
+    from app.reporting.umls_filters import umls_cui, umls_pref
+
+    env.filters["umls_pref"] = umls_pref
+    env.filters["umls_cui"] = umls_cui
+    return env
 
 
 def build_registry(schema: dict[str, Any], template_root: Path) -> tuple[dict[str, Macro], Environment]:

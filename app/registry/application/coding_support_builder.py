@@ -131,6 +131,18 @@ def default_evidence_prefixes_for_code(code: str) -> list[str]:
         "43238": ["procedures_performed.eus_b"],
         "76604": ["procedures_performed.chest_ultrasound"],
         "76536": ["procedures_performed.neck_ultrasound"],
+        "77012": ["equipment.cbct_used", "equipment.fluoroscopy_used"],
+        "76982": [
+            "granular_data.linear_ebus_stations_detail",
+            "procedures_performed.linear_ebus",
+            "linear_ebus_stations",
+        ],
+        "76983": [
+            "granular_data.linear_ebus_stations_detail",
+            "procedures_performed.linear_ebus",
+            "linear_ebus_stations",
+        ],
+        "76377": ["equipment.augmented_fluoroscopy", "equipment.cbct_used"],
         "99152": ["sedation"],
         "99153": ["sedation"],
     }.get(str(code).strip().lstrip("+"), [])

@@ -46,7 +46,13 @@ _ABORT_FOR_BLEEDING_RE = re.compile(
     r"(?i)\b(?:abort(?:ed|ing)|terminate(?:d|ing)|stop(?:ped|ping))\b[^.\n]{0,120}\b(?:bleed(?:ing)?|hemorrhage|haemorrhage)\b"
 )
 _BLEEDING_CONTROL_RE = re.compile(
-    r"(?i)\b(?:tamponade|hemostasis|control(?:led)?|cessation|stopp?ed|halt(?:ed)?)\b"
+    r"(?i)\b(?:"
+    r"tamponade|hemostasis|control(?:led)?|cessation|stopp?ed|halt(?:ed)?"
+    r"|prevent\w*\b[^.\n]{0,80}\bblood\b[^.\n]{0,80}\b(?:soil|contaminat|spill)\w*\b"
+    r"|avoid\w*\b[^.\n]{0,80}\bblood\b[^.\n]{0,80}\b(?:soil|contaminat|spill)\w*\b"
+    r"|isolation\b|isolate\w*\b"
+    r"|protect\w*\b[^.\n]{0,80}\b(?:contralateral|other)\b[^.\n]{0,40}\b(?:lung|airway)\b"
+    r")"
 )
 
 _ARRHYTHMIA_RE = re.compile(

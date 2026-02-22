@@ -19,7 +19,7 @@ _TARGET_HEADER_RE = re.compile(
 
 _NODULE_TARGET_HEADER_RE = re.compile(
     r"(?im)^\s*(?P<header>"
-    r"(?:RIGHT|LEFT)\s+(?:UPPER|MIDDLE|LOWER)\s+LOBE\b[^\n:]{0,220}?\b(?:NODULE|LESION)\b[^\n:]{0,220}?"
+    r"(?:RIGHT|LEFT)\s+(?:UPPER|MIDDLE|LOWER)\s+LOBE\b[^\n:]{0,220}?\b(?:NODULE|LESION|MASS)\b[^\n:]{0,220}?"
     r")\s*:\s*$"
 )
 
@@ -137,7 +137,11 @@ _INLINE_TARGET_RE = re.compile(
 
 _FIDUCIAL_SENTENCE_RE = re.compile(r"(?i)\b(fiducial(?:\s+marker)?s?\b[^\n]{0,260})")
 _FIDUCIAL_ACTION_RE = re.compile(r"(?i)\b(?:plac(?:ed|ement)|deploy\w*|position\w*|insert\w*)\b")
-_NEGATION_RE = re.compile(r"(?i)\b(?:no|not|without|denies|deny)\b")
+_FIDUCIAL_EXPLICIT_NEG_RE = re.compile(
+    r"(?i)\b(?:no|without|never)\b[^.\n]{0,80}\bfiducial(?:\s+marker)?s?\b"
+    r"|\bfiducial(?:\s+marker)?s?\b[^.\n]{0,80}\b(?:not|never)\s+"
+    r"(?:plac(?:ed|ement)|deploy\w*|position\w*|insert\w*)\b"
+)
 
 _CRYO_RE = re.compile(r"(?i)\btransbronchial\s+cryo(?:biopsy|biopsies)\b|\bcryobiops(?:y|ies)\b|\bTBLC\b")
 _CRYO_PROBE_SIZE_RE = re.compile(r"(?i)\b(\d(?:\.\d)?)\s*mm\s*cryo\s*probe\b")
@@ -480,19 +484,23 @@ def _extract_rose_result(text: str) -> str | None:
     return None
 
 
-def _fiducial_in_section(section_text: str) -> tuple[bool, str | None]:
-    """Return (placed, details) based on a conservative fiducial placement check."""
+def _fiducial_in_section(section_text: str) -> tuple[bool, str | None, tuple[int, int] | None]:
+    """Return (placed, details, local_span) for fiducial placement language.
+
+    Notes often include outcome qualifiers like "placed ... however did not enter
+    the nodule"; this should still count as placement.
+    """
     match = _FIDUCIAL_SENTENCE_RE.search(section_text or "")
     if not match:
-        return False, None
+        return False, None, None
     sentence = (match.group(1) or "").strip()
     if not sentence:
-        return False, None
+        return False, None, None
     if not _FIDUCIAL_ACTION_RE.search(sentence):
-        return False, None
-    if _NEGATION_RE.search(sentence):
-        return False, None
-    return True, sentence
+        return False, None, None
+    if _FIDUCIAL_EXPLICIT_NEG_RE.search(sentence):
+        return False, None, None
+    return True, sentence, (int(match.start(1)), int(match.end(1)))
 
 
 def extract_navigation_targets(note_text: str) -> list[dict[str, Any]]:
@@ -982,7 +990,7 @@ def extract_navigation_targets(note_text: str) -> list[dict[str, Any]]:
             view = (rebus_match.group(1) or "").strip().title()
             rebus_view = view or None
 
-        fiducial_placed, fiducial_details = _fiducial_in_section(section_text)
+        fiducial_placed, fiducial_details, fiducial_local_span = _fiducial_in_section(section_text)
 
         evidence: dict[str, dict[str, object]] = {}
 
@@ -1100,6 +1108,31 @@ def extract_navigation_targets(note_text: str) -> list[dict[str, Any]]:
             target["fiducial_marker_placed"] = True
         if fiducial_details:
             target["fiducial_marker_details"] = fiducial_details
+        if fiducial_placed and fiducial_local_span:
+            fid_start = section_offset + int(fiducial_local_span[0])
+            fid_end = section_offset + int(fiducial_local_span[1])
+            fid_text = (fiducial_details or "").strip()
+            if fid_text and fid_end > fid_start:
+                existing_evidence = target.get("_evidence") if isinstance(target.get("_evidence"), dict) else {}
+                if not isinstance(existing_evidence, dict):
+                    existing_evidence = {}
+                existing_evidence.setdefault(
+                    "fiducial_marker_placed",
+                    {
+                        "text": fid_text,
+                        "start": int(fid_start),
+                        "end": int(fid_end),
+                    },
+                )
+                existing_evidence.setdefault(
+                    "fiducial_marker_details",
+                    {
+                        "text": fid_text,
+                        "start": int(fid_start),
+                        "end": int(fid_end),
+                    },
+                )
+                target["_evidence"] = existing_evidence
 
         # Light-touch sampling hints (used for downstream aggregation).
         cryo_match = _CRYO_RE.search(section_text)

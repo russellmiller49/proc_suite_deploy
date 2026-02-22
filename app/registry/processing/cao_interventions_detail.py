@@ -124,12 +124,12 @@ _OBSTRUCTION_PCT_AFTER_LOC_RE = re.compile(
     r"(?i)\b(?P<loc>[^.]{0,80}?)\b(?:was|were|is|are|remained|remains)?\s*"
     r"(?:only\s+)?(?:about|around|approximately|approx\.?)?\s*"
     r"(?P<pct>\d{1,3})\s*%\s*"
-    r"(?:obstruct(?:ed|ion)?|occlud(?:ed|ing|e)?|stenos(?:is|ed)|narrow(?:ing|ed)?|block(?:ed|ing)?)\b"
+    r"(?:obstruct(?:ed|ion|ive)?|occlud(?:ed|ing|e)?|stenos(?:is|ed)|narrow(?:ing|ed)?|block(?:ed|ing)?)\b"
     r"(?!\s+of\b)"
 )
 _OBSTRUCTION_PCT_BEFORE_LOC_RE = re.compile(
     r"(?i)\b(?:about|around|approximately|approx\.?)?\s*(?P<pct>\d{1,3})\s*%\s*"
-    r"(?:obstruct(?:ion)?|obstructed|occlud(?:ed|ing|e)?|stenos(?:is|ed)|narrow(?:ing|ed)?|block(?:ed|ing)?)"
+    r"(?:obstruct(?:ed|ion|ive)?|occlud(?:ed|ing|e)?|stenos(?:is|ed)|narrow(?:ing|ed)?|block(?:ed|ing)?)"
     r"(?:\s+(?:of|in|at)\s+(?:the\s+)?)"
     r"(?P<loc>[^.]{3,80})"
 )
@@ -154,7 +154,7 @@ _PCT_RESIDUAL_OBSTRUCTION_RE = re.compile(
 )
 _OBSTRUCTION_WORD_BEFORE_PCT_RE = re.compile(
     r"(?i)\b(?:"
-    r"obstruct(?:ed|ion)?|occlud(?:ed|ing|e)?|stenos(?:is|ed)|narrow(?:ed|ing)?|block(?:ed|ing)?"
+    r"obstruct(?:ed|ion|ive)?|occlud(?:ed|ing|e)?|stenos(?:is|ed)|narrow(?:ed|ing)?|block(?:ed|ing)?"
     r"|compress(?:ed|ion)"
     r")\b[^%]{0,24}?(?P<pct>\d{1,3})\s*%"
 )

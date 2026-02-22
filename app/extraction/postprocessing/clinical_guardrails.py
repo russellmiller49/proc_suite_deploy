@@ -304,6 +304,19 @@ class ClinicalGuardrails:
         if isinstance(stent, dict) and stent.get("performed") is True:
             negated = any(p.search(text_lower) for p in _STENT_NEGATION_PATTERNS)
             removal_text_present = bool(_STENT_REMOVAL_CONTEXT_RE.search(text_lower))
+            if removal_text_present and re.search(
+                r"(?i)\b(?:bronchoscop(?:e)?|scope)\b[^.\n]{0,120}\bremoved\b[^.\n]{0,180}\bstent\b"
+                r"[^.\n]{0,120}\b(?:advance|insert|deploy|place|deliver|seat|implant)\w*\b",
+                note_text or "",
+            ):
+                explicit_stent_removed = bool(
+                    re.search(
+                        r"(?i)\bstent(?:s)?\b[^.\n]{0,120}\b(?:remov(?:e|ed|al)|retriev(?:e|ed|al)|extract(?:ed|ion)?|explant(?:ed|ation)?|exchange(?:d)?|replac(?:ed|ement)?|pull(?:ed)?\s+out)\b",
+                        note_text or "",
+                    )
+                )
+                if not explicit_stent_removed:
+                    removal_text_present = False
             removal_flag = stent.get("airway_stent_removal") is True
             removal_present = removal_text_present or removal_flag
             placement_present = bool(_STENT_PLACEMENT_CONTEXT_RE.search(text_lower))
@@ -380,6 +393,43 @@ class ClinicalGuardrails:
             elif placement_present and not removal_present and not inspection_only:
                 if self._set_stent_action(record_data, "Placement"):
                     warnings.append("Stent placement language; treating as placement.")
+                    changed = True
+        elif isinstance(stent, dict) and stent.get("performed") is False:
+            # Keep false procedures compact (avoid "ghost" action_type/revision fields).
+            if set(stent.keys()) - {"performed"}:
+                if isinstance(procedures, dict):
+                    procedures["airway_stent"] = {"performed": False}
+                    record_data["procedures_performed"] = procedures
+                    warnings.append("AUTO_CORRECTED: airway_stent.performed=false; cleared sub-fields.")
+                    changed = True
+
+        # Therapeutic aspiration material: require explicit purulence language for "Purulent secretions".
+        aspiration = procedures.get("therapeutic_aspiration") if isinstance(procedures, dict) else None
+        if isinstance(aspiration, dict) and aspiration.get("performed") is True:
+            material = aspiration.get("material")
+            if isinstance(material, str) and material.strip() == "Purulent secretions":
+                if not re.search(r"(?i)\b(?:purulent|mucopurulent|pus|suppurat)\w*\b", note_text or ""):
+                    aspiration["material"] = "Mucus"
+                    if isinstance(procedures, dict):
+                        procedures["therapeutic_aspiration"] = aspiration
+                        record_data["procedures_performed"] = procedures
+                    warnings.append(
+                        "AUTO_CORRECTED: therapeutic_aspiration.material='Purulent secretions' without purulence language; downgraded to 'Mucus'."
+                    )
+                    changed = True
+
+        # Therapeutic injection medication cleanup: strip volume prefixes like "mL of Kenalog".
+        injection = procedures.get("therapeutic_injection") if isinstance(procedures, dict) else None
+        if isinstance(injection, dict) and injection.get("performed") is True:
+            medication = injection.get("medication")
+            if isinstance(medication, str) and medication.strip():
+                cleaned = re.sub(r"(?i)^(?:\d+(?:\.\d+)?\s*)?(?:ml|cc)\s+of\s+", "", medication).strip()
+                if cleaned and cleaned != medication:
+                    injection["medication"] = cleaned
+                    if isinstance(procedures, dict):
+                        procedures["therapeutic_injection"] = injection
+                        record_data["procedures_performed"] = procedures
+                    warnings.append("AUTO_CORRECTED: therapeutic_injection.medication stripped volume prefix.")
                     changed = True
 
         # TBNA conventional vs peripheral (lung lesion) guardrails.
@@ -815,28 +865,12 @@ class ClinicalGuardrails:
         action_indicator = placement_indicator or removal_indicator or bool(re.search(r"(?i)\bchartis\b", note_text))
 
         if inspection_only and not action_indicator:
-            if blvr.get("procedure_type") == "Valve placement":
-                blvr["procedure_type"] = "Valve assessment"
-                warnings.append("AUTO_CORRECTED: BLVR inspection-only language; set procedure_type='Valve assessment'.")
-                changed = True
-
-            if blvr.get("valve_type") in ("Spiration (Olympus)", "Zephyr (Pulmonx)") and not re.search(
-                r"(?i)\b(?:zephyr|pulmonx|spiration)\b",
-                note_text,
-            ):
-                blvr["valve_type"] = None
-                changed = True
-
-            if blvr.get("number_of_valves") not in (None, "", 0, "0") and re.search(
-                r"(?i)\bsize\s+\d{1,2}\b[^.\n]{0,24}\bvalves?\b",
-                note_text,
-            ):
-                blvr["number_of_valves"] = 0
-                changed = True
-
-            if blvr.get("valve_sizes"):
-                blvr["valve_sizes"] = None
-                changed = True
+            # Inspection-only mentions (e.g., "previously placed valves visualized") should not
+            # imply a BLVR workflow was performed.
+            procedures["blvr"] = {"performed": False}
+            record_data["procedures_performed"] = procedures
+            warnings.append("AUTO_CORRECTED: BLVR inspection-only language without action; treating as not performed.")
+            return warnings, True
 
         # Valve table count heuristic (+ foreign body removal when a valve is removed).
         valve_block = ""
@@ -919,17 +953,25 @@ class ClinicalGuardrails:
             if not blvr.get("valve_sizes") or len(blvr.get("valve_sizes") or []) < count:
                 blvr["valve_sizes"] = sizes
                 changed = True
-            if segments:
-                existing_segments = blvr.get("segments_treated")
-                existing_len = len(existing_segments) if isinstance(existing_segments, list) else 0
-                if not existing_segments or existing_len < len(segments):
-                    blvr["segments_treated"] = segments
-                    changed = True
-
-        if removed_valve:
-            if self._set_procedure_performed(record_data, "foreign_body_removal", True):
-                warnings.append("BLVR valve removal noted; setting foreign_body_removal.performed=true")
+        if segments:
+            existing_segments = blvr.get("segments_treated")
+            existing_len = len(existing_segments) if isinstance(existing_segments, list) else 0
+            if not existing_segments or existing_len < len(segments):
+                blvr["segments_treated"] = segments
                 changed = True
+
+        # BLVR valve remove/replace is an adjustment (not foreign body removal).
+        if removed_valve or removal_indicator:
+            foreign = procedures.get("foreign_body_removal")
+            if isinstance(foreign, dict) and foreign.get("performed") is True:
+                procedures["foreign_body_removal"] = {"performed": False}
+                record_data["procedures_performed"] = procedures
+                warnings.append(
+                    "AUTO_CORRECTED: BLVR valve removal/exchange context; cleared foreign_body_removal (do not derive 31635)."
+                )
+                changed = True
+            if removed_valve:
+                warnings.append("BLVR valve removal/exchange noted; do not treat as foreign body removal.")
 
         # Promote BLVR valve table rows into granular_data.blvr_valve_placements for accurate lobe counting.
         def _infer_target_lobe(segment: str) -> str | None:

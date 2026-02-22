@@ -336,6 +336,13 @@ class UnifiedProcessResponse(BaseModel):
         ),
     )
     evidence: dict[str, Any] = Field(default_factory=dict, description="Extraction evidence spans")
+    umls_normalization: dict[str, Any] | None = Field(
+        default=None,
+        description=(
+            "Optional normalization sidecar for selected registry string fields (does not mutate clinician text). "
+            "Keys are JSON pointers (e.g., /registry/clinical_context/lesion_location)."
+        ),
+    )
 
     missing_field_prompts: list[MissingFieldPrompt] = Field(
         default_factory=list,

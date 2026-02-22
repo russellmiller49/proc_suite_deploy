@@ -1584,10 +1584,11 @@ def _add_compat_flat_fields(raw: dict[str, Any]) -> dict[str, Any]:
         (isinstance(brushings, dict) and brushings.get("performed") is True)
         or (counts_text and re.search(r"(?i)\bbrush", counts_text))
     ):
+        brush_tool = brushings.get("brush_type") if isinstance(brushings, dict) else None
         raw["bronchial_brushings"] = {
             "lung_segment": _first_nonempty_str(raw.get("nav_target_segment"), raw.get("lesion_location"), location_hint, segment_hint),
             "samples_collected": brush_count,
-            "brush_tool": brushings.get("brush_type"),
+            "brush_tool": brush_tool,
             "tests": [],
         }
 

@@ -347,23 +347,64 @@ def extract_primary_indication(note_text: str) -> Optional[str]:
     """
     text = _maybe_unescape_newlines(note_text or "")
 
-    # Pattern 1: INDICATION: section
+    # Anchor to true section headers (prefer explicit colon) so strings like
+    # "INDICATION FOR OPERATION" do not get parsed as "FOR OPERATION: ..."
     indication_patterns = [
-        r"(?:INDICATION|INDICATIONS)[\s:]+(.+?)(?=\n\n|\n[A-Z]{2,}|\Z)",
-        r"(?:CLINICAL SUMMARY|CLINICAL INDICATION)[\s:]+(.+?)(?=\n\n|\n[A-Z]{2,}|\Z)",
-        r"(?:REASON FOR (?:PROCEDURE|EXAM))[\s:]+(.+?)(?=\n\n|\n[A-Z]{2,}|\Z)",
+        r"(?is)\bINDICATION(?:S)?\s+FOR\s+(?:OPERATION|PROCEDURE|EXAM(?:INATION)?)\s*:\s*"
+        r"(.+?)(?=\n\s*\n|\n\s*[A-Z][A-Z0-9 /()'&\.-]{2,}:\s*|\Z)",
+        r"(?ims)^\s*INDICATION(?:S)?(?:\s+FOR\s+(?:OPERATION|PROCEDURE|EXAM(?:INATION)?))?\s*:\s*"
+        r"(.+?)(?=^\s*[A-Z][A-Z0-9 /()'&\.-]{2,}:\s*|\n\s*\n|\Z)",
+        r"(?ims)^\s*(?:CLINICAL SUMMARY|CLINICAL INDICATION)\s*:\s*"
+        r"(.+?)(?=^\s*[A-Z][A-Z0-9 /()'&\.-]{2,}:\s*|\n\s*\n|\Z)",
+        r"(?ims)^\s*REASON FOR (?:PROCEDURE|EXAM(?:INATION)?)\s*:\s*"
+        r"(.+?)(?=^\s*[A-Z][A-Z0-9 /()'&\.-]{2,}:\s*|\n\s*\n|\Z)",
     ]
 
     for pattern in indication_patterns:
-        match = re.search(pattern, text, re.IGNORECASE | re.DOTALL)
+        match = re.search(pattern, text, re.IGNORECASE | re.DOTALL | re.MULTILINE)
         if match:
             raw = match.group(1).strip()
             # Drop common "Target:" lines that often follow the indication header.
             lines = [ln.strip() for ln in raw.splitlines() if ln.strip()]
             lines = [ln for ln in lines if not re.match(r"(?i)^target(?:s)?\\b\\s*:?", ln)]
             indication = " ".join(lines).strip()
+
+            # Remove common leading header residue and consent boilerplate.
+            indication = re.sub(r"(?i)^for\s+operation\s*:\s*", "", indication).strip()
+            indication = re.sub(r"(?i)^\[REDACTED\]\s*", "", indication).strip()
+            indication = re.split(
+                r"(?i)\b(?:"
+                r"the\s+nature,\s*purpose,\s*risks?,\s*benefits?\s+and\s+alternatives?"
+                r"|risks?,\s*benefits?,\s*(?:and\s+)?alternatives?"
+                r"|patient(?:\s+or\s+surrogate)?\s+indicated\s+a\s+wish\s+to\s+proceed"
+                r"|informed\s+consent\s+was\s+signed"
+                r"|consent\s+was\s+signed"
+                r")\b",
+                indication,
+                maxsplit=1,
+            )[0].strip(" .,:;-\t")
+            indication = re.split(
+                r"(?i)\b(?:ebus[-\s]*findings|procedure\s+in\s+detail|preoperative\s+diagnosis|postoperative\s+diagnosis|anesthesia|monitoring)\b",
+                indication,
+                maxsplit=1,
+            )[0].strip(" .,:;-\t")
+
+            # For templated "X year old ... who presents with Y", keep Y.
+            presents_match = re.search(r"(?i)\bpresents?\s+with\b", indication)
+            if presents_match:
+                tail = indication[presents_match.end() :].strip(" .,:;-\t")
+                if tail:
+                    indication = tail
+
             # Clean up whitespace
             indication = re.sub(r"\s+", " ", indication)
+            if not indication:
+                continue
+            if re.fullmatch(
+                r"(?i)(diagnostic(?:\s+and\s+staging)?|staging(?:\s+and\s+diagnostic)?|diagnostic\s*/\s*staging)",
+                indication,
+            ):
+                continue
             # Limit length
             if len(indication) > 500:
                 indication = indication[:500] + "..."
@@ -982,7 +1023,7 @@ BPF_SEALANT_PATTERNS = [
 ]
 
 BPF_SEALANT_AGENT_PATTERNS = [
-    r"\b(?:glue|sealant|fibrin\s+glue|cyanoacrylate)\b",
+    r"\b(?:tisseel|glue|sealant|fibrin\s+glue|cyanoacrylate)\b",
     r"\bveno-?\s*seal\b",
 ]
 
@@ -1745,21 +1786,35 @@ def extract_airway_dilation(note_text: str) -> Dict[str, Any]:
 
         balloon_diameter_mm: float | None = None
 
-        # Common dilation balloon documentation: "<diam sequence> x <length> mm balloon"
-        # Example: "Merit 6-7-8 x 20 mm balloon" -> diameter max=8mm; length=20mm (not stored in schema).
-        seq_x_match = re.search(
-            r"(?i)\b(?P<seq>\d{1,2}(?:\s*[/-]\s*\d{1,2}){1,4})\s*(?:x|×|by)\s*(?P<len>\d+(?:\.\d+)?)\s*mm\b"
-            r"[^.]{0,60}\bballoon\b",
+        # Prefer explicitly documented maximal diameter over balloon kit size sequences.
+        max_diam_match = re.search(
+            r"(?i)\b(?:max(?:imal|imum)|up\s+to)\b[^.\n]{0,60}\b(?:diameter|size)\b[^.\n]{0,60}\b(?P<diam>\d+(?:\.\d+)?)\s*mm\b",
             window,
         )
-        if seq_x_match:
+        if max_diam_match:
             try:
-                nums = [float(n) for n in re.findall(r"\d{1,2}(?:\.\d+)?", seq_x_match.group("seq") or "")]
-                nums = [n for n in nums if 4 <= n <= 25]
-                if nums:
-                    balloon_diameter_mm = max(nums)
+                val = float(max_diam_match.group("diam"))
+                if 4 <= val <= 25:
+                    balloon_diameter_mm = val
             except Exception:
                 balloon_diameter_mm = None
+
+        # Common dilation balloon documentation: "<diam sequence> x <length> mm balloon"
+        # Example: "Merit 6-7-8 x 20 mm balloon" -> diameter max=8mm; length=20mm (not stored in schema).
+        if balloon_diameter_mm is None:
+            seq_x_match = re.search(
+                r"(?i)\b(?P<seq>\d{1,2}(?:\s*[/-]\s*\d{1,2}){1,4})\s*(?:x|×|by)\s*(?P<len>\d+(?:\.\d+)?)\s*mm\b"
+                r"[^.]{0,60}\bballoon\b",
+                window,
+            )
+            if seq_x_match:
+                try:
+                    nums = [float(n) for n in re.findall(r"\d{1,2}(?:\.\d+)?", seq_x_match.group("seq") or "")]
+                    nums = [n for n in nums if 4 <= n <= 25]
+                    if nums:
+                        balloon_diameter_mm = max(nums)
+                except Exception:
+                    balloon_diameter_mm = None
 
         # Next-most common: "<diam> x <length> mm balloon"
         if balloon_diameter_mm is None:
@@ -1823,10 +1878,15 @@ def extract_airway_dilation(note_text: str) -> Dict[str, Any]:
             ("BI", r"(?i)\b(?:bi|bronchus\s+intermedius)\b"),
             ("Trachea", r"(?i)\btrachea(?:l)?\b"),
         )
+        best_loc: str | None = None
+        best_pos = -1
         for loc, loc_re in location_map:
-            if re.search(loc_re, window):
-                proc["location"] = loc
-                break
+            for m_loc in re.finditer(loc_re, window):
+                if m_loc.start() >= best_pos:
+                    best_pos = m_loc.start()
+                    best_loc = loc
+        if best_loc:
+            proc["location"] = best_loc
 
         # Pre/post diameter heuristics.
         pre_match = re.search(r"(?i)\bdown\s+to\s*(\d+(?:\.\d+)?)\s*mm\b", window)
@@ -1912,18 +1972,21 @@ def extract_airway_stent(note_text: str) -> Dict[str, Any]:
     placement_negated = _stent_placement_negated(text_lower)
     has_placement = placement_window_hit and not placement_negated
 
+    # Removal/exchange detection must be conservative: "bronchoscope was removed and the stent advanced"
+    # is a common placement workflow and should not be treated as stent removal.
     removal_window_hit = _stent_action_window_hit(
         text_lower,
-        # Do not treat generic "pulled ... stent" manipulation as removal; require stronger verbs.
-        verbs=["remov", "retriev", "extract", "explant", "exchang", "replac"],
+        # Prefer stronger, stent-specific cues; handle generic "removed" only when stent is the subject.
+        verbs=["retriev", "extract", "explant", "exchang", "replac"],
     )
-    pull_out_hit = bool(
+    removed_stent_hit = bool(
         re.search(
-            r"(?i)\bstent\b[^.\n]{0,40}\bpull(?:ed)?\s+out\b|\bpull(?:ed)?\s+out\b[^.\n]{0,40}\bstent\b",
+            r"(?i)\bstent(?:s)?\b[^.\n]{0,80}\b(?:remov(?:e|ed|al)|retriev(?:e|ed|al)|extract(?:ed|ion)?|explant(?:ed|ation)?|exchange(?:d)?|replac(?:ed|ement)?)\b",
             text_lower,
         )
     )
-    has_removal = bool(removal_window_hit or pull_out_hit)
+    pull_out_hit = bool(re.search(r"(?i)\bstent\b[^.\n]{0,40}\bpull(?:ed)?\s+out\b", text_lower))
+    has_removal = bool(removal_window_hit or removed_stent_hit or pull_out_hit)
 
     revision_window_hit = _stent_action_window_hit(
         text_lower,
@@ -2605,9 +2668,23 @@ def extract_endobronchial_biopsy(note_text: str) -> Dict[str, Any]:
             if re.search(negation_check, text_lower, re.IGNORECASE):
                 continue
             proc: dict[str, Any] = {"performed": True}
-            window_start = max(0, match.start() - 120)
-            window_end = min(len(note_text), match.end() + 160)
-            locations = _extract_lung_locations_from_text(note_text[window_start:window_end])
+            # Prefer locations in the same clause to avoid picking up nearby bleeding/airway survey sites.
+            text = note_text or ""
+            start = int(match.start())
+            end = int(match.end())
+            left_boundary = max(text.rfind(".", 0, start), text.rfind("\n", 0, start))
+            clause_start = left_boundary + 1 if left_boundary != -1 else 0
+            next_period = text.find(".", end)
+            next_nl = text.find("\n", end)
+            right_candidates = [pos for pos in (next_period, next_nl) if pos != -1]
+            clause_end = min(right_candidates) if right_candidates else len(text)
+            clause = text[clause_start:clause_end]
+
+            locations = _extract_lung_locations_from_text(clause)
+            if not locations:
+                window_start = max(0, start - 120)
+                window_end = min(len(text), end + 160)
+                locations = _extract_lung_locations_from_text(text[window_start:window_end])
             if locations:
                 proc["locations"] = locations
             return {"endobronchial_biopsy": proc}
@@ -2647,6 +2724,14 @@ def extract_radial_ebus(note_text: str) -> Dict[str, Any]:
                 elif "adjacent" in raw_view:
                     proc["probe_position"] = "Adjacent"
                 elif raw_view:
+                    proc["probe_position"] = "Not visualized"
+            else:
+                local = (note_text or "")[max(0, match.start() - 220) : min(len(note_text or ""), match.end() + 320)]
+                if re.search(
+                    r"(?i)\b(?:attempt(?:ed|ing)?|unable|could\s+not|cannot|can't|unsuccessful|failed)\b"
+                    r"[^.\n]{0,140}\b(?:visualiz|see|find|locat|identify)\w*\b",
+                    local,
+                ):
                     proc["probe_position"] = "Not visualized"
 
             return {"radial_ebus": proc}
@@ -3163,14 +3248,16 @@ def extract_bpf_sealant(note_text: str) -> Dict[str, Any]:
     if not text_lower.strip():
         return {}
 
-    has_bpf = any(re.search(p, text_lower, re.IGNORECASE) for p in BPF_SEALANT_PATTERNS)
-    if not has_bpf:
-        return {}
-
     has_agent = any(re.search(p, text_lower, re.IGNORECASE) for p in BPF_SEALANT_AGENT_PATTERNS)
     has_action = bool(
         re.search(r"(?i)\b(?:instill(?:ed|ation)?|appl(?:y|ied|ication)|inject(?:ed|ion)?)\b", text_lower)
     )
+    has_bpf = any(re.search(p, text_lower, re.IGNORECASE) for p in BPF_SEALANT_PATTERNS)
+    has_occlusion_context = bool(
+        re.search(r"(?i)\b(?:block|occlud|seal|plug|subsegment|segment|fistula|air\s+leak)\b", text_lower)
+    )
+    if not (has_bpf or has_occlusion_context):
+        return {}
     if not (has_agent and has_action):
         return {}
 
@@ -3182,7 +3269,9 @@ def extract_bpf_sealant(note_text: str) -> Dict[str, Any]:
         return {}
 
     proc: dict[str, Any] = {"performed": True}
-    if re.search(r"(?i)\bveno-?\s*seal\b", text):
+    if re.search(r"(?i)\btisseel\b", text):
+        proc["sealant_type"] = "Tisseel"
+    elif re.search(r"(?i)\bveno-?\s*seal\b", text):
         proc["sealant_type"] = "Veno-seal"
     elif re.search(r"(?i)\bfibrin\s+glue\b", text):
         proc["sealant_type"] = "Fibrin glue"
@@ -3192,6 +3281,21 @@ def extract_bpf_sealant(note_text: str) -> Dict[str, Any]:
         proc["sealant_type"] = "Sealant"
     elif re.search(r"(?i)\bglue\b", text):
         proc["sealant_type"] = "Glue"
+
+    # Volume (cc/mL) near sealant mention (e.g., "Tisseel 2cc", "2 mL of fibrin glue").
+    vol_match = re.search(
+        r"(?i)\b(?P<vol>\d+(?:\.\d+)?)\s*(?:cc|ml)\b[^.\n]{0,40}\b(?:tisseel|fibrin\s+glue|cyanoacrylate|veno-?\s*seal|sealant|glue)\b"
+        r"|\b(?:tisseel|fibrin\s+glue|cyanoacrylate|veno-?\s*seal|sealant|glue)\b[^.\n]{0,40}\b(?P<vol2>\d+(?:\.\d+)?)\s*(?:cc|ml)\b",
+        text,
+    )
+    if vol_match:
+        raw = vol_match.group("vol") or vol_match.group("vol2")
+        try:
+            vol_val = float(raw)
+        except Exception:
+            vol_val = None
+        if vol_val is not None and 0 < vol_val <= 50:
+            proc["volume_ml"] = vol_val
 
     return {"bpf_sealant": proc}
 
@@ -3511,6 +3615,9 @@ def extract_thermal_ablation(note_text: str) -> Dict[str, Any]:
         r"(?i)\b(?:bronchoscop|airway|endobronch|trachea|carina|main(?:\s*|-)?stem|bronch(?:us|ial))\b"
     )
 
+    modalities: list[str] = []
+    performed_hit = False
+
     for pattern in THERMAL_ABLATION_PATTERNS:
         for match in re.finditer(pattern, text_lower, re.IGNORECASE):
             negation_check = r"\b(?:no|not|without|declined|deferred)\b[^.\n]{0,60}" + pattern
@@ -3538,19 +3645,29 @@ def extract_thermal_ablation(note_text: str) -> Dict[str, Any]:
                 if not (airway_context_re.search(local) and therapeutic_intent_re.search(local)):
                     continue
 
-            proc: dict[str, Any] = {"performed": True}
+            performed_hit = True
+            modality: str | None = None
             if re.search(r"\bapc\b|\bargon\s+plasma\b", local, re.IGNORECASE):
-                proc["modality"] = "APC"
+                modality = "APC"
             elif re.search(r"\belectrocautery\b|\bcauteriz", local, re.IGNORECASE):
-                proc["modality"] = "Electrocautery"
+                modality = "Electrocautery"
             elif re.search(r"\bnd:?yag\b", local, re.IGNORECASE):
-                proc["modality"] = "Laser (Nd:YAG)"
+                modality = "Laser (Nd:YAG)"
             elif re.search(r"\bco2\b", local, re.IGNORECASE):
-                proc["modality"] = "Laser (CO2)"
+                modality = "Laser (CO2)"
             elif re.search(r"\bdiode\b", local, re.IGNORECASE):
-                proc["modality"] = "Laser (Diode)"
-            return {"thermal_ablation": proc}
-    return {}
+                modality = "Laser (Diode)"
+
+            if modality and modality not in modalities:
+                modalities.append(modality)
+
+    if not performed_hit:
+        return {}
+
+    proc: dict[str, Any] = {"performed": True}
+    if modalities:
+        proc["modality"] = "; ".join(modalities)
+    return {"thermal_ablation": proc}
 
 
 def extract_percutaneous_tracheostomy(note_text: str) -> Dict[str, Any]:
@@ -4338,6 +4455,33 @@ def run_deterministic_extractors(note_text: str) -> Dict[str, Any]:
     thoracentesis_data = extract_thoracentesis(note_text)
     if thoracentesis_data:
         seed_data.setdefault("pleural_procedures", {}).update(thoracentesis_data)
+
+    # Backfill thoracentesis guidance when a separately documented chest ultrasound
+    # is extracted (common templating: "76604 chest ultrasound" + "thoracentesis").
+    try:
+        pleural = seed_data.get("pleural_procedures")
+        procs = seed_data.get("procedures_performed")
+        if isinstance(pleural, dict) and isinstance(procs, dict):
+            thora = pleural.get("thoracentesis")
+            chest_us = procs.get("chest_ultrasound")
+            if (
+                isinstance(thora, dict)
+                and thora.get("performed") is True
+                and not str(thora.get("guidance") or "").strip()
+                and isinstance(chest_us, dict)
+                and chest_us.get("performed") is True
+            ):
+                explicit_no_us = bool(
+                    re.search(
+                        r"(?i)\bthoracentesis\b[^.\n]{0,120}\b(?:without|no)\b[^.\n]{0,60}\bultrasound\b",
+                        note_text or "",
+                    )
+                )
+                explicit_landmark = bool(re.search(r"(?i)\b(?:landmark|blind)\b", note_text or ""))
+                if not explicit_no_us and not explicit_landmark:
+                    thora["guidance"] = "Ultrasound"
+    except Exception:
+        pass
 
     # Pleural: chest tube / pleural drainage catheter
     chest_tube_data = extract_chest_tube(note_text)

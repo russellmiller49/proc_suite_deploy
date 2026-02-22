@@ -24,22 +24,45 @@ def apply_navigation_fiducials(data: dict[str, Any], text: str) -> bool:
 
     fiducial_sentence: str | None = None
     fiducial_pattern = r"\bfiducial(?:\s+marker)?s?\b"
+    explicit_neg = re.compile(
+        r"(?i)\b(?:no|without|never)\b[^.\n]{0,80}\bfiducial(?:\s+marker)?s?\b"
+        r"|\bfiducial(?:\s+marker)?s?\b[^.\n]{0,80}\b(?:not|never)\s+"
+        r"(?:plac(?:ed|ement)|deploy\w*|position\w*|insert\w*)\b"
+    )
+
     for line in text.splitlines():
-        if re.search(fiducial_pattern, line, re.IGNORECASE):
-            fiducial_sentence = line.strip()
-            break
+        if not re.search(fiducial_pattern, line, re.IGNORECASE):
+            continue
+        line_clean = line.strip()
+        if not line_clean:
+            continue
+        line_lower = line_clean.lower()
+        if not re.search(r"\b(?:plac(?:ed|ement)|deploy\w*|position\w*|insert\w*)\b", line_lower):
+            continue
+        if explicit_neg.search(line_clean):
+            continue
+        fiducial_sentence = line_clean
+        break
+
     if fiducial_sentence is None:
         match = re.search(fiducial_pattern, text, re.IGNORECASE)
         if match:
             window = text[match.start() : match.start() + 300]
-            fiducial_sentence = window.splitlines()[0].strip() if window else None
+            candidate = window.splitlines()[0].strip() if window else None
+            if candidate:
+                candidate_lower = candidate.lower()
+                if (
+                    re.search(r"\b(?:plac(?:ed|ement)|deploy\w*|position\w*|insert\w*)\b", candidate_lower)
+                    and not explicit_neg.search(candidate)
+                ):
+                    fiducial_sentence = candidate
     if fiducial_sentence is None:
         return False
 
     fiducial_lower = fiducial_sentence.lower()
     if not re.search(r"\b(?:plac(?:ed|ement)|deploy\w*|position\w*|insert\w*)\b", fiducial_lower):
         return False
-    if re.search(r"\b(?:no|not|without)\b", fiducial_lower):
+    if explicit_neg.search(fiducial_sentence):
         return False
 
     def _is_placeholder_location(value: object) -> bool:

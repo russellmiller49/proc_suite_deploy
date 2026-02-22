@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import defaultdict
 from dataclasses import dataclass, field
 from typing import Any, TYPE_CHECKING
 
@@ -53,6 +54,45 @@ class _TemplateSelection:
     paired_surveys: dict[str, ProcedureInput]
     reserved_surveys: set[str]
     first_by_type: dict[str, ProcedureInput]
+    has_til_confirmation: bool
+
+
+def _proc_data_dict(proc: ProcedureInput) -> dict[str, Any]:
+    if isinstance(proc.data, BaseModel):
+        return proc.data.model_dump(exclude_none=True)
+    if isinstance(proc.data, dict):
+        return proc.data
+    return {}
+
+
+def _normalize_target_key(value: Any) -> str | None:
+    if value in (None, "", [], {}):
+        return None
+    text = str(value).strip().lower()
+    return text or None
+
+
+def _target_key_from_proc(proc: ProcedureInput) -> str | None:
+    data = _proc_data_dict(proc)
+    for key in ("target_id", "lesion_id", "target_key"):
+        normalized = _normalize_target_key(data.get(key))
+        if normalized:
+            return normalized
+
+    proc_type = proc.proc_type
+    if proc_type in {"radial_ebus_survey", "radial_ebus_sampling"}:
+        return _normalize_target_key(
+            data.get("location")
+            or data.get("target_lung_segment")
+            or data.get("lesion_location")
+            or data.get("lung_segment")
+            or data.get("notes")
+        )
+    if proc_type in {"robotic_navigation", "emn_bronchoscopy"}:
+        return _normalize_target_key(data.get("lesion_location") or data.get("target_lung_segment"))
+    if proc_type in {"transbronchial_biopsy", "transbronchial_lung_biopsy", "transbronchial_needle_aspiration"}:
+        return _normalize_target_key(data.get("segment") or data.get("lobe") or data.get("lung_segment"))
+    return None
 
 
 class ReportPipeline:
@@ -132,14 +172,33 @@ class ReportPipeline:
             any(meta.id == "ip_general_bronchoscopy_shell" for meta in self.engine.templates.find_for_procedure(proc.proc_type, proc.cpt_candidates))
             for proc in sorted_procs
         )
+        has_til_confirmation = any(proc.proc_type == "tool_in_lesion_confirmation" for proc in sorted_procs)
 
         survey_procs = [p for p in sorted_procs if p.proc_type == "radial_ebus_survey"]
         sampling_procs = [p for p in sorted_procs if p.proc_type == "radial_ebus_sampling"]
         paired_surveys: dict[str, ProcedureInput] = {}
         reserved_surveys: set[str] = set()
-        survey_iter = iter(survey_procs)
+        surveys_by_target: dict[str, list[ProcedureInput]] = defaultdict(list)
+        unkeyed_surveys: list[ProcedureInput] = []
+        for survey in survey_procs:
+            target_key = _target_key_from_proc(survey)
+            if target_key:
+                surveys_by_target[target_key].append(survey)
+            else:
+                unkeyed_surveys.append(survey)
+
         for sampling in sampling_procs:
-            survey = next(survey_iter, None)
+            survey: ProcedureInput | None = None
+            sampling_key = _target_key_from_proc(sampling)
+            if sampling_key and surveys_by_target.get(sampling_key):
+                survey = surveys_by_target[sampling_key].pop(0)
+            elif unkeyed_surveys:
+                survey = unkeyed_surveys.pop(0)
+            else:
+                for key in list(surveys_by_target.keys()):
+                    if surveys_by_target[key]:
+                        survey = surveys_by_target[key].pop(0)
+                        break
             if not survey:
                 break
             key = sampling.proc_id or sampling.schema_id
@@ -156,6 +215,7 @@ class ReportPipeline:
             paired_surveys=paired_surveys,
             reserved_surveys=reserved_surveys,
             first_by_type=first_by_type,
+            has_til_confirmation=has_til_confirmation,
         )
 
     def _render_sections(self, bundle: ProcedureBundle, state: _PipelineState, selected: _TemplateSelection) -> None:
@@ -163,6 +223,7 @@ class ReportPipeline:
         autocode_payload = state.autocode_payload
         autocode_modifiers = state.autocode_modifiers
         unmatched_autocode = state.unmatched_autocode
+        has_til_confirmation = selected.has_til_confirmation
 
         def _validated(proc_input: ProcedureInput) -> Any:
             if isinstance(proc_input.data, BaseModel):
@@ -238,6 +299,8 @@ class ReportPipeline:
                     if nav_proc:
                         extra_context = extra_context or {}
                         extra_context["nav"] = _validated(nav_proc)
+                    extra_context = extra_context or {}
+                    extra_context["til_present"] = has_til_confirmation
                 if proc.proc_type == "robotic_navigation":
                     extra_context = extra_context or {}
                     survey_proc = selected.first_by_type.get("radial_ebus_survey")
@@ -332,33 +395,15 @@ class ReportPipeline:
             procedure_labels = state.procedure_labels
 
             def _build_procedure_summary() -> str:
-                # Prefer a golden-style, line-oriented summary for navigation cases.
-                by_type: dict[str, ProcedureInput] = {}
-                for proc in sorted_procs:
-                    by_type.setdefault(proc.proc_type, proc)
-
                 note_text = (bundle.free_text_hint or "").strip()
                 note_upper = note_text.upper()
 
-                lines: list[str] = []
+                procs_by_type: dict[str, list[ProcedureInput]] = defaultdict(list)
+                for proc in sorted_procs:
+                    procs_by_type[proc.proc_type].append(proc)
 
-                nav_target = None
-                nav_platform = None
-
-                tpc_proc = by_type.get("tunneled_pleural_catheter_insert")
-                if tpc_proc is not None:
-                    data = (
-                        tpc_proc.data.model_dump(exclude_none=True)
-                        if isinstance(tpc_proc.data, BaseModel)
-                        else (tpc_proc.data or {})
-                    )
-                    side = str(data.get("side") or "").strip().lower()
-                    side_title = side.title() if side in {"left", "right"} else ""
-                    line = "Indwelling Tunneled Pleural Catheter Placement"
-                    if side_title:
-                        line += f" ({side_title})"
-                    lines.append(line)
-                    lines.append("Thoracic Ultrasound")
+                def _by_type(proc_type: str) -> list[ProcedureInput]:
+                    return procs_by_type.get(proc_type, [])
 
                 def _as_text(value: Any) -> str:
                     if value is None:
@@ -383,90 +428,102 @@ class ReportPipeline:
                         return "Eccentric"
                     return text
 
-                nav_proc = by_type.get("robotic_navigation")
-                if nav_proc is not None:
-                    data = nav_proc.data.model_dump(exclude_none=True) if isinstance(nav_proc.data, BaseModel) else (nav_proc.data or {})
-                    nav_platform = data.get("platform")
-                    nav_target = data.get("lesion_location") or data.get("target_lung_segment")
+                lines: list[str] = []
+
+                for tpc_proc in _by_type("tunneled_pleural_catheter_insert"):
+                    data = _proc_data_dict(tpc_proc)
+                    side = str(data.get("side") or "").strip().lower()
+                    side_title = side.title() if side in {"left", "right"} else ""
+                    line = "Indwelling Tunneled Pleural Catheter Placement"
+                    if side_title:
+                        line += f" ({side_title})"
+                    lines.append(line)
+                    lines.append("Thoracic Ultrasound")
+
+                nav_procs = _by_type("robotic_navigation")
+                nav_targets: list[str] = []
+                nav_platform = None
+                if nav_procs:
+                    for nav_proc in nav_procs:
+                        data = _proc_data_dict(nav_proc)
+                        if nav_platform is None:
+                            nav_platform = data.get("platform")
+                        target = _as_text(data.get("lesion_location") or data.get("target_lung_segment"))
+                        if target:
+                            nav_targets.append(target)
+                    nav_targets = _dedupe_labels(nav_targets)
                     base = "Robotic navigational bronchoscopy"
                     if nav_platform:
                         base += f" ({nav_platform})"
-                    if nav_target:
-                        base += f" to {nav_target} target"
+                    if len(nav_targets) == 1:
+                        base += f" to {nav_targets[0]} target"
+                    elif len(nav_targets) > 1:
+                        base += f" to {len(nav_targets)} targets ({', '.join(nav_targets)})"
                     lines.append(base)
 
-                emn_proc = by_type.get("emn_bronchoscopy")
-                if emn_proc is not None and not lines:
-                    data = emn_proc.data.model_dump(exclude_none=True) if isinstance(emn_proc.data, BaseModel) else (emn_proc.data or {})
-                    nav_platform = data.get("navigation_system") or "EMN"
-                    nav_target = data.get("target_lung_segment")
-                    base = "Electromagnetic Navigation Bronchoscopy"
-                    if nav_platform:
-                        base += f" ({nav_platform})"
-                    if nav_target:
-                        base += f" to {nav_target} target"
-                    lines.append(base)
+                if not nav_procs:
+                    emn_procs = _by_type("emn_bronchoscopy")
+                    if emn_procs:
+                        emn_targets: list[str] = []
+                        emn_platform = None
+                        for emn_proc in emn_procs:
+                            data = _proc_data_dict(emn_proc)
+                            if emn_platform is None:
+                                emn_platform = data.get("navigation_system") or "EMN"
+                            target = _as_text(data.get("target_lung_segment"))
+                            if target:
+                                emn_targets.append(target)
+                        emn_targets = _dedupe_labels(emn_targets)
+                        base = "Electromagnetic Navigation Bronchoscopy"
+                        if emn_platform:
+                            base += f" ({emn_platform})"
+                        if len(emn_targets) == 1:
+                            base += f" to {emn_targets[0]} target"
+                        elif len(emn_targets) > 1:
+                            base += f" to {len(emn_targets)} targets ({', '.join(emn_targets)})"
+                        lines.append(base)
 
-                til_proc = by_type.get("tool_in_lesion_confirmation")
-                if til_proc is not None:
-                    data = (
-                        til_proc.data.model_dump(exclude_none=True)
-                        if isinstance(til_proc.data, BaseModel)
-                        else (til_proc.data or {})
-                    )
+                for til_proc in _by_type("tool_in_lesion_confirmation"):
+                    data = _proc_data_dict(til_proc)
                     method = _as_text(data.get("confirmation_method"))
                     if method and "tilt" in method.lower():
                         lines.append("TiLT+ (Tomosynthesis-based Tool-in-Lesion Tomography) with trajectory adjustment")
                     else:
                         lines.append("Tool-in-lesion confirmation")
 
-                radial_survey = by_type.get("radial_ebus_survey")
-                if radial_survey is not None:
-                    data = (
-                        radial_survey.data.model_dump(exclude_none=True)
-                        if isinstance(radial_survey.data, BaseModel)
-                        else (radial_survey.data or {})
-                    )
+                for radial_survey in _by_type("radial_ebus_survey"):
+                    data = _proc_data_dict(radial_survey)
                     pattern = _normalize_rebus(data.get("rebus_features"))
                     line = "rEBUS localization"
                     if pattern:
                         line += f" ({pattern})"
+                    target = _as_text(data.get("location"))
+                    if target:
+                        line += f" - {target}"
                     lines.append(line)
 
-                cryo_proc = by_type.get("transbronchial_cryobiopsy")
-                if cryo_proc is not None:
-                    data = (
-                        cryo_proc.data.model_dump(exclude_none=True)
-                        if isinstance(cryo_proc.data, BaseModel)
-                        else (cryo_proc.data or {})
-                    )
+                for cryo_proc in _by_type("transbronchial_cryobiopsy"):
+                    data = _proc_data_dict(cryo_proc)
                     seg = _as_text(data.get("lung_segment"))
                     lines.append(f"Transbronchial Cryobiopsy ({seg})" if seg else "Transbronchial Cryobiopsy")
 
-                blocker_proc = by_type.get("endobronchial_blocker")
-                if blocker_proc is not None:
-                    data = (
-                        blocker_proc.data.model_dump(exclude_none=True)
-                        if isinstance(blocker_proc.data, BaseModel)
-                        else (blocker_proc.data or {})
-                    )
+                for blocker_proc in _by_type("endobronchial_blocker"):
+                    data = _proc_data_dict(blocker_proc)
                     blocker = _as_text(data.get("blocker_type"))
                     if blocker:
                         lines.append(f"Prophylactic {blocker} balloon placement")
                     else:
                         lines.append("Prophylactic endobronchial blocker placement")
 
-                radial_sampling = by_type.get("radial_ebus_sampling")
-                if radial_sampling is not None:
-                    data = (
-                        radial_sampling.data.model_dump(exclude_none=True)
-                        if isinstance(radial_sampling.data, BaseModel)
-                        else (radial_sampling.data or {})
-                    )
+                for radial_sampling in _by_type("radial_ebus_sampling"):
+                    data = _proc_data_dict(radial_sampling)
                     view = _normalize_rebus(data.get("ultrasound_pattern"))
                     line = "Radial EBUS"
                     if view:
                         line += f" ({view} view)"
+                    target = _as_text(data.get("target_lung_segment") or data.get("lung_segment"))
+                    if target:
+                        line += f" - {target}"
                     lines.append(line)
 
                 if "CONE BEAM" in note_upper or "CBCT" in note_upper:
@@ -474,47 +531,31 @@ class ReportPipeline:
                 elif "FLUORO" in note_upper:
                     lines.append("Fluoroscopy with trajectory adjustment and confirmation")
 
-                tbna_proc = by_type.get("transbronchial_needle_aspiration")
-                if tbna_proc is not None:
-                    data = (
-                        tbna_proc.data.model_dump(exclude_none=True)
-                        if isinstance(tbna_proc.data, BaseModel)
-                        else (tbna_proc.data or {})
-                    )
+                primary_nav_target = nav_targets[0] if nav_targets else None
+
+                for tbna_proc in _by_type("transbronchial_needle_aspiration"):
+                    data = _proc_data_dict(tbna_proc)
                     passes = data.get("samples_collected")
-                    target = nav_target or data.get("lung_segment")
+                    target = _as_text(data.get("lung_segment") or primary_nav_target)
                     if passes:
-                        line = f"TBNA of {target or 'target'} ({passes} passes)"
+                        lines.append(f"TBNA of {target or 'target'} ({passes} passes)")
                     else:
-                        line = "TBNA"
-                    lines.append(line)
+                        lines.append(f"TBNA of {target}" if target else "TBNA")
 
-                bx_proc = by_type.get("transbronchial_biopsy")
-                if bx_proc is not None:
-                    data = (
-                        bx_proc.data.model_dump(exclude_none=True)
-                        if isinstance(bx_proc.data, BaseModel)
-                        else (bx_proc.data or {})
-                    )
+                for bx_proc in _by_type("transbronchial_biopsy"):
+                    data = _proc_data_dict(bx_proc)
                     count = data.get("number_of_biopsies")
-                    target = nav_target or data.get("lobe") or data.get("segment")
+                    target = _as_text(data.get("lobe") or data.get("segment") or primary_nav_target)
                     if count:
-                        line = f"Transbronchial biopsy of {target or 'target'} ({count} samples)"
+                        lines.append(f"Transbronchial biopsy of {target or 'target'} ({count} samples)")
                     else:
-                        line = "Transbronchial biopsy"
-                    lines.append(line)
+                        lines.append(f"Transbronchial biopsy of {target}" if target else "Transbronchial biopsy")
 
-                brush_proc = by_type.get("bronchial_brushings")
-                if brush_proc is not None:
+                for _ in _by_type("bronchial_brushings"):
                     lines.append("Bronchial Brush")
 
-                wll_proc = by_type.get("whole_lung_lavage")
-                if wll_proc is not None:
-                    data = (
-                        wll_proc.data.model_dump(exclude_none=True)
-                        if isinstance(wll_proc.data, BaseModel)
-                        else (wll_proc.data or {})
-                    )
+                for wll_proc in _by_type("whole_lung_lavage"):
+                    data = _proc_data_dict(wll_proc)
                     side = str(data.get("side") or "").strip().lower()
                     side_title = side.title() if side in {"left", "right"} else ""
                     total_l = data.get("total_volume_l") or data.get("max_volume_l")
@@ -534,23 +575,20 @@ class ReportPipeline:
                         line += f" ({total_str} L)"
                     lines.append(line)
 
-                bal_proc = by_type.get("bal")
-                if bal_proc is not None:
-                    data = bal_proc.data.model_dump(exclude_none=True) if isinstance(bal_proc.data, BaseModel) else (bal_proc.data or {})
-                    seg = data.get("lung_segment")
+                for bal_proc in _by_type("bal"):
+                    data = _proc_data_dict(bal_proc)
+                    seg = _as_text(data.get("lung_segment"))
                     if seg:
                         lines.append(f"Bronchoalveolar Lavage ({seg})")
                     else:
                         lines.append("Bronchoalveolar Lavage (BAL)")
 
-                fid_proc = by_type.get("fiducial_marker_placement")
-                if fid_proc is not None:
+                for _ in _by_type("fiducial_marker_placement"):
                     lines.append("Fiducial marker placement")
 
-                ebus_proc = by_type.get("ebus_tbna")
-                if ebus_proc is not None:
-                    data = ebus_proc.data.model_dump(exclude_none=True) if isinstance(ebus_proc.data, BaseModel) else (ebus_proc.data or {})
-                    stations = []
+                for ebus_proc in _by_type("ebus_tbna"):
+                    data = _proc_data_dict(ebus_proc)
+                    stations: list[str] = []
                     for st in data.get("stations") or []:
                         if isinstance(st, dict) and st.get("station_name"):
                             stations.append(str(st["station_name"]))
@@ -563,21 +601,15 @@ class ReportPipeline:
                     else:
                         lines.append("Endobronchial Ultrasound-Guided Transbronchial Needle Aspiration (EBUS-TBNA)")
 
-                ablation_proc = by_type.get("peripheral_ablation")
-                if ablation_proc is not None:
-                    data = (
-                        ablation_proc.data.model_dump(exclude_none=True)
-                        if isinstance(ablation_proc.data, BaseModel)
-                        else (ablation_proc.data or {})
-                    )
+                for ablation_proc in _by_type("peripheral_ablation"):
+                    data = _proc_data_dict(ablation_proc)
                     modality = data.get("modality") or "Microwave"
-                    target = data.get("target") or nav_target
+                    target = _as_text(data.get("target") or primary_nav_target)
                     lines.append(f"{modality} Ablation of {target or 'target'} target")
 
                 if lines:
                     return "\n".join(_dedupe_labels([str(line).strip() for line in lines if str(line).strip()]))
 
-                # Fallback: use template labels we actually rendered.
                 return "\n".join(_dedupe_labels(procedure_labels)) if procedure_labels else "See procedure details below"
 
             label_summary = _build_procedure_summary()

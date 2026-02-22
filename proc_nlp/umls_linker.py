@@ -1,4 +1,8 @@
-"""Thin wrapper around scispaCy's UMLS linker with semantic-type filtering."""
+"""UMLS linking helpers.
+
+This module preserves the public API (`UmlsConcept`, `umls_link`) while adding a
+lightweight deterministic backend powered by a distilled IP-UMLS map.
+"""
 
 from __future__ import annotations
 
@@ -8,15 +12,7 @@ from typing import Iterable, List, Sequence, Set
 import os
 import warnings
 
-try:
-    import spacy  # type: ignore
-    from scispacy.linking import EntityLinker  # type: ignore
-except ImportError as exc:  # pragma: no cover - surfaced by preflight/tests
-    spacy = None  # type: ignore
-    EntityLinker = None  # type: ignore
-    _IMPORT_ERROR = exc
-else:
-    _IMPORT_ERROR = None
+from config.settings import UmlsSettings
 
 _ALLOWED_SEMTYPES: Set[str] = {
     "T061",  # Therapeutic or Preventive Procedure
@@ -39,11 +35,17 @@ class UmlsConcept:
     end_char: int
 
 
-def _require_spacy() -> "spacy.Language":  # type: ignore[name-defined]
-    if spacy is None or EntityLinker is None:  # pragma: no cover - exercised by integration
-        raise RuntimeError(
-            "spaCy/scispaCy not available - install per README"
-        ) from _IMPORT_ERROR
+def _import_scispacy():  # pragma: no cover - exercised by integration
+    try:
+        import spacy  # type: ignore
+        from scispacy.linking import EntityLinker  # type: ignore
+    except ImportError as exc:  # pragma: no cover
+        raise RuntimeError("spaCy/scispaCy not available - install per README") from exc
+    return spacy, EntityLinker
+
+
+def _require_spacy():  # pragma: no cover - exercised by integration
+    spacy, _ = _import_scispacy()
     model_name = os.getenv("PROCSUITE_SPACY_MODEL", "en_core_sci_sm")
     try:
         return _load_model(model_name)
@@ -55,6 +57,7 @@ def _require_spacy() -> "spacy.Language":  # type: ignore[name-defined]
 
 @lru_cache(maxsize=2)
 def _load_model(model_name: str):
+    spacy, _ = _import_scispacy()
     with warnings.catch_warnings():
         warnings.filterwarnings(
             "ignore",
@@ -82,8 +85,8 @@ def _load_model(model_name: str):
     return nlp
 
 
-def umls_link(text: str, allowed_semtypes: Iterable[str] | None = None) -> List[UmlsConcept]:
-    """Return filtered UMLS concepts for a free-text snippet."""
+def _umls_link_scispacy(text: str, allowed_semtypes: Iterable[str] | None = None) -> List[UmlsConcept]:
+    _, EntityLinker = _import_scispacy()
     clean_text = (text or "").strip()
     if not clean_text:
         return []
@@ -113,4 +116,51 @@ def umls_link(text: str, allowed_semtypes: Iterable[str] | None = None) -> List[
     return concepts
 
 
-__all__ = ["UmlsConcept", "umls_link"]
+def umls_link_terms(terms: Iterable[str], category: str | None = None) -> List[UmlsConcept]:
+    settings = UmlsSettings()
+    if not settings.enable_linker:
+        return []
+
+    backend = (settings.linker_backend or "distilled").strip().lower()
+    if backend == "scispacy":
+        results: List[UmlsConcept] = []
+        for term in terms:
+            results.extend(_umls_link_scispacy(term))
+        return results
+
+    from app.umls.ip_umls_store import get_ip_umls_store
+
+    store = get_ip_umls_store()
+    concepts: List[UmlsConcept] = []
+    for term in terms:
+        match = store.match(term, category=category)
+        if not match:
+            continue
+        score = 1.0 if match.get("match_type") == "exact" else 0.95
+        concepts.append(
+            UmlsConcept(
+                cui=str(match["chosen_cui"]),
+                score=score,
+                semtypes=tuple(match.get("semtypes", []) or ()),
+                preferred_name=str(match.get("preferred_name") or ""),
+                text=str(term),
+                start_char=0,
+                end_char=len(str(term)),
+            )
+        )
+    return concepts
+
+
+def umls_link(text: str, allowed_semtypes: Iterable[str] | None = None) -> List[UmlsConcept]:
+    settings = UmlsSettings()
+    if not settings.enable_linker:
+        return []
+
+    backend = (settings.linker_backend or "distilled").strip().lower()
+    if backend == "scispacy":
+        return _umls_link_scispacy(text, allowed_semtypes=allowed_semtypes)
+
+    return umls_link_terms([text])
+
+
+__all__ = ["UmlsConcept", "umls_link", "umls_link_terms"]

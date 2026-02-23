@@ -30,25 +30,40 @@ def _add_enum_value(enum_name: str, new_value: str) -> None:
     # SQLite uses CHECK constraints on strings; no action needed
 
 
+def _add_column_if_not_exists(table: str, column: sa.Column) -> None:
+    """Add column only if it does not exist (idempotent for partial migration recovery)."""
+    conn = op.get_bind()
+    if conn.dialect.name == "postgresql":
+        col_name = column.name
+        col_type = column.type.compile(dialect=conn.dialect)
+        op.execute(sa.text(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {col_name} {col_type}"))
+    else:
+        op.add_column(table, column)
+
+
 def upgrade() -> None:
     _add_enum_value("processingstatus", "phi_reviewed")
     _add_enum_value("auditaction", "scrubbing_feedback_applied")
 
-    op.add_column(
+    _add_column_if_not_exists(
         "scrubbing_feedback",
         sa.Column("reviewer_id", sa.String(length=255), nullable=True),
     )
-    op.add_column(
+    _add_column_if_not_exists(
         "scrubbing_feedback",
         sa.Column("reviewer_email", sa.String(length=255), nullable=True),
     )
-    op.add_column(
+    _add_column_if_not_exists(
         "scrubbing_feedback",
         sa.Column("reviewer_role", sa.String(length=100), nullable=True),
     )
-    op.add_column("scrubbing_feedback", sa.Column("comment", sa.Text(), nullable=True))
-    op.add_column("scrubbing_feedback", sa.Column("updated_scrubbed_text", sa.Text(), nullable=True))
-    op.add_column("scrubbing_feedback", sa.Column("updated_entity_map", sa.JSON(), nullable=True))
+    _add_column_if_not_exists("scrubbing_feedback", sa.Column("comment", sa.Text(), nullable=True))
+    _add_column_if_not_exists(
+        "scrubbing_feedback", sa.Column("updated_scrubbed_text", sa.Text(), nullable=True)
+    )
+    _add_column_if_not_exists(
+        "scrubbing_feedback", sa.Column("updated_entity_map", sa.JSON(), nullable=True)
+    )
 
 
 def downgrade() -> None:

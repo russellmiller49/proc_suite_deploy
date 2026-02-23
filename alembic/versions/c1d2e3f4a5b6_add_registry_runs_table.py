@@ -26,6 +26,11 @@ JSONType = postgresql.JSONB().with_variant(sa.JSON(), "sqlite")
 
 
 def upgrade() -> None:
+    conn = op.get_bind()
+    inspector = sa.inspect(conn)
+    if "registry_runs" in inspector.get_table_names():
+        return  # Table already exists (idempotent for partial migration recovery)
+
     op.create_table(
         "registry_runs",
         sa.Column("id", UUIDType, nullable=False),

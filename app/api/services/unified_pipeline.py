@@ -369,6 +369,7 @@ async def run_unified_pipeline_logic(
     processing_time_ms = (time.time() - start_time) * 1000
 
     response_model = UnifiedProcessResponse(
+        registry_uuid=payload.registry_uuid,
         registry=record.model_dump(exclude_none=True),
         registry_v3_event_log=registry_v3_event_log,
         evidence=evidence_payload,
@@ -398,6 +399,7 @@ async def run_unified_pipeline_logic(
         "redaction_entity_count": redaction_entity_count,
         "redaction_warning": redaction_warning,
         "source_type": payload.source_type,
+        "registry_uuid": payload.registry_uuid,
         "ocr_correction_applied": bool(payload.ocr_correction_applied),
         "camera_ocr_fuzzy_meta": camera_ocr_fuzzy_meta,
     }

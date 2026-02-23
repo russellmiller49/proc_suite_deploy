@@ -217,6 +217,13 @@ class UnifiedProcessRequest(BaseModel):
     """Request schema for unified registry + coder endpoint (extraction-first)."""
 
     note: str = Field(..., description="The procedure note text to process")
+    registry_uuid: str | None = Field(
+        None,
+        description=(
+            "Optional client-generated stable case identifier used to correlate "
+            "additional appended documents."
+        ),
+    )
     already_scrubbed: bool = Field(
         False,
         description=(
@@ -384,6 +391,10 @@ class UnifiedProcessResponse(BaseModel):
     """Response schema combining registry extraction and CPT coding."""
 
     # Registry output
+    registry_uuid: str | None = Field(
+        default=None,
+        description="Echo of the client-provided registry_uuid when present.",
+    )
     registry: dict[str, Any] = Field(default_factory=dict, description="Extracted registry fields")
     registry_v3_event_log: dict[str, Any] | None = Field(
         default=None,

@@ -2160,6 +2160,89 @@ body.ps-review-split .editorPane .result {
   margin-left: auto;
 }
 
+.vault-panel {
+  margin-top: 10px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 12px;
+}
+
+.vault-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.vault-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.vault-actions #vaultStatusText {
+  margin-left: auto;
+}
+
+.vault-help {
+  margin-top: 8px;
+}
+
+.vault-append-target {
+  margin-top: 8px;
+}
+
+.vault-patients-host {
+  margin-top: 10px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--bg-input);
+  padding: 10px;
+  min-height: 48px;
+}
+
+.vault-patients-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.vault-patients-table th,
+.vault-patients-table td {
+  border-bottom: 1px solid var(--border-color);
+  padding: 6px 8px;
+  text-align: left;
+  vertical-align: middle;
+}
+
+.vault-patients-table tr.active {
+  background: #eef2ff;
+}
+
+.vault-patients-table .vault-registry-uuid {
+  font-family: "Monaco", "Menlo", "Consolas", monospace;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+@media (max-width: 1200px) {
+  .vault-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .vault-grid {
+    grid-template-columns: 1fr;
+  }
+  .vault-actions #vaultStatusText {
+    margin-left: 0;
+    width: 100%;
+  }
+}
+
 /* Dialog modal */
 dialog.modal {
   border: 1px solid var(--border-color);

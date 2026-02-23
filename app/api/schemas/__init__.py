@@ -44,6 +44,14 @@ from app.api.schemas.qa import (
     RegistryData,
     ReporterData,
 )
+from app.api.schemas.vault import (
+    CRYPTO_VERSION_V1,
+    VaultDeleteResponse,
+    VaultRecordOut,
+    VaultRecordUpsert,
+    VaultSettingsOut,
+    VaultSettingsUpsert,
+)
 
 __all__ = [
     # Base schemas
@@ -82,4 +90,11 @@ __all__ = [
     "QARunResponse",
     "RegistryData",
     "ReporterData",
+    # Vault schemas
+    "CRYPTO_VERSION_V1",
+    "VaultDeleteResponse",
+    "VaultRecordOut",
+    "VaultRecordUpsert",
+    "VaultSettingsOut",
+    "VaultSettingsUpsert",
 ]

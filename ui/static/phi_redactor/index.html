@@ -122,70 +122,11 @@
           Apply redactions before submitting. The server receives only scrubbed text.
         </div>
 
-        <details id="bundlePanel" class="bundle-panel">
-          <summary>Bundle (Zero-Knowledge Timeline)</summary>
-          <div class="bundle-panel-body">
-            <div class="bundle-grid">
-              <div class="bundle-field">
-                <label for="indexDateInput">Index date (T=0)</label>
-                <input id="indexDateInput" type="date" />
-              </div>
-              <div class="bundle-field">
-                <label for="docDateInput">Document date</label>
-                <input id="docDateInput" type="date" />
-              </div>
-              <div class="bundle-field">
-                <label for="timepointRoleSelect">Timepoint role</label>
-                <select id="timepointRoleSelect" class="param-select">
-                  <option value="PREOP_IMAGING">Pre-op imaging</option>
-                  <option value="INDEX_PROCEDURE" selected>Index procedure</option>
-                  <option value="PATHOLOGY">Pathology</option>
-                  <option value="FOLLOW_UP">Follow-up</option>
-                </select>
-              </div>
-              <div class="bundle-field">
-                <label for="docSeqInput">Seq</label>
-                <input id="docSeqInput" type="number" min="1" step="1" value="1" />
-              </div>
-            </div>
-
-            <div class="bundle-actions">
-              <label
-                class="inline-toggle"
-                title="If enabled, detected absolute dates are replaced with [DATE: T±N DAYS] tokens using Index date (UTC-noon math)."
-              >
-                <input id="translateDatesToggle" type="checkbox" checked />
-                Translate dates to T tokens
-              </label>
-              <button id="chronoPreviewBtn" class="secondary" disabled>Chronology Preview</button>
-            </div>
-
-            <hr class="bundle-divider" />
-
-            <div class="bundle-grid">
-              <div class="bundle-field">
-                <label for="zkPatientIdInput">ZK patient id</label>
-                <input id="zkPatientIdInput" type="text" placeholder="zk_..." />
-              </div>
-              <div class="bundle-field">
-                <label for="episodeIdInput">Episode id</label>
-                <input id="episodeIdInput" type="text" placeholder="ep_..." />
-              </div>
-              <div class="bundle-field bundle-field-wide">
-                <button id="genBundleIdsBtn" class="secondary">Generate IDs</button>
-              </div>
-            </div>
-
-            <div class="bundle-actions">
-              <button id="addToBundleBtn" class="secondary" disabled>Add scrubbed note to bundle</button>
-              <button id="submitBundleBtn" class="primary" disabled>Submit bundle</button>
-              <button id="clearBundleBtn" class="secondary" disabled>Clear bundle</button>
-              <button id="clearCurrentNoteBtn" class="secondary" disabled>Clear current note</button>
-            </div>
-
-            <div id="bundleDocsHost" class="bundle-docs-host subtle">No bundle docs yet.</div>
-          </div>
-        </details>
+        <div class="warning" style="margin: 10px 16px;">
+          <strong>Zero-Knowledge Timeline:</strong> Event chronology is now managed in <strong>Local Vault</strong>.
+          Use <strong>Add Event</strong> from an unlocked case. Absolute dates remain client-side and are converted to
+          relative day offsets before append.
+        </div>
 
         <div id="editor" class="editor">
           <textarea
@@ -215,17 +156,67 @@
                   Split view
                 </button>
               </div>
-              <button id="exportBtn" class="secondary" disabled>Export JSON</button>
-              <button id="exportTablesBtn" class="secondary" disabled>Export Tables</button>
-              <button id="exportEditedBtn" class="secondary" disabled>Export Edited JSON</button>
-              <button id="exportPatchBtn" class="secondary" disabled>Export Patch</button>
-            </div>
-          </div>
-		          <div id="resultsContainer" class="resultsContainer hidden">
-		            <div id="statusBannerHost"></div>
-                <div id="bundleSummaryHost" class="bundle-summary hidden"></div>
-		            <div id="statCards" class="stat-card-container">
-		            </div>
+	              <button id="exportBtn" class="secondary" disabled>Export JSON</button>
+	              <button id="exportTablesBtn" class="secondary" disabled>Export Tables</button>
+	              <button id="exportEditedBtn" class="secondary" disabled>Export Edited JSON</button>
+	              <button id="exportPatchBtn" class="secondary" disabled>Export Patch</button>
+	            </div>
+	          </div>
+
+            <details class="raw-json-toggle" id="vaultPanel" open>
+              <summary>Local Vault (Encrypted)</summary>
+              <div class="vault-panel">
+                <div class="vault-grid">
+                  <div class="feedback-field">
+                    <label for="vaultUserIdInput">Vault User ID</label>
+                    <input id="vaultUserIdInput" type="text" placeholder="Stable ID (not a login)" />
+                  </div>
+                  <div class="feedback-field">
+                    <label for="vaultPasswordInput">Vault Password</label>
+                    <input id="vaultPasswordInput" type="password" placeholder="Required to unlock vault" />
+                  </div>
+                  <div class="feedback-field">
+                    <label for="vaultPatientLabelInput">Patient Label (local encrypted)</label>
+                    <input id="vaultPatientLabelInput" type="text" placeholder="e.g., John Doe or MRN 12345" />
+                  </div>
+                  <div class="feedback-field">
+                    <label for="vaultIndexDateInput">Index Procedure Date (local encrypted)</label>
+                    <input id="vaultIndexDateInput" type="date" />
+                  </div>
+                  <div class="feedback-field">
+                    <label for="vaultMrnInput">MRN (local encrypted)</label>
+                    <input id="vaultMrnInput" type="text" placeholder="Optional local MRN" />
+                  </div>
+                  <div class="feedback-field">
+                    <label for="vaultCustomNotesInput">Custom Notes (local encrypted)</label>
+                    <input id="vaultCustomNotesInput" type="text" placeholder="Optional local notes" />
+                  </div>
+                </div>
+
+                <div class="vault-actions">
+                  <button id="vaultUnlockBtn" class="secondary">Unlock / Initialize Vault</button>
+                  <button id="vaultLockBtn" class="secondary" disabled>Lock Vault</button>
+                  <button id="vaultSyncBtn" class="secondary" disabled>Sync Patients</button>
+                  <button id="clearAppendTargetBtn" class="secondary" disabled>Clear Append Target</button>
+                  <div class="subtle" id="vaultStatusText">Locked</div>
+                </div>
+
+                <div class="subtle vault-help">
+                  Optional. Unlock to save encrypted local case metadata (ciphertext-only persistence) and enable add-event
+                  workflows. Extraction does not require this.
+                </div>
+
+                <div class="subtle vault-append-target" id="vaultAppendTargetText">Mode: Create new index case</div>
+                <div id="vaultPatientsHost" class="vault-patients-host">
+                  Unlock vault to view local encrypted patients.
+                </div>
+              </div>
+            </details>
+
+			          <div id="resultsContainer" class="resultsContainer hidden">
+			            <div id="statusBannerHost"></div>
+			            <div id="statCards" class="stat-card-container">
+			            </div>
 
 		            <div id="registryLegacyRoot">
 		            <div class="dash-grid">
@@ -545,16 +536,55 @@
       </form>
     </dialog>
 
-    <dialog id="chronoPreviewModal" class="modal modal-wide">
+    <dialog id="addEventModal" class="modal">
       <form method="dialog" class="modal-content">
-        <h3>Chronology Preview (client-side)</h3>
+        <h3>Add Event (Zero-Knowledge)</h3>
+        <p class="subtle" id="addEventRegistryText">Case: —</p>
+        <div class="feedback-field">
+          <label for="addEventDateInput">Event Date (client-side only)</label>
+          <input id="addEventDateInput" type="date" />
+        </div>
+        <div class="feedback-field">
+          <label for="addEventTypeSelect">Event Type</label>
+          <select id="addEventTypeSelect" class="param-select">
+            <option value="pathology">Pathology</option>
+            <option value="imaging">Imaging</option>
+            <option value="procedure">Additional Procedure</option>
+            <option value="clinical_status">Clinical Status</option>
+          </select>
+        </div>
+        <div class="feedback-field">
+          <label for="addEventModeSelect">Event Input Mode</label>
+          <select id="addEventModeSelect" class="param-select">
+            <option value="note">Paste/Capture Note</option>
+            <option value="structured">Structured Status</option>
+          </select>
+        </div>
+
+        <div id="addEventStructuredFields" class="feedback-field hidden">
+          <label>Structured Status Fields</label>
+          <label class="inline-toggle">
+            <input id="addEventHospitalAdmissionToggle" type="checkbox" />
+            Hospital admission
+          </label>
+          <label class="inline-toggle">
+            <input id="addEventIcuAdmissionToggle" type="checkbox" />
+            ICU admission
+          </label>
+          <label class="inline-toggle">
+            <input id="addEventDeceasedToggle" type="checkbox" />
+            Deceased
+          </label>
+          <label for="addEventStatusCommentInput">Status Comment (optional)</label>
+          <input id="addEventStatusCommentInput" type="text" placeholder="Optional structured status note" />
+        </div>
+
         <p class="subtle">
-          This preview runs locally. Absolute dates never leave your browser. Verify how detected
-          dates will be tokenized before bundling.
+          Absolute dates stay in-browser. The append request transmits only a signed relative day offset.
         </p>
-        <div id="chronoPreviewBody" class="chrono-preview-body"></div>
         <div class="modal-actions">
-          <button value="close" class="primary">Close</button>
+          <button value="cancel" class="secondary">Cancel</button>
+          <button value="confirm" class="primary">Use Event</button>
         </div>
       </form>
     </dialog>

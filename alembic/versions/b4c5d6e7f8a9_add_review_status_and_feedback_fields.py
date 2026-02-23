@@ -24,7 +24,9 @@ def _add_enum_value(enum_name: str, new_value: str) -> None:
 
     conn = op.get_bind()
     if conn.dialect.name == "postgresql":
-        op.execute(sa.text(f"ALTER TYPE {enum_name} ADD VALUE IF NOT EXISTS :value").bindparams(value=new_value))
+        # PostgreSQL ALTER TYPE ADD VALUE does not support bind params; interpolate safely.
+        escaped = new_value.replace("'", "''")
+        op.execute(sa.text(f"ALTER TYPE {enum_name} ADD VALUE IF NOT EXISTS '{escaped}'"))
     # SQLite uses CHECK constraints on strings; no action needed
 
 

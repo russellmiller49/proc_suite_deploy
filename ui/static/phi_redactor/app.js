@@ -10862,8 +10862,6 @@ async function main() {
 	      };
 	      // Force backend to return evidence spans
 	      processBody.explain = true;
-	      processBody.include_evidence = true;
-	      processBody.return_explain = true;
         assertNoLocalPayloadFields(processBody, "process");
 
       const shouldAttemptPersistence = !TESTER_MODE || submitterName.length > 0;

@@ -4,12 +4,17 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 from concurrent.futures import ThreadPoolExecutor
 
 import httpx
 from fastapi import FastAPI
 
 from config.startup_settings import validate_startup_env
+
+
+def _env_truthy(value: str | None) -> bool:
+    return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
 
 
 class StartupBootstrap:
@@ -52,8 +57,22 @@ class StartupBootstrap:
             from app.phi import models as _phi_models  # noqa: F401
             from app.phi.db import Base as PHIBase
 
-            PHIBase.metadata.create_all(bind=phi_engine)
-            self.logger.info("PHI database tables verified/created")
+            explicit_autocreate = os.getenv("PROCSUITE_PHI_AUTOCREATE_TABLES")
+            should_autocreate = (
+                _env_truthy(explicit_autocreate)
+                if explicit_autocreate is not None
+                else phi_engine.dialect.name == "sqlite"
+            )
+
+            if should_autocreate:
+                PHIBase.metadata.create_all(bind=phi_engine)
+                self.logger.info("PHI database tables verified/created")
+            else:
+                self.logger.info(
+                    "Skipping PHI metadata.create_all(); expecting Alembic-managed schema "
+                    "(dialect=%s). Set PROCSUITE_PHI_AUTOCREATE_TABLES=true to override.",
+                    phi_engine.dialect.name,
+                )
         except Exception as exc:  # noqa: BLE001
             self.logger.warning("Could not initialize PHI tables: %s", exc)
 

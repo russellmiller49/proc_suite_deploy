@@ -357,7 +357,7 @@ def generate_missing_field_prompts(record: RegistryRecord) -> list[MissingFieldP
         group="Global",
         path="clinical_context.ecog_score",
         label="ECOG/Zubrod performance status",
-        severity="required",
+        severity="recommended",
         message="ECOG/Zubrod performance status was not found in the note. Add ECOG 0–4 (or a range like 0–1).",
         any_of_paths=["clinical_context.ecog_score", "clinical_context.ecog_text"],
     )
@@ -630,24 +630,10 @@ def generate_missing_field_prompts(record: RegistryRecord) -> list[MissingFieldP
                 continue
             detail_idx = _to_int_or_none(ctx.get("detail_index"))
             node_event_idx = _to_int_or_none(ctx.get("node_event_index"))
-            detail_row_missing = detail_idx is None
 
-            if detail_row_missing:
+            if detail_idx is None:
                 detail_idx = next_detail_idx
                 next_detail_idx += 1
-                prompts.append(
-                    MissingFieldPrompt(
-                        group="EBUS",
-                        path="granular_data.linear_ebus_stations_detail[*].station",
-                        target_path=f"granular_data.linear_ebus_stations_detail[{detail_idx}].station",
-                        label=f"Per-station detail row (station {station})",
-                        severity="recommended",
-                        message=(
-                            f"Station {station} appears sampled, but no per-station detail row is present. "
-                            "Add a station row to capture size, passes, and adequacy consistently."
-                        ),
-                    )
-                )
 
             if not ctx.get("has_needle_gauge") and not global_needle_gauge_present:
                 target_path = (

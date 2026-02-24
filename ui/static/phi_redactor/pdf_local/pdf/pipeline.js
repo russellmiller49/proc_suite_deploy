@@ -14,8 +14,8 @@ const DEFAULT_OCR_OPTIONS = Object.freeze({
   available: true,
   enabled: true,
   lang: "eng",
-  qualityMode: "fast",
-  scale: 2.05,
+  qualityMode: "high_accuracy",
+  scale: 3.1,
   psm: "6",
   maskImages: "auto",
   cropMode: "auto",
@@ -50,7 +50,7 @@ function normalizeGateOptions(gate) {
 
 function normalizeOcrOptions(opts = {}) {
   const ocr = opts.ocr && typeof opts.ocr === "object" ? opts.ocr : {};
-  const qualityMode = ocr.qualityMode === "high_accuracy" ? "high_accuracy" : "fast";
+  const qualityMode = "high_accuracy";
   const defaultScale = qualityMode === "high_accuracy" ? 3.1 : 2.05;
   const scale = Number.isFinite(ocr.scale) ? Math.max(1.1, Math.min(4, Number(ocr.scale))) : defaultScale;
   const maskImages = ocr.maskImages === "off" || ocr.maskImages === "none"

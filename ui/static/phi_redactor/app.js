@@ -21,6 +21,13 @@ import {
   unlockOrInitVault,
   upsertVaultPatient,
 } from "./vaultClient.js";
+import {
+  buildCompletenessCandidatePaths,
+  buildCompletenessEbusStationHintsByIndex,
+  collectStagedCompletenessEntries,
+  getCompletenessEbusStationHintForPath,
+  normalizeCompletenessStationToken,
+} from "./completenessHelpers.js";
 
 const statusTextEl = document.getElementById("statusText");
 const progressTextEl = document.getElementById("progressText");
@@ -101,6 +108,7 @@ const registryLegacyRightRootEl = document.getElementById("registryLegacyRightRo
 const completenessPromptsCardEl = document.getElementById("completenessPromptsCard");
 const completenessPromptsBodyEl = document.getElementById("completenessPromptsBody");
 const completenessToggleBtn = document.getElementById("completenessToggleBtn");
+const completenessApplyInlineBtn = document.getElementById("completenessApplyInlineBtn");
 const completenessCopyBtn = document.getElementById("completenessCopyBtn");
 const completenessOpenReporterBtn = document.getElementById("completenessOpenReporterBtn");
 const focusClinicalBtn = document.getElementById("focusClinicalBtn");
@@ -108,7 +116,6 @@ const focusBillingBtn = document.getElementById("focusBillingBtn");
 const splitReviewBtn = document.getElementById("splitReviewBtn");
 const toggleDetectionsPaneBtn = document.getElementById("toggleDetectionsPaneBtn");
 const pdfUploadInputEl = document.getElementById("pdfUploadInput");
-const pdfOcrQualitySelectEl = document.getElementById("pdfOcrQualitySelect");
 const pdfOcrMaskSelectEl = document.getElementById("pdfOcrMaskSelect");
 const pdfExtractBtn = document.getElementById("pdfExtractBtn");
 const pdfExtractSummaryEl = document.getElementById("pdfExtractSummary");
@@ -124,7 +131,6 @@ const cameraRetakeBtn = document.getElementById("cameraRetakeBtn");
 const cameraClearBtn = document.getElementById("cameraClearBtn");
 const cameraRunOcrBtn = document.getElementById("cameraRunOcrBtn");
 const cameraCloseBtn = document.getElementById("cameraCloseBtn");
-const cameraOcrQualitySelectEl = document.getElementById("cameraOcrQualitySelect");
 const cameraEnhanceSelectEl = document.getElementById("cameraEnhanceSelect");
 const cameraSceneHintSelectEl = document.getElementById("cameraSceneHintSelect");
 const cameraStatusTextEl = document.getElementById("cameraStatusText");
@@ -201,6 +207,7 @@ let completenessPromptsCollapsed = false;
 let completenessEdits = null; // {edited_patch, edited_fields} generated from completeness inputs
 let completenessRawValueByPath = new Map(); // key: effective dotted path (with indices), value: raw string
 let completenessSelectedIndexByPromptPath = new Map(); // key: prompt.path (with [*]), value: selected index (number)
+let completenessPendingChanges = false;
 
 const TESTER_MODE = new URLSearchParams(location.search).get("tester") === "1";
 if (TESTER_MODE && feedbackPanelEl) feedbackPanelEl.open = true;
@@ -849,11 +856,15 @@ async function maybeRenderRegistryGrid(data, options = {}) {
     if (!api || typeof api.mount !== "function") {
       throw new Error("RegistryGrid API missing mount()");
     }
+    const hostEditedPatch = Object.prototype.hasOwnProperty.call(options || {}, "hostEditedPatch")
+      ? options.hostEditedPatch
+      : null;
 
     const mountArgs = {
       rootEl: registryGridRootEl,
       getMonacoEditor: getRegistryGridMonacoEditorSafe,
       processResponse: data,
+      hostEditedPatch,
       onExportEditedJson: setRegistryGridEdits,
       registryUuid: String(options?.registryUuid || "").trim() || null,
       vaultLocalData: options?.vaultLocalData ?? null,
@@ -871,6 +882,7 @@ async function maybeRenderRegistryGrid(data, options = {}) {
     if (typeof api.update === "function") {
       api.update({
         processResponse: data,
+        hostEditedPatch,
         registryUuid: mountArgs.registryUuid,
         vaultLocalData: mountArgs.vaultLocalData,
         remoteCaseData: mountArgs.remoteCaseData,
@@ -2529,11 +2541,13 @@ function resetEditedState() {
   completenessEdits = null;
   completenessRawValueByPath = new Map();
   completenessSelectedIndexByPromptPath = new Map();
+  completenessPendingChanges = false;
   fieldFeedbackStore = new Map();
   activeFieldFeedbackContext = null;
   if (editedResponseEl) editedResponseEl.textContent = "(no edits yet)";
   if (exportEditedBtn) exportEditedBtn.disabled = true;
   if (exportPatchBtn) exportPatchBtn.disabled = true;
+  updateCompletenessApplyButtonState();
   updateFeedbackButtons();
 }
 
@@ -2719,6 +2733,26 @@ function registryDottedPathToPointer(path) {
   });
 
   return `/registry/${segments.map(encodeJsonPointerSegment).join("/")}`;
+}
+
+function updateCompletenessApplyButtonState() {
+  const hasPrompts = Array.isArray(lastCompletenessPrompts) && lastCompletenessPrompts.length > 0;
+  const canApply = hasPrompts && completenessPendingChanges;
+  if (completenessApplyInlineBtn) completenessApplyInlineBtn.disabled = !canApply;
+  if (!hasPrompts) {
+    if (completenessApplyInlineBtn) completenessApplyInlineBtn.title = "No suggested missing fields are available.";
+  } else if (!completenessPendingChanges) {
+    if (completenessApplyInlineBtn)
+      completenessApplyInlineBtn.title = "Enter suggested values, then click Update Table.";
+  } else {
+    if (completenessApplyInlineBtn)
+      completenessApplyInlineBtn.title = "Apply entered suggested values to editable tables and edited JSON.";
+  }
+}
+
+function setCompletenessPendingChanges(pending) {
+  completenessPendingChanges = Boolean(pending);
+  updateCompletenessApplyButtonState();
 }
 
 function getWildcardItemsForPrompt(registry, promptPath) {
@@ -2998,6 +3032,133 @@ function recomputeCompletenessEdits(registry, prompts) {
   updateEditedPayload();
 }
 
+function applyCompletenessPromptInputs(data) {
+  const source = data || lastServerResponse || {};
+  const prompts = Array.isArray(source?.missing_field_prompts) ? source.missing_field_prompts : lastCompletenessPrompts;
+  const registry = getRegistry(source) || {};
+
+  if (!Array.isArray(prompts) || prompts.length === 0) {
+    setCompletenessPendingChanges(false);
+    recomputeCompletenessEdits(registry, []);
+    return { appliedCount: 0, invalidCount: 0 };
+  }
+
+  const hintsByIndex = buildCompletenessEbusStationHintsByIndex(prompts);
+  const stationHintResolver = (prompt, effectivePath) =>
+    getCompletenessEbusStationHintForPath(prompt, effectivePath, hintsByIndex, (idx) => {
+      const table = getFlatTableStateById("linear_ebus_stations_detail");
+      const row = Array.isArray(table?.rows) ? table.rows[idx] : null;
+      return row?.station;
+    });
+
+  const { entries, invalidCount } = collectStagedCompletenessEntries({
+    prompts,
+    registry,
+    rawValueByPath: completenessRawValueByPath,
+    resolvePromptPath,
+    getStoredWildcardEffectivePathsForPrompt,
+    getInputSpec: getCompletenessInputSpec,
+    coerceValue: coerceCompletenessValue,
+    getStationHintForPath: stationHintResolver,
+  });
+
+  let appliedCount = 0;
+  entries.forEach((entry) => {
+    if (!entry || typeof entry !== "object") return;
+    if (entry.kind === "ecog") {
+      const raw = String(entry.raw || "").trim();
+      if (!raw) {
+        const a = applyCompletenessValueToFlatTables("clinical_context.ecog_score", null);
+        const b = applyCompletenessValueToFlatTables("clinical_context.ecog_text", null);
+        if (a || b) appliedCount += 1;
+        return;
+      }
+      const match = raw.match(/^\s*([0-4])\s*$/);
+      if (match) {
+        if (applyCompletenessValueToFlatTables("clinical_context.ecog_score", Number.parseInt(match[1], 10))) {
+          appliedCount += 1;
+        }
+        if (applyCompletenessValueToFlatTables("clinical_context.ecog_text", null)) appliedCount += 1;
+      } else {
+        if (applyCompletenessValueToFlatTables("clinical_context.ecog_text", raw)) appliedCount += 1;
+        if (applyCompletenessValueToFlatTables("clinical_context.ecog_score", null)) appliedCount += 1;
+      }
+      return;
+    }
+
+    const effectivePath = String(entry.effectivePath || "").trim();
+    if (!effectivePath) return;
+    const stationHint = String(entry.stationHint || "");
+    const candidatePaths = buildCompletenessCandidatePaths(entry);
+
+    if (entry.rawEmpty) {
+      for (const candidatePath of candidatePaths) {
+        if (applyCompletenessValueToFlatTables(candidatePath, null, { ebusStationHint: stationHint })) {
+          appliedCount += 1;
+          break;
+        }
+      }
+      return;
+    }
+    if (entry.invalid) return;
+
+    if (stationHint) {
+      const stationPath = effectivePath.replace(/\.[^.]+$/, ".station");
+      const existingStationRaw = completenessRawValueByPath.get(stationPath);
+      if (existingStationRaw === undefined || String(existingStationRaw).trim() === "") {
+        completenessRawValueByPath.set(stationPath, stationHint);
+      }
+    }
+
+    for (const candidatePath of candidatePaths) {
+      if (applyCompletenessValueToFlatTables(candidatePath, entry.coerced, { ebusStationHint: stationHint })) {
+        appliedCount += 1;
+        break;
+      }
+    }
+  });
+
+  if (appliedCount > 0) renderFlatTablesFromState();
+  recomputeCompletenessEdits(registry, prompts);
+  setCompletenessPendingChanges(false);
+  return { appliedCount, invalidCount };
+}
+
+async function syncCompletenessEditsToRegistryGrid() {
+  if (!registryGridMounted || !isReactRegistryGridEnabled()) return;
+  if (!lastServerResponse) return;
+
+  const patch = Array.isArray(completenessEdits?.edited_patch) ? completenessEdits.edited_patch : [];
+  if (!patch.length) return;
+
+  try {
+    const api = await loadRegistryGridBundle();
+    if (!api || typeof api.update !== "function") return;
+    api.update({
+      processResponse: lastServerResponse,
+      hostEditedPatch: patch,
+    });
+  } catch (e) {
+    console.warn("Failed to sync completeness edits to main registry table (ignored).", e);
+  }
+}
+
+async function applyCompletenessInputsAndNotify() {
+  const { appliedCount, invalidCount } = applyCompletenessPromptInputs(lastServerResponse || {});
+  if (appliedCount > 0) {
+    await syncCompletenessEditsToRegistryGrid();
+    setStatus(
+      invalidCount > 0
+        ? `Updated tables with ${appliedCount} suggested value(s); ${invalidCount} invalid value(s) were skipped.`
+        : `Updated tables with ${appliedCount} suggested value(s).`
+    );
+  } else if (invalidCount > 0) {
+    setStatus(`No table updates applied. ${invalidCount} suggested value(s) were invalid.`);
+  } else {
+    setStatus("No suggested values to apply.");
+  }
+}
+
 function getFlatTableStateById(tableId) {
   const tables = Array.isArray(flatTablesState) ? flatTablesState : [];
   return tables.find((t) => t?.id === tableId) || null;
@@ -3039,12 +3200,13 @@ function formatCompletenessValueForFlatTable(meta, value) {
   return String(value ?? "");
 }
 
-function applyCompletenessValueToFlatTables(targetEffectivePath, coercedValue) {
+function applyCompletenessValueToFlatTables(targetEffectivePath, coercedValue, options = null) {
   const path = String(targetEffectivePath || "").trim();
   if (!path) return false;
   if (!Array.isArray(flatTablesState) || flatTablesState.length === 0) return false;
 
   const restoreBase = coercedValue === null || coercedValue === undefined;
+  const ebusStationHint = normalizeCompletenessStationToken(options?.ebusStationHint);
 
   // Granular arrays (direct cell addressing by index).
   const navMatch = path.match(/^granular_data\.navigation_targets\[(\d+)\]\.([^.]+)$/);
@@ -3090,6 +3252,9 @@ function applyCompletenessValueToFlatTables(targetEffectivePath, coercedValue) {
       }
     }
     const row = table.rows[rowIndex];
+    if (ebusStationHint && key !== "station" && String(row?.station || "").trim() === "") {
+      row.station = ebusStationHint;
+    }
 
     const baseTable = getFlatTableBaseById("linear_ebus_stations_detail");
     const baseRow = Array.isArray(baseTable?.rows) ? baseTable.rows[rowIndex] : null;
@@ -3160,12 +3325,14 @@ function renderCompletenessPrompts(data) {
     completenessPromptsCardEl.classList.add("hidden");
     if (completenessToggleBtn) completenessToggleBtn.disabled = true;
     if (completenessCopyBtn) completenessCopyBtn.disabled = true;
+    setCompletenessPendingChanges(false);
     return;
   }
 
   completenessPromptsCardEl.classList.remove("hidden");
   if (completenessToggleBtn) completenessToggleBtn.disabled = false;
   if (completenessCopyBtn) completenessCopyBtn.disabled = false;
+  updateCompletenessApplyButtonState();
   applyCompletenessCollapsed(completenessPromptsCollapsed, { persist: false });
 
   const counts = { required: 0, recommended: 0 };
@@ -3184,42 +3351,16 @@ function renderCompletenessPrompts(data) {
   const hint = document.createElement("div");
   hint.className = "subtle";
   hint.textContent =
-    "Edits here update the Flattened Tables below and are recorded in “Edited JSON (Training)”. For evidence-backed extraction, add to the note and re-run.";
+    "Enter values in suggested fields, then click Update Table to apply them to both editable tables and Edited JSON. For evidence-backed extraction, add to the note and re-run.";
   summary.appendChild(hint);
 
   completenessPromptsBodyEl.appendChild(summary);
 
-  const commitCompletenessValue = (promptPath, effectivePath) => {
-    const basePromptPath = String(promptPath || "").trim();
+  const stageCompletenessValue = (effectivePath, rawValue) => {
     const baseEffectivePath = String(effectivePath || "").trim();
-    if (!basePromptPath || !baseEffectivePath) return;
-
-    const spec = getCompletenessInputSpec(basePromptPath);
-    const rawValue = completenessRawValueByPath.get(baseEffectivePath);
-
-    if (spec.type === "ecog") {
-      const raw = String(rawValue ?? "").trim();
-      if (!raw) {
-        applyCompletenessValueToFlatTables("clinical_context.ecog_score", null);
-        applyCompletenessValueToFlatTables("clinical_context.ecog_text", null);
-      } else {
-        const match = raw.match(/^\s*([0-4])\s*$/);
-        if (match) {
-          applyCompletenessValueToFlatTables("clinical_context.ecog_score", Number.parseInt(match[1], 10));
-          applyCompletenessValueToFlatTables("clinical_context.ecog_text", null);
-        } else {
-          applyCompletenessValueToFlatTables("clinical_context.ecog_text", raw);
-          applyCompletenessValueToFlatTables("clinical_context.ecog_score", null);
-        }
-      }
-    } else {
-      const coerced = coerceCompletenessValue(spec, rawValue);
-      const ok = applyCompletenessValueToFlatTables(baseEffectivePath, coerced);
-      if (!ok) console.warn("Completeness prompt update target not found in flattened tables:", baseEffectivePath);
-    }
-
-    renderFlatTablesFromState();
-    recomputeCompletenessEdits(registry, prompts);
+    if (!baseEffectivePath) return;
+    completenessRawValueByPath.set(baseEffectivePath, rawValue);
+    setCompletenessPendingChanges(true);
   };
 
   const grouped = new Map();
@@ -3315,7 +3456,6 @@ function renderCompletenessPrompts(data) {
             const safeIdx = Number.isFinite(nextIdx) && nextIdx >= 0 ? nextIdx : 0;
             completenessSelectedIndexByPromptPath.set(promptPath, safeIdx);
             renderCompletenessPrompts(lastServerResponse || data);
-            recomputeCompletenessEdits(registry, prompts);
           });
           controls.appendChild(select);
         } else if (itemsForSelect.length === 0) {
@@ -3346,8 +3486,7 @@ function renderCompletenessPrompts(data) {
         });
         select.value = stored === undefined || stored === null ? "" : String(stored);
         select.addEventListener("change", () => {
-          completenessRawValueByPath.set(effectivePath, String(select.value || ""));
-          commitCompletenessValue(promptPath, effectivePath);
+          stageCompletenessValue(effectivePath, String(select.value || ""));
         });
         input = select;
       } else if (spec.type === "boolean") {
@@ -3365,8 +3504,7 @@ function renderCompletenessPrompts(data) {
         });
         select.value = stored === undefined || stored === null ? "" : String(stored);
         select.addEventListener("change", () => {
-          completenessRawValueByPath.set(effectivePath, String(select.value || ""));
-          commitCompletenessValue(promptPath, effectivePath);
+          stageCompletenessValue(effectivePath, String(select.value || ""));
         });
         input = select;
       } else if (spec.type === "multiselect" && Array.isArray(spec.options)) {
@@ -3392,22 +3530,25 @@ function renderCompletenessPrompts(data) {
           const vals = Array.from(select.selectedOptions || [])
             .map((o) => String(o.value || "").trim())
             .filter((v) => v !== "");
-          completenessRawValueByPath.set(effectivePath, vals);
-          commitCompletenessValue(promptPath, effectivePath);
+          stageCompletenessValue(effectivePath, vals);
         });
         input = select;
       } else {
         const el = document.createElement("input");
         el.className = "flat-input";
-        el.type = spec.type === "integer" || spec.type === "number" ? "number" : "text";
-        if (spec.type === "integer") el.step = "1";
-        if (spec.type === "number") el.step = "any";
+        const isNumericSpec = spec.type === "integer" || spec.type === "number";
+        // Avoid native number input wheel/trackpad increment behavior while users scroll between fields.
+        el.type = "text";
+        if (isNumericSpec) {
+          el.inputMode = spec.type === "integer" ? "numeric" : "decimal";
+          el.autocomplete = "off";
+          el.spellcheck = false;
+        }
         el.placeholder = spec.placeholder || "Enter value";
         el.value = stored === undefined || stored === null ? "" : String(stored);
         el.addEventListener("input", () => {
-          completenessRawValueByPath.set(effectivePath, String(el.value || ""));
+          stageCompletenessValue(effectivePath, String(el.value || ""));
         });
-        el.addEventListener("blur", () => commitCompletenessValue(promptPath, effectivePath));
         input = el;
       }
 
@@ -3426,7 +3567,7 @@ function renderCompletenessPrompts(data) {
     completenessPromptsBodyEl.appendChild(groupWrap);
   });
 
-  recomputeCompletenessEdits(registry, prompts);
+  updateCompletenessApplyButtonState();
 }
 
 /**
@@ -7268,6 +7409,7 @@ function clearResultsUi() {
   if (completenessPromptsCardEl) completenessPromptsCardEl.classList.add("hidden");
   if (completenessToggleBtn) completenessToggleBtn.disabled = true;
   if (completenessPromptsBodyEl) clearEl(completenessPromptsBodyEl);
+  if (completenessApplyInlineBtn) completenessApplyInlineBtn.disabled = true;
   if (completenessCopyBtn) completenessCopyBtn.disabled = true;
   resetRunState();
   if (serverResponseEl) serverResponseEl.textContent = "(none)";
@@ -9003,11 +9145,11 @@ async function main() {
   async function captureCameraPage() {
     if (!cameraPreviewEl || !cameraStream) return;
     try {
-      const captureMaxDim = cameraOcrQualitySelectEl?.value === "high_accuracy" ? 3400 : 2500;
+      const captureMaxDim = 3400;
       const sceneHint = resolveCameraSceneHint();
       let frame = null;
       if (sceneHint === "monitor") {
-        const burstSamples = cameraOcrQualitySelectEl?.value === "high_accuracy" ? 6 : 5;
+        const burstSamples = 6;
         setCameraStatus(`Holding steady... sampling ${burstSamples} frames for best monitor capture.`);
         frame = await captureBestFrame(cameraPreviewEl, {
           maxDim: captureMaxDim,
@@ -9057,7 +9199,7 @@ async function main() {
     }
     const croppedPageCount = pagesForOcr.filter((page) => page?.crop).length;
 
-    const ocrMode = cameraOcrQualitySelectEl?.value === "high_accuracy" ? "high_accuracy" : "fast";
+    const ocrMode = "high_accuracy";
     const enhanceValue = String(cameraEnhanceSelectEl?.value || "auto");
     const preprocessMode = enhanceValue === "bw_high_contrast"
       ? "bw_high_contrast"
@@ -9123,7 +9265,7 @@ async function main() {
       resetPdfUploadUi();
 
       const summary =
-        `Loaded ${ocrPages.length} camera page(s). OCR mode: ${ocrMode === "high_accuracy" ? "high accuracy" : "fast"}. ` +
+        `Loaded ${ocrPages.length} camera page(s). OCR mode: high accuracy. ` +
         `Enhance: ${preprocessMode}. Capture: ${sceneHint}.` +
         (croppedPageCount > 0 ? ` Cropped pages: ${croppedPageCount}/${pagesForOcr.length}.` : "");
       setCameraScanSummary(summary, "success");
@@ -9181,9 +9323,7 @@ async function main() {
       let totalPages = 0;
       let docModel = null;
       let lastOcrError = "";
-      const ocrQualityMode = pdfOcrQualitySelectEl?.value === "high_accuracy"
-        ? "high_accuracy"
-        : "fast";
+      const ocrQualityMode = "high_accuracy";
       const ocrMaskMode = pdfOcrMaskSelectEl?.value === "on"
         ? "on"
         : pdfOcrMaskSelectEl?.value === "off"
@@ -9303,7 +9443,7 @@ async function main() {
         (ocrNeededPages
           ? `${ocrNeededPages} page(s) used OCR/hybrid recovery after layout contamination checks.`
           : "All pages passed native layout safety checks.");
-      const ocrModeText = ` OCR mode: ${ocrQualityMode === "high_accuracy" ? "high accuracy" : "fast"}.`;
+      const ocrModeText = " OCR mode: high accuracy.";
       const ocrMaskText = ` OCR mask: ${ocrMaskMode}.`;
       const qualityTail =
         ` Low-confidence pages: ${docModel.qualitySummary?.lowConfidencePages || 0}; ` +
@@ -9347,6 +9487,11 @@ async function main() {
       }
       updateZkControls();
     }
+  }
+
+  if (completenessApplyInlineBtn) {
+    updateCompletenessApplyButtonState();
+    completenessApplyInlineBtn.addEventListener("click", applyCompletenessInputsAndNotify);
   }
 
   if (completenessCopyBtn) {
@@ -9681,15 +9826,19 @@ async function main() {
     updateZkControls();
   }
 
+  function isOcrCorrectionEligibleSource(sourceType) {
+    return sourceType === "camera_ocr" || sourceType === "pdf_local";
+  }
+
   function updateOcrCorrectionButton() {
     if (!correctOcrBtn) return;
     const busy = running || bundleBusy || extractingPdf || extractingCamera || correctingCameraOcr;
     const hasText = Boolean(model.getValue().trim());
-    const isCameraSource = noteSourceType === "camera_ocr";
-    correctOcrBtn.disabled = busy || !scrubbedConfirmed || !hasText || !isCameraSource;
+    const isEligibleSource = isOcrCorrectionEligibleSource(noteSourceType);
+    correctOcrBtn.disabled = busy || !scrubbedConfirmed || !hasText || !isEligibleSource;
     if (correctOcrBtn.disabled) {
-      if (!isCameraSource) {
-        correctOcrBtn.title = "Available for camera OCR notes after redactions are applied";
+      if (!isEligibleSource) {
+        correctOcrBtn.title = "Available for camera/PDF OCR notes after redactions are applied";
       } else if (!scrubbedConfirmed) {
         correctOcrBtn.title = "Apply redactions first";
       } else if (busy) {
@@ -9719,7 +9868,6 @@ async function main() {
     if (submitBundleBtn) submitBundleBtn.disabled = busy || !hasBundleDocs;
     if (clearBundleBtn) clearBundleBtn.disabled = busy || !hasBundleDocs;
     if (pdfUploadInputEl) pdfUploadInputEl.disabled = busy;
-    if (pdfOcrQualitySelectEl) pdfOcrQualitySelectEl.disabled = busy;
     if (pdfOcrMaskSelectEl) pdfOcrMaskSelectEl.disabled = busy;
     if (pdfExtractBtn) pdfExtractBtn.disabled = busy || !hasPdfSelected;
     if (cameraScanBtn) cameraScanBtn.disabled = busy || !cameraSupport.ok;
@@ -10189,14 +10337,14 @@ async function main() {
     revertBtn.disabled = false;
   });
 
-  async function runCameraOcrCorrection() {
+  async function runOcrCorrection() {
     if (running || bundleBusy || extractingPdf || extractingCamera || correctingCameraOcr) return;
     if (!scrubbedConfirmed) {
       setStatus("Apply redactions before OCR correction.");
       return;
     }
-    if (noteSourceType !== "camera_ocr") {
-      setStatus("OCR correction is available for camera OCR notes only.");
+    if (!isOcrCorrectionEligibleSource(noteSourceType)) {
+      setStatus("OCR correction is available for camera or PDF OCR notes only.");
       return;
     }
 
@@ -10208,17 +10356,18 @@ async function main() {
 
     correctingCameraOcr = true;
     updateZkControls();
-    setStatus("Correcting camera OCR artifacts with gpt-5-mini…");
+    setStatus("Correcting OCR artifacts with gpt-5-mini…");
     setProgress("Running post-redaction OCR cleanup...");
 
     try {
+      const correctionSourceType = noteSourceType === "pdf_local" ? "pdf_local" : "camera_ocr";
       const res = await fetch("/api/v1/ocr/correct", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           text: noteText,
           already_scrubbed: true,
-          source_type: "camera_ocr",
+          source_type: correctionSourceType,
         }),
       });
 
@@ -10278,7 +10427,7 @@ async function main() {
 
   if (correctOcrBtn) {
     correctOcrBtn.addEventListener("click", () => {
-      runCameraOcrCorrection();
+      runOcrCorrection();
     });
   }
 

@@ -75,7 +75,7 @@
               id="correctOcrBtn"
               class="secondary"
               disabled
-              title="Optional camera OCR cleanup (post-redaction)"
+              title="Optional OCR cleanup for camera/PDF text (post-redaction)"
             >Correct OCR Errors</button>
 	          <button id="revertBtn" class="secondary" disabled>Revert</button>
 	          <button id="submitBtn" class="success" disabled>Submit Scrubbed Note</button>
@@ -98,10 +98,6 @@
           <div class="pdf-upload-group">
             <label class="manual-label" for="pdfUploadInput">PDF:</label>
             <input id="pdfUploadInput" type="file" accept="application/pdf,.pdf" />
-            <select id="pdfOcrQualitySelect" class="param-select" title="Local OCR quality mode">
-              <option value="fast" selected>OCR Fast</option>
-              <option value="high_accuracy">OCR High Accuracy</option>
-            </select>
             <select id="pdfOcrMaskSelect" class="param-select" title="Mask photo regions before OCR (local-only)">
               <option value="auto" selected>Mask Auto</option>
               <option value="on">Mask On</option>
@@ -395,6 +391,17 @@
 		                    </div>
 		                  </div>
 		                  <div id="completenessPromptsContent" class="dash-card-body padded">
+		                    <div class="completeness-inline-actions no-print">
+		                      <button
+		                        id="completenessApplyInlineBtn"
+		                        type="button"
+		                        class="primary small-btn"
+		                        title="Apply entered suggested fields to tables and edited JSON"
+		                        disabled
+		                      >
+		                        Update Table
+		                      </button>
+		                    </div>
 		                    <div id="completenessPromptsBody"></div>
 		                  </div>
 		                </div>
@@ -606,12 +613,6 @@
           </div>
 
           <div class="camera-options-row">
-            <label class="manual-label" for="cameraOcrQualitySelect">OCR:</label>
-            <select id="cameraOcrQualitySelect" class="param-select" title="Camera OCR quality mode">
-              <option value="fast" selected>Fast</option>
-              <option value="high_accuracy">High Accuracy</option>
-            </select>
-
             <label class="manual-label" for="cameraEnhanceSelect">Enhance:</label>
             <select id="cameraEnhanceSelect" class="param-select" title="Image preprocessing mode">
               <option value="auto" selected>Auto (Recommended)</option>

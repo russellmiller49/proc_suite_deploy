@@ -21,7 +21,7 @@ pdfjs.GlobalWorkerOptions.workerSrc = new URL(
 
 const DEFAULT_OCR_OPTIONS = Object.freeze({
   lang: "eng",
-  qualityMode: "fast",
+  qualityMode: "high_accuracy",
   scale: 2,
   psm: "6",
   maskImages: "auto",
@@ -50,7 +50,7 @@ function resolveOcrOptions(options = {}) {
     ...(options && typeof options === "object" ? options : {}),
   };
 
-  const qualityMode = merged.qualityMode === "high_accuracy" ? "high_accuracy" : "fast";
+  const qualityMode = "high_accuracy";
   const qualityScale = qualityMode === "high_accuracy" ? 3.1 : 2.05;
   const configuredScale = Number.isFinite(merged.scale) ? Number(merged.scale) : qualityScale;
   const maskImages = merged.maskImages === "off" || merged.maskImages === "none" || merged.maskImages === false

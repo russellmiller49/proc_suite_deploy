@@ -9,7 +9,7 @@ import { preprocessCanvasForOcr } from "../imagePreprocess.js";
 
 const DEFAULT_OPTIONS = Object.freeze({
   lang: "eng",
-  mode: "fast",
+  mode: "high_accuracy",
   sceneHint: "auto",
   warningProfile: "default",
   preprocess: {
@@ -51,7 +51,7 @@ function resolvePreprocessMode(value) {
 }
 
 function resolveOptions(input = {}) {
-  const qualityMode = input?.mode === "high_accuracy" ? "high_accuracy" : "fast";
+  const qualityMode = "high_accuracy";
   const preprocessMode = resolvePreprocessMode(input?.preprocess?.mode);
 
   return {

@@ -74,7 +74,7 @@ async def unified_process(
     "/v1/ocr/correct",
     response_model=CameraOcrCorrectionResponse,
     response_model_exclude_none=True,
-    summary="Optional post-redaction camera OCR correction",
+    summary="Optional post-redaction OCR correction (camera/PDF)",
 )
 async def correct_camera_ocr(
     payload: CameraOcrCorrectionRequest,
@@ -82,7 +82,7 @@ async def correct_camera_ocr(
     response: Response,
     _ready: None = _ready_dep,
 ) -> CameraOcrCorrectionResponse:
-    """Run optional LLM cleanup for scrubbed camera OCR text."""
+    """Run optional LLM cleanup for scrubbed OCR text."""
     response.headers["X-OCR-Correction-Route"] = "router"
 
     if not payload.already_scrubbed:

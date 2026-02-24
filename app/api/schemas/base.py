@@ -258,9 +258,9 @@ class UnifiedProcessRequest(BaseModel):
 
 
 class CameraOcrCorrectionRequest(BaseModel):
-    """Request schema for optional post-redaction camera OCR correction."""
+    """Request schema for optional post-redaction OCR correction."""
 
-    text: str = Field(..., description="Scrubbed camera OCR text to correct.")
+    text: str = Field(..., description="Scrubbed OCR text to correct.")
     already_scrubbed: bool = Field(
         False,
         description=(
@@ -268,9 +268,9 @@ class CameraOcrCorrectionRequest(BaseModel):
             "receive raw PHI."
         ),
     )
-    source_type: Literal["camera_ocr"] = Field(
+    source_type: Literal["camera_ocr", "pdf_local"] = Field(
         "camera_ocr",
-        description="Source discriminator for correction guardrails (currently camera_ocr only).",
+        description="Source discriminator for correction guardrails (camera_ocr or pdf_local).",
     )
 
 

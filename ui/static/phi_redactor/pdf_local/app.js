@@ -59,7 +59,7 @@ function buildDocument() {
       available: true,
       enabled: true,
       lang: "eng",
-      qualityMode: "fast",
+      qualityMode: "high_accuracy",
     },
     gate: {
       minCompletenessConfidence: 0.72,
@@ -185,7 +185,7 @@ async function handleFileSelected(file) {
         available: true,
         enabled: true,
         lang: "eng",
-        qualityMode: "fast",
+        qualityMode: "high_accuracy",
       },
       gate: {
         minCompletenessConfidence: 0.72,

@@ -113,7 +113,7 @@ export async function runCameraOcrJob(worker, pages, options = {}, handlers = {}
     pages: transferablePages,
     options: {
       lang: options.lang === "eng" ? "eng" : "eng",
-      mode: options.mode === "high_accuracy" ? "high_accuracy" : "fast",
+      mode: "high_accuracy",
       sceneHint: options.sceneHint === "monitor"
         ? "monitor"
         : options.sceneHint === "document"

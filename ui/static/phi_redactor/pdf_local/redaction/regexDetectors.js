@@ -55,7 +55,7 @@ const DATE_ISO_RE = /\b(\d{4}-\d{2}-\d{2})\b/g;
 const DATE_MONTH_TEXT_RE = /\b((?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t|tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\s+\d{1,2},?\s+\d{2,4})\b/gi;
 const MRN_RE = /\b(?:MRN|MEDICAL RECORD(?: NUMBER)?|PATIENT ID)\b[\s:#-]*([A-Z0-9][A-Z0-9-]{3,})\b/gi;
 const ACCOUNT_RE = /\b(?:ACCOUNT(?: NUMBER| NO\.?)?|ACCT(?: NUMBER| NO\.?)?|ACCOUNT#|ACCT#)\b[\s:#-]*([A-Z0-9][A-Z0-9-]{3,})\b/gi;
-const DOB_ANCHORED_RE = /\b(?:DOB|DATE OF BIRTH)\b[\s:#-]*((?:0?[1-9]|1[0-2])[/-](?:0?[1-9]|[12]\d|3[01])[/-](?:\d{2}|\d{4})|\d{4}-\d{2}-\d{2}|(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t|tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\s+\d{1,2},?\s+\d{2,4})\b/gi;
+const DOB_ANCHORED_RE = /\b(?:DOB|DATE OF BIRTH)\b[\s:#-]*((?:0?[1-9]|1[0-2])[/-](?:0?[1-9]|[12]\d|3[01])[/-](?:\d{2}|\d{4})|[/-](?:0?[1-9]|[12]\d|3[01])[/-](?:\d{2}|\d{4})|\d{4}-\d{2}-\d{2}|(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t|tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\s+\d{1,2},?\s+\d{2,4})\b/gi;
 const URL_RE = /\b(?:https?:\/\/|www\.)[^\s<>"']+/gi;
 const IPV4_RE = /(?:^|[^\d])((?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(?:\.(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3})(?=$|[^\d])/g;
 

@@ -227,16 +227,16 @@ function hasPatientDemographicContext(text, matchIndex, windowSize = 80) {
   return /\b(?:patient|name|mrn|dob|age|year[\s-]*old|pt\b|subject)\b/i.test(context);
 }
 
-// Matches: "MRN: 12345" or "ID: 55-22-11" or "DOD NUMBER: 194174412" or "DOD#: 12345678"
+// Matches: "MRN: 12345", "MRN#: 12345", "ID: 55-22-11", "DOD NUMBER: 194174412", "DOD#: 12345678"
 // IMPORTANT: Must contain at least one digit to avoid matching medical acronyms like "rEBUS"
 const MRN_RE =
-  /\b(?:MRN|MR|Medical\s*Record|Patient\s*ID|ID|EDIPI|DOD\s*(?:ID|NUMBER|NUM|#))\s*[:\#]?\s*([A-Z0-9\-]*\d[A-Z0-9\-]*)\b/gi;
+  /\b(?:MRN|MR|Medical\s*Record|Patient\s*ID|ID|EDIPI|DOD\s*(?:ID|NUMBER|NUM|#))\s*(?:[:\#-]\s*){0,2}([A-Z0-9\-]*\d[A-Z0-9\-]*)\b/gi;
 
 // Matches: MRN with spaces like "A92 555" or "AB 123 456" (2-3 groups of alphanumerics)
 // IMPORTANT: Each segment MUST contain at least one digit to avoid matching "Li in the" as MRN
 // Removed plain "ID" prefix as too generic (matches "ID Li in the ICU")
 const MRN_SPACED_RE =
-  /\b(?:MRN|MR|Medical\s*Record|Patient\s*ID)\s*[:\#]?\s*([A-Z0-9]*\d[A-Z0-9]*\s+[A-Z0-9]*\d[A-Z0-9]*(?:\s+[A-Z0-9]*\d[A-Z0-9]*)?)\b/gi;
+  /\b(?:MRN|MR|Medical\s*Record|Patient\s*ID)\s*(?:[:\#-]\s*){0,2}([A-Z0-9]*\d[A-Z0-9]*\s+[A-Z0-9]*\d[A-Z0-9]*(?:\s+[A-Z0-9]*\d[A-Z0-9]*)?)\b/gi;
 
 // Matches inline narrative patient names followed by age: "Emma Jones, a 64-year-old male..."
 // Also supports "Last, First" format: "Belardes, Lisa is a 64-year-old..."
@@ -474,9 +474,9 @@ const DATE_ISO_RE =
 const DATE_MONTH_NAME_RE =
   /\b((?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:t|tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\s+\d{1,2}(?:st|nd|rd|th)?(?:\s*,?\s*(?:19|20)\d{2})?)\b/gi;
 
-// Matches: "DOB: 01/15/1960" or "Date of Birth: January 15, 1960"
+// Matches: "DOB: 01/15/1960", "DOB: /15/1960" (OCR-missing month), or "Date of Birth: January 15, 1960"
 const DOB_HEADER_RE =
-  /\b(?:DOB|Date\s+of\s+Birth|Birth\s*Date|Birthdate)\s*[:\-]?\s*(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}|\d{1,2}[-\s]?(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*[-\s,]?\s*\d{1,2}[-,\s]+\d{2,4}|(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2}[-,\s]+\d{2,4})\b/gi;
+  /\b(?:DOB|Date\s+of\s+Birth|Birth\s*Date|Birthdate)\s*[:\-]?\s*(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}|[\/\-]\d{1,2}[\/\-]\d{2,4}|\d{1,2}[-\s]?(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*[-\s,]?\s*\d{1,2}[-,\s]+\d{2,4}|(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2}[-,\s]+\d{2,4})\b/gi;
 
 // Matches timestamps: "10:00:00 AM", "14:30", "2:15 PM", "08:45:30"
 // Used to capture time components when they appear near procedure dates

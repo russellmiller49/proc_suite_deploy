@@ -35,8 +35,20 @@ This toolkit enables:
 
 3.  **Run**:
     ```bash
-    # Start the API/Dev Server
+    # Start the API/Dev Server (ATLAS UI by default)
     ./ops/devserver.sh
+    ```
+
+    UI variants:
+    ```bash
+    # ATLAS UI (default)
+    ./ops/devserver.sh
+
+    # ATLAS UI (explicit)
+    ./ops/devserver.sh --ui=atlas
+
+    # Classic UI
+    ./ops/devserver.sh --ui=classic
     ```
 
     Then open:
@@ -226,13 +238,19 @@ Some older endpoints and internal tools still use a CPT-first hybrid approach:
 ## Testing
 
 ```bash
-# Run all tests
+# Run all tests (Codex/vanilla, no conda required)
 make test
 
-# Run specific test suites
-pytest tests/coder/ -v          # Coder tests
-pytest tests/registry/ -v       # Registry tests
-pytest tests/ml_coder/ -v       # ML coder tests
+# Recreate test environment from scratch
+rm -rf .venv && make test
+
+# Optional local conda route
+make test-conda
+
+# Run specific test suites in venv
+./.venv/bin/python -m pytest tests/coder/ -v
+./.venv/bin/python -m pytest tests/registry/ -v
+./.venv/bin/python -m pytest tests/ml_coder/ -v
 
 # Validate registry extraction
 make validate-registry

@@ -6,6 +6,7 @@ to represent station-level interactions while keeping a single authoritative def
 
 from __future__ import annotations
 
+from uuid import UUID
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -48,6 +49,10 @@ class NodeInteraction(BaseModel):
         default=None,
         description="ROSE / onsite pathology result (free text or normalized category).",
     )
+    path_result: Literal["Positive", "Negative", "Non-diagnostic", "Atypical", "Suspicious"] | None = None
+    path_diagnosis_text: str | None = None
+    path_source_event_id: UUID | None = None
+    path_relative_day_offset: int | None = None
     evidence_quote: str
 
     @model_validator(mode="after")

@@ -20,7 +20,8 @@ _CAO_HINT_RE = re.compile(
     r"(?i)\b(?:"
     r"central\s+airway|airway\s+obstruction|trache(?:a|al)|main(?:\s*|-)?stem(?:\s+obstruction)?|"
     r"debulk(?:ing)?|tumou?r\s+ablation|endoluminal\s+tumou?r|recanaliz|"
-    r"airway\s+stent|y-?stent|tracheomalacia|bronchomalacia|rigid\s+bronchos"
+    # Match both "rigid bronchoscopy" and "rigid bronchoscope" (avoid word-boundary prefix false negatives).
+    r"airway\s+stent|y-?stent|tracheomalacia|bronchomalacia|rigid\s+bronchos\w*"
     r")\b"
 )
 
@@ -245,6 +246,13 @@ def _extract_cao_interventions_detail(
     text = _maybe_unescape_newlines(note_text or "")
     if not text.strip():
         return [], {}
+
+    # Image caption blocks (e.g., "Add'l Images: Trachea: ... Laser/Plasma Ablation")
+    # are frequently templated and can overstate modalities (especially "Laser").
+    # For deterministic CAO extraction, prefer the narrative portion of the note.
+    addl_images_match = re.search(r"(?i)\badd['’]?\s*l\s+images\b\s*:", text)
+    if addl_images_match:
+        text = text[: addl_images_match.start()].rstrip()
     if not _CAO_HINT_RE.search(text):
         return [], {}
 

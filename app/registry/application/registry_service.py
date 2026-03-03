@@ -1509,8 +1509,26 @@ class RegistryService:
                             proc = record_procs_local.get("diagnostic_bronchoscopy") or {}
                             if not isinstance(proc, dict):
                                 return
+
+                            # Backfill diagnostic bronchoscopy when other bronchoscopic procedures are present.
                             if proc.get("performed") is not True:
-                                return
+                                full_text = raw_note_text or ""
+                                full_lower = full_text.lower()
+                                if "bronchoscop" not in full_lower:
+                                    return
+                                non_bronch_keys = {"percutaneous_tracheostomy", "peg_insertion"}
+                                other_bronch_proc_present = any(
+                                    isinstance(v, dict)
+                                    and v.get("performed") is True
+                                    and k not in {"diagnostic_bronchoscopy"} | non_bronch_keys
+                                    for k, v in record_procs_local.items()
+                                )
+                                if not other_bronch_proc_present:
+                                    return
+                                proc["performed"] = True
+                                record_procs_local["diagnostic_bronchoscopy"] = proc
+                                record_data["procedures_performed"] = record_procs_local
+                                proc_modified = True
 
                             abnormalities = proc.get("airway_abnormalities")
                             if abnormalities is None:
@@ -1577,6 +1595,19 @@ class RegistryService:
                                     abnormalities.append("Blood")
                                     found.append("blood_clot")
 
+                            # Endobronchial lesions/tumors. Use the schema enum value
+                            # "Endobronchial lesion" (covers tumor/mass language).
+                            if "Endobronchial lesion" not in abnormalities:
+                                if re.search(
+                                    r"(?i)\bendobronchial\b[^.\n]{0,120}\b(?:lesion|tumou?r|tumors?|mass)\b",
+                                    full_text,
+                                ) or re.search(
+                                    r"(?i)\b(?:tumou?r|tumors?|mass|lesion)\b[^.\n]{0,120}\b(?:endobronch|airway|trachea|carina|bronch(?:us|ial))\b",
+                                    full_text,
+                                ):
+                                    abnormalities.append("Endobronchial lesion")
+                                    found.append("endobronchial_lesion")
+
                             # Extrinsic compression / submucosal infiltration (malignant airway disease burden).
                             if "Extrinsic compression" not in abnormalities:
                                 if re.search(
@@ -1633,6 +1664,14 @@ class RegistryService:
                                             r"\bclot\b[^.\n]{0,80}\b(?:removed|evacuated|obstruct|occlud)\w*\b",
                                         ],
                                     )
+                                if "endobronchial_lesion" in found:
+                                    _add_first_span_skip_cpt_headers(
+                                        "procedures_performed.diagnostic_bronchoscopy.airway_abnormalities",
+                                        [
+                                            r"\bendobronchial\b[^.\n]{0,120}\b(?:lesion|tumou?r|tumors?|mass)\b",
+                                            r"\b(?:tumou?r|tumors?)\b",
+                                        ],
+                                    )
                                 if "extrinsic_compression" in found:
                                     _add_first_span_skip_cpt_headers(
                                         "procedures_performed.diagnostic_bronchoscopy.airway_abnormalities",
@@ -1647,22 +1686,73 @@ class RegistryService:
                                         [r"\bsubmucosal\s+infiltrat\w*\b"],
                                     )
 
-                            if not proc.get("inspection_findings"):
+                            existing_findings_raw = proc.get("inspection_findings")
+                            existing_findings = (
+                                str(existing_findings_raw).strip()
+                                if isinstance(existing_findings_raw, str)
+                                else ""
+                            )
+                            existing_findings_lower = existing_findings.lower()
+                            broken_findings = bool(
+                                re.search(
+                                    r"(?i)\bvocal\s+cords?\b[^.\n]{0,40}\bvisualized\s+the\b",
+                                    existing_findings,
+                                )
+                                or re.search(r"(?i)\bvisualized\s+the\s+appeared\b", existing_findings)
+                            )
+                            missing_key_terms = False
+                            if len(existing_findings) < 40:
+                                if "Secretions" in abnormalities and "secretion" not in existing_findings_lower:
+                                    missing_key_terms = True
+                                if "Blood" in abnormalities and "blood" not in existing_findings_lower:
+                                    missing_key_terms = True
+                                if (
+                                    "Endobronchial lesion" in abnormalities
+                                    and not any(tok in existing_findings_lower for tok in ("endobronch", "lesion", "tumor", "mass"))
+                                ):
+                                    missing_key_terms = True
+                                if (
+                                    "Stenosis" in abnormalities
+                                    and not any(tok in existing_findings_lower for tok in ("stenos", "stricture"))
+                                ):
+                                    missing_key_terms = True
+
+                            if not existing_findings or broken_findings or missing_key_terms:
                                 parts: list[str] = []
                                 patterns = [
                                     r"\bvocal\s+cords?\b[^.\n]{0,160}",
                                     r"\bprevious\s+tracheostomy\s+site\b[^.\n]{0,160}",
+                                    r"\bendobronchial\b[^.\n]{0,160}",
+                                    r"\b(?:tumou?r|tumors?|mass|lesion)\b[^.\n]{0,160}",
                                     r"\bmalacia\b[^.\n]{0,160}",
+                                    r"\b(?:retained\s+blood|blood\s+clot|bloody|hemoptysis)\b[^.\n]{0,160}",
                                     r"\bsecretions?\b[^.\n]{0,160}",
                                 ]
                                 for pat in patterns:
                                     match = re.search(pat, masked_note_text or "", re.IGNORECASE)
                                     if match:
-                                        snippet = match.group(0).strip()
+                                        snippet = re.sub(r"\s+", " ", (match.group(0) or "").strip())
+                                        snippet = re.sub(
+                                            r"(?i)\bvocal\s+cords?\s+visualized\s+(?:the\s+)?appeared\b",
+                                            "Vocal cords were visualized and appeared",
+                                            snippet,
+                                        )
+                                        snippet = re.sub(
+                                            r"(?i)\bvocal\s+cords?\s+visualized\b",
+                                            "Vocal cords were visualized",
+                                            snippet,
+                                        )
+                                        snippet = re.sub(
+                                            r"(?i)\b(Vocal cords were visualized)\s+the\b",
+                                            r"\1",
+                                            snippet,
+                                        )
+                                        if re.search(r"(?i)\b(?:estimated\s+)?blood\s+loss\b", snippet):
+                                            continue
                                         if snippet and snippet not in parts:
                                             parts.append(snippet)
                                 if parts:
-                                    proc["inspection_findings"] = " ".join(parts)[:700]
+                                    proc["inspection_findings"] = ". ".join(parts)[:700]
                                     findings_changed = True
                                     _add_first_span_skip_cpt_headers(
                                         "procedures_performed.diagnostic_bronchoscopy.inspection_findings",
@@ -1933,6 +2023,61 @@ class RegistryService:
                                                     existing["airway_stent_removal"] = False
                                                 proc_changed = True
                                                 continue
+
+                                    if proc_name == "thermal_ablation" and key == "modality":
+                                        def _normalize_modality_token(raw: object) -> str | None:
+                                            s = str(raw or "").strip()
+                                            if not s:
+                                                return None
+                                            lowered = s.lower()
+                                            if lowered in {"apc", "argon plasma", "argon plasma coagulation"}:
+                                                return "APC"
+                                            if "argon plasma" in lowered or lowered == "apc":
+                                                return "APC"
+                                            if "electrocaut" in lowered or re.search(r"\bcauter(y|iz)", lowered):
+                                                return "Electrocautery"
+                                            if ("nd" in lowered and "yag" in lowered) or "nd:yag" in lowered:
+                                                return "Laser (Nd:YAG)"
+                                            if "co2" in lowered:
+                                                return "Laser (CO2)"
+                                            if "diode" in lowered:
+                                                return "Laser (Diode)"
+                                            canonical = {
+                                                "apc": "APC",
+                                                "electrocautery": "Electrocautery",
+                                                "laser (nd:yag)": "Laser (Nd:YAG)",
+                                                "laser (co2)": "Laser (CO2)",
+                                                "laser (diode)": "Laser (Diode)",
+                                            }.get(lowered)
+                                            return canonical
+
+                                        def _coerce_modalities(raw: object) -> list[str]:
+                                            if raw in (None, "", [], {}):
+                                                return []
+                                            if isinstance(raw, str):
+                                                split_re = re.compile(r"\s*(?:;|,|/|\band\b)\s*", re.IGNORECASE)
+                                                tokens = [tok for tok in split_re.split(raw) if tok and tok.strip()]
+                                            elif isinstance(raw, list):
+                                                tokens = [str(item).strip() for item in raw if str(item).strip()]
+                                            else:
+                                                tokens = [str(raw).strip()]
+                                            out: list[str] = []
+                                            for tok in tokens:
+                                                norm = _normalize_modality_token(tok)
+                                                if norm and norm not in out:
+                                                    out.append(norm)
+                                            return out
+
+                                        existing_norm = _coerce_modalities(existing.get(key))
+                                        incoming_norm = _coerce_modalities(value)
+                                        merged: list[str] = []
+                                        for tok in existing_norm + incoming_norm:
+                                            if tok not in merged:
+                                                merged.append(tok)
+                                        if merged and merged != existing_norm:
+                                            existing[key] = merged
+                                            proc_changed = True
+                                        continue
 
                                     if proc_name == "radial_ebus" and key == "probe_position":
                                         if existing.get(key) in (None, "", [], {}):

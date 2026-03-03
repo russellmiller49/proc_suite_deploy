@@ -24,7 +24,7 @@ _RADIAL_MARKER_PATTERN = re.compile(
     re.IGNORECASE,
 )
 _LINEAR_MARKER_PATTERN = re.compile(
-    r"\b(convex|mediastinal|station\s*\d{1,2}[A-Za-z]?)\b",
+    r"\b(convex|station\s*\d{1,2}[A-Za-z]?)\b",
     re.IGNORECASE,
 )
 _DILATION_CONTEXT_PATTERN = re.compile(
@@ -46,6 +46,11 @@ _STENT_NEGATION_PATTERNS = [
     re.compile(
         r"\b(?:no|not|without|declined|deferred)\b[^.\n]{0,40}\bstent(?:s)?\b"
         r"[^.\n]{0,40}\b(?:place|placed|placement|insert|inserted|deploy|deployed)\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"\b(?:no|not|without|declined|deferred)\b[^.\n]{0,80}\b(?:place|placed|placement|insert|inserted|deploy|deployed)\w*\b"
+        r"[^.\n]{0,80}\bstent(?:s)?\b",
         re.IGNORECASE,
     ),
     re.compile(
@@ -298,6 +303,33 @@ class ClinicalGuardrails:
             needs_review = True
             warnings.append("Radial vs linear EBUS markers both present; review required.")
 
+        # Cull hollow linear EBUS claims: if linear EBUS is marked performed but there
+        # are no stations/node_events and no explicit EBUS-TBNA/linear EBUS narrative
+        # marker, treat as not performed.
+        procedures = record_data.get("procedures_performed")
+        linear = procedures.get("linear_ebus") if isinstance(procedures, dict) else None
+        if isinstance(linear, dict) and linear.get("performed") is True:
+            explicit_linear_marker = bool(
+                re.search(
+                    r"(?i)\b(?:linear\s+ebus|ebus[-\s]?tbna|convex\s+probe\s+ebus|cp-?ebus|endobronchial\s+ultrasound)\b",
+                    text_lower,
+                )
+            )
+            has_station_payload = bool(
+                linear.get("stations_sampled")
+                or linear.get("stations_detail")
+                or linear.get("station_count_bucket")
+            )
+            has_node_events = bool(linear.get("node_events"))
+            if not (explicit_linear_marker or has_station_payload or has_node_events):
+                if isinstance(procedures, dict):
+                    procedures["linear_ebus"] = {"performed": False}
+                    record_data["procedures_performed"] = procedures
+                warnings.append(
+                    "AUTO_CORRECTED: linear_ebus.performed=true without station/node evidence; treating as not performed."
+                )
+                changed = True
+
         # Stent negation and inspection-only guardrails.
         procedures = record_data.get("procedures_performed")
         stent = procedures.get("airway_stent") if isinstance(procedures, dict) else None
@@ -342,6 +374,28 @@ class ClinicalGuardrails:
                 stent["stent_type"] = "Y-Stent"
                 changed = True
 
+            # Disambiguate bronchoscope brands from stent brands (e.g., "Dumon ... bronchoscope").
+            brand_raw = stent.get("stent_brand")
+            if isinstance(brand_raw, str) and brand_raw.strip():
+                brand_lower = brand_raw.strip().lower()
+                if brand_lower == "dumon":
+                    dumon_broncho = bool(
+                        re.search(r"(?i)\bdumon\b[^.\n]{0,80}\bbronchoscop", note_text or "")
+                        or re.search(r"(?i)\bbronchoscop[^.\n]{0,80}\bdumon\b", note_text or "")
+                    )
+                    dumon_stent = bool(
+                        re.search(r"(?i)\bdumon\b[^.\n]{0,80}\bstent\b", note_text or "")
+                        or re.search(r"(?i)\bstent\b[^.\n]{0,80}\bdumon\b", note_text or "")
+                    )
+                    if dumon_broncho and not dumon_stent:
+                        stent.pop("stent_brand", None)
+                        if stent.get("stent_type") == "Silicone - Dumon":
+                            stent.pop("stent_type", None)
+                        warnings.append(
+                            "AUTO_CORRECTED: cleared Dumon stent brand/type (bronchoscope context only)."
+                        )
+                        changed = True
+
             # Revision semantics: don't label revision/repositioning as "removal" without explicit removal language.
             action_text = str(stent.get("action") or "").strip().lower()
             revision_action = "revision" in action_text or "reposition" in action_text
@@ -351,6 +405,25 @@ class ClinicalGuardrails:
                 changed = True
                 removal_flag = False
                 removal_present = removal_text_present
+
+            # Symmetric guardrail: if the extracted action is "revision/repositioning" but
+            # the narrative supports removal-only (and no exchange/replace language exists),
+            # treat as removal.
+            if (
+                revision_action
+                and removal_text_present
+                and not placement_present
+                and not strong_placement
+                and not placement_action_present
+            ):
+                exchange_or_replace = bool(re.search(r"(?i)\b(?:exchang|replac)\w*\b", text_lower))
+                if not exchange_or_replace:
+                    if self._set_stent_action(record_data, "Removal"):
+                        warnings.append("Stent action revision contradicted by removal-only narrative; treating as removal.")
+                        changed = True
+                    revision_action = False
+                    removal_flag = True
+                    removal_present = True
 
             if negated and not strong_placement:
                 if removal_present:

@@ -440,6 +440,18 @@ class ReportPipeline:
                     lines.append(line)
                     lines.append("Thoracic Ultrasound")
 
+                for mt_proc in _by_type("medical_thoracoscopy"):
+                    data = _proc_data_dict(mt_proc)
+                    side = str(data.get("side") or "").strip().lower()
+                    side_title = side.title() if side in {"left", "right"} else ""
+                    base = "Medical Thoracoscopy (Diagnostic)"
+                    if side_title:
+                        base = f"{side_title} {base}"
+                    lines.append(base)
+                    for intervention in data.get("interventions") or []:
+                        if isinstance(intervention, str) and intervention.strip():
+                            lines.append(intervention.strip())
+
                 nav_procs = _by_type("robotic_navigation")
                 nav_targets: list[str] = []
                 nav_platform = None
@@ -600,6 +612,31 @@ class ReportPipeline:
                         )
                     else:
                         lines.append("Endobronchial Ultrasound-Guided Transbronchial Needle Aspiration (EBUS-TBNA)")
+
+                for rigid_proc in _by_type("rigid_bronchoscopy"):
+                    data = _proc_data_dict(rigid_proc)
+                    interventions = data.get("interventions") or []
+                    is_therapeutic = bool(interventions)
+                    lines.append("Rigid Bronchoscopy (Therapeutic)" if is_therapeutic else "Rigid Bronchoscopy")
+
+                for destr_proc in _by_type("endobronchial_tumor_destruction"):
+                    data = _proc_data_dict(destr_proc)
+                    modality = _as_text(data.get("modality"))
+                    if modality:
+                        lines.append(f"Endobronchial Tumor Destruction ({modality})")
+                    else:
+                        lines.append("Endobronchial Tumor Destruction")
+
+                for _ in _by_type("microdebrider_debridement"):
+                    lines.append("Microdebrider Debridement")
+
+                for stent_proc in _by_type("airway_stent_placement"):
+                    data = _proc_data_dict(stent_proc)
+                    stent_type = _as_text(data.get("stent_type"))
+                    if stent_type:
+                        lines.append(f"Airway Stent Placement ({stent_type})")
+                    else:
+                        lines.append("Airway Stent Placement")
 
                 for ablation_proc in _by_type("peripheral_ablation"):
                     data = _proc_data_dict(ablation_proc)

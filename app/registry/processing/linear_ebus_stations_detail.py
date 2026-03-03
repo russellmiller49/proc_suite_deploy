@@ -63,10 +63,17 @@ _EBUS_AXES_RE = re.compile(
 _AXES_FALLBACK_RE = re.compile(
     r"(?i)\b(?P<a>\d+(?:\.\d+)?)\s*(?:x|by)\s*(?P<b>\d+(?:\.\d+)?)\s*mm\b"
 )
+_PAREN_MM_RE = re.compile(r"(?i)[\(\[]\s*(?P<mm>\d+(?:\.\d+)?)\s*mm\s*[\)\]]")
 
 _STATION_SIZE_LIST_LINE_RE = re.compile(
     r"(?im)^\s*(?P<station>2R|2L|3P|4R|4L|5|7|8|9|10R|10L|11R(?:s|i)?|11L(?:s|i)?|12R|12L)\s*"
     r"[-:]\s*(?P<mm>\d+(?:\.\d+)?)\s*mm\b"
+)
+_INLINE_STATION_TOKEN_RE = re.compile(
+    r"(?i)\b(?P<station>2R|2L|3P|4R|4L|10R|10L|11R(?:s|i)?|11L(?:s|i)?|12R|12L)\b"
+)
+_INLINE_NUMERIC_STATION_PAREN_RE = re.compile(
+    r"(?i)\b(?P<station>5|7|8|9)\b(?=\s*[\(\[]\s*\d+(?:\.\d+)?\s*mm\b)"
 )
 
 _PASSES_RE = re.compile(r"(?i)\b(\d{1,2})\s+passes?\b")
@@ -253,6 +260,17 @@ def _apply_section_to_entry(
         entry["sampled"] = sampled
 
     # Sizes: prefer explicit "Measured <mm> by EBUS" patterns.
+    paren_match = _PAREN_MM_RE.search(section)
+    if paren_match:
+        mm = _to_float(paren_match.group("mm"))
+        if mm is not None and entry.get("short_axis_mm") is None:
+            entry["short_axis_mm"] = mm
+            entry["_short_axis_mm_evidence"] = {
+                "text": (paren_match.group(0) or "").strip(),
+                "start": section_offset + int(paren_match.start()),
+                "end": section_offset + int(paren_match.end()),
+            }
+
     axes_match = _EBUS_AXES_RE.search(section)
     if axes_match:
         a = _to_float(axes_match.group("a"))
@@ -707,6 +725,57 @@ def extract_linear_ebus_stations_detail(note_text: str) -> list[dict[str, Any]]:
         if entry.get("sampled") is None:
             inferred = _infer_station_sampled_from_text(text, station)
             entry["sampled"] = False if inferred is None else bool(inferred)
+
+    # Inline station phrases (common in short-form dictations without "Station" labels), e.g.:
+    #   "... biopsy of 4L (7.6mm) 5 passes 22G needle ROSE adequate, 7 (6.2 mm) 4 passes ..."
+    inline_matches = list(_INLINE_STATION_TOKEN_RE.finditer(text))
+    inline_matches.extend(_INLINE_NUMERIC_STATION_PAREN_RE.finditer(text))
+    inline_matches.sort(key=lambda m: int(m.start()))
+    for idx, match in enumerate(inline_matches):
+        start = match.start()
+        end = inline_matches[idx + 1].start() if idx + 1 < len(inline_matches) else len(text)
+        end = min(end, start + 260)
+        raw_section = text[start:end]
+        leading_trim = len(raw_section) - len(raw_section.lstrip())
+        section_offset = start + leading_trim
+        section = raw_section.strip()
+        if not section:
+            continue
+
+        # Avoid creating false station entries from plain "stations: 4R, 7, 11L" lists.
+        has_detail = bool(
+            _PAREN_MM_RE.search(section)
+            or _PASSES_RE.search(section)
+            or _NEEDLE_GAUGE_RE.search(section)
+            or _ROSE_RE.search(section)
+        )
+        if not has_detail:
+            continue
+
+        station = _normalize_station_token(match.group("station") or "")
+        if not station:
+            continue
+
+        entry = by_station.get(station)
+        if entry is None:
+            entry = {"station": station}
+            by_station[station] = entry
+            order.append(station)
+
+        default_sampled = bool(
+            _SAMPLED_ACTION_RE.search(section)
+            or _PASSES_RE.search(section)
+            or _NEEDLE_GAUGE_RE.search(section)
+            or _ROSE_RE.search(section)
+        )
+        _apply_section_to_entry(
+            entry,
+            section,
+            section_offset=section_offset,
+            global_gauge=global_gauge,
+            global_gauge_evidence=global_gauge_evidence,
+            default_sampled=True if default_sampled else None,
+        )
 
     # Non-station targets (masses/lesions/nodules) are often documented in the same
     # templated section as stations. Capture them as additional entries so CPT

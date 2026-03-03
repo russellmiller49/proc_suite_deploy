@@ -28,7 +28,7 @@ class StructuredFormatter(logging.Formatter):
         if record.exc_info:
             log_dict["exception"] = self.formatException(record.exc_info)
 
-        return json.dumps(log_dict)
+        return json.dumps(log_dict, default=str)
 
 
 class StructuredLogger(logging.LoggerAdapter[logging.Logger]):

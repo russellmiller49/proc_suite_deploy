@@ -45,6 +45,9 @@ copy_allowlisted_path() {
       --exclude ".mypy_cache/"
       --exclude ".ruff_cache/"
     )
+    if [[ "${rel_path}" == "ui/static" ]]; then
+      rsync_args+=(--exclude "phi_redactor_classic/")
+    fi
     if [[ "${rel_path}" == "ui/static" && "${INCLUDE_VENDOR}" != "1" ]]; then
       # Keep core OCR runtime web assets (pdfjs/tesseract) in slim mirrors,
       # but exclude heavyweight PHI model folders by default.

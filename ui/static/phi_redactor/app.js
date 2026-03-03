@@ -21,6 +21,8 @@ import {
   unlockOrInitVault,
   upsertVaultPatient,
 } from "./vaultClient.js";
+import { listCaseSnapshotMeta, loadCaseSnapshot, persistCaseSnapshot } from "./caseSnapshotStore.js";
+import { buildJoinedTargetSummary, renderProcedureSummaryCard } from "./procedureSummaryRenderer.js";
 import {
   buildCompletenessCandidatePaths,
   buildCompletenessEbusStationHintsByIndex,
@@ -29,7 +31,16 @@ import {
   normalizeCompletenessStationToken,
 } from "./completenessHelpers.js";
 
+// Linking layer (ATLAS-only). Loaded via index.html before this module.
+const L = typeof window !== "undefined" ? window.ATLASLinking : null;
+
+const UI_VARIANT = String(window.__PROCSUITE_UI_VARIANT__ || "atlas").trim().toLowerCase() === "classic"
+  ? "classic"
+  : "atlas";
+const IS_CLASSIC = UI_VARIANT === "classic";
+
 const statusTextEl = document.getElementById("statusText");
+const contextualAppendBadgeEl = document.getElementById("contextualAppendBadge");
 const progressTextEl = document.getElementById("progressText");
 const detectionsListEl = document.getElementById("detectionsList");
 const detectionsCountEl = document.getElementById("detectionsCount");
@@ -60,8 +71,8 @@ const submitFeedbackBtn = document.getElementById("submitFeedbackBtn");
 const saveCorrectionsBtn = document.getElementById("saveCorrectionsBtn");
 const feedbackStatusEl = document.getElementById("feedbackStatus");
 const vaultPanelEl = document.getElementById("vaultPanel");
+const vaultIdentityBannerEl = document.getElementById("vaultIdentityBanner");
 const vaultUserIdInputEl = document.getElementById("vaultUserIdInput");
-const vaultPasswordInputEl = document.getElementById("vaultPasswordInput");
 const vaultPatientLabelInputEl = document.getElementById("vaultPatientLabelInput");
 const vaultIndexDateInputEl = document.getElementById("vaultIndexDateInput");
 const vaultMrnInputEl = document.getElementById("vaultMrnInput");
@@ -69,20 +80,42 @@ const vaultCustomNotesInputEl = document.getElementById("vaultCustomNotesInput")
 const vaultUnlockBtn = document.getElementById("vaultUnlockBtn");
 const vaultLockBtn = document.getElementById("vaultLockBtn");
 const vaultSyncBtn = document.getElementById("vaultSyncBtn");
+const vaultCreateCaseBtn = document.getElementById("vaultCreateCaseBtn");
+const vaultSaveCaseBtn = document.getElementById("vaultSaveCaseBtn");
+const vaultClearActiveCaseBtn = document.getElementById("vaultClearActiveCaseBtn");
 const clearAppendTargetBtn = document.getElementById("clearAppendTargetBtn");
 const vaultStatusTextEl = document.getElementById("vaultStatusText");
 const vaultPatientsHostEl = document.getElementById("vaultPatientsHost");
-const vaultAppendTargetTextEl = document.getElementById("vaultAppendTargetText");
+const vaultCaseEventsHostEl = document.getElementById("vaultCaseEventsHost");
+const vaultCaseEventDetailHostEl = document.getElementById("vaultCaseEventDetailHost");
+const vaultActiveCaseTextEl = document.getElementById("vaultActiveCaseText");
+const vaultEventModeTextEl = document.getElementById("vaultEventModeText");
+const vaultUnlockDialogEl = document.getElementById("vaultUnlockDialog");
+const vaultUnlockUserIdInputEl = document.getElementById("vaultUnlockUserIdInput");
+const vaultUnlockPasswordInputEl = document.getElementById("vaultUnlockPasswordInput");
+const vaultUnlockDialogSubmitBtn = document.getElementById("vaultUnlockDialogSubmitBtn");
+const vaultUnlockDialogStatusEl = document.getElementById("vaultUnlockDialogStatus");
 const phiConfirmModalEl = document.getElementById("phiConfirmModal");
 const addEventModalEl = document.getElementById("addEventModal");
 const addEventRegistryTextEl = document.getElementById("addEventRegistryText");
 const addEventDateInputEl = document.getElementById("addEventDateInput");
 const addEventTypeSelectEl = document.getElementById("addEventTypeSelect");
 const addEventModeSelectEl = document.getElementById("addEventModeSelect");
+const addEventNoteFieldsEl = document.getElementById("addEventNoteFields");
+const addEventTitleInputEl = document.getElementById("addEventTitleInput");
+const addEventImagingMetaFieldsEl = document.getElementById("addEventImagingMetaFields");
+const addEventImagingModalitySelectEl = document.getElementById("addEventImagingModalitySelect");
+const addEventImagingSubtypeSelectEl = document.getElementById("addEventImagingSubtypeSelect");
+const addEventNoteInputEl = document.getElementById("addEventNoteInput");
+const addEventPdfInputEl = document.getElementById("addEventPdfInput");
+const addEventPdfMaskSelectEl = document.getElementById("addEventPdfMaskSelect");
+const addEventPdfExtractBtn = document.getElementById("addEventPdfExtractBtn");
+const addEventNoteStatusEl = document.getElementById("addEventNoteStatus");
 const addEventStructuredFieldsEl = document.getElementById("addEventStructuredFields");
 const addEventHospitalAdmissionToggleEl = document.getElementById("addEventHospitalAdmissionToggle");
 const addEventIcuAdmissionToggleEl = document.getElementById("addEventIcuAdmissionToggle");
 const addEventDeceasedToggleEl = document.getElementById("addEventDeceasedToggle");
+const addEventDiseaseStatusSelectEl = document.getElementById("addEventDiseaseStatusSelect");
 const addEventStatusCommentInputEl = document.getElementById("addEventStatusCommentInput");
 const bundlePanelEl = document.getElementById("bundlePanel");
 const indexDateInputEl = document.getElementById("indexDateInput");
@@ -157,6 +190,25 @@ const cameraCropApplyAllBtn = document.getElementById("cameraCropApplyAllBtn");
 const cameraCropResetBtn = document.getElementById("cameraCropResetBtn");
 const cameraCropResetAllBtn = document.getElementById("cameraCropResetAllBtn");
 const privacyShieldEl = document.getElementById("privacyShield");
+const workflowStepperEl = document.getElementById("workflowStepper");
+const workflowStepInputEl = document.getElementById("workflowStepInput");
+const workflowStepProcessingEl = document.getElementById("workflowStepProcessing");
+const workflowStepReviewEl = document.getElementById("workflowStepReview");
+const classicModeNoticeEl = document.getElementById("classicModeNotice");
+const reviewModeClinicianBtn = document.getElementById("reviewModeClinicianBtn");
+const reviewModeCoderBtn = document.getElementById("reviewModeCoderBtn");
+const reviewModeQaBtn = document.getElementById("reviewModeQaBtn");
+const atlasClinicianShellEl = document.getElementById("atlasClinicianShell");
+const needsAttentionHostEl = document.getElementById("needsAttentionHost");
+const caseSummaryStripEl = document.getElementById("caseSummaryStrip");
+const reviewSectionsHostEl = document.getElementById("reviewSectionsHost");
+const advancedAllFieldsEl = document.getElementById("advancedAllFields");
+const reviewDrawerEl = document.getElementById("reviewDrawer");
+const reviewDrawerBackdropEl = document.getElementById("reviewDrawerBackdrop");
+const reviewDrawerTitleEl = document.getElementById("reviewDrawerTitle");
+const reviewDrawerSubtitleEl = document.getElementById("reviewDrawerSubtitle");
+const reviewDrawerFieldsEl = document.getElementById("reviewDrawerFields");
+const reviewDrawerCloseBtn = document.getElementById("reviewDrawerCloseBtn");
 
 function detectCameraWarningProfile(env = globalThis) {
   try {
@@ -192,22 +244,37 @@ let vaultUnlocked = false;
 let vaultBusy = false;
 let vaultUserId = null;
 let vaultPatientMap = new Map(); // registry_uuid -> decrypted local patient identity object
-let appendTargetRegistryUuid = null;
-let appendEventConfig = null; // { registry_uuid, event_type, mode, relative_day_offset, structured_data, event_date }
+let activeCaseRegistryUuid = null;
+let appendEventConfig = null; // { registry_uuid, event_type, mode, relative_day_offset, event_title, source_modality, event_subtype, structured_data, event_date, note_draft_text, note_source_type }
+let addEventTargetRegistryUuid = null;
+let addEventDraftSourceType = "manual_entry";
+let loadAppendEventDraftIntoEditor = null;
 let lastSubmittedRegistryUuid = null;
 let registryCaseSnapshotByUuid = new Map(); // registry_uuid -> canonical remote case snapshot
+let selectedCaseEventId = null;
+let activeCaseEventReviewId = null;
 let vaultIdleTimerId = null;
 let lastVaultActivityMs = 0;
 
 let registryGridMonacoGetter = () => null;
 let registryGridMounted = false;
 let registryGridLoadPromise = null;
+let registryGridRenderToken = 0;
 let lastCompletenessPrompts = [];
 let completenessPromptsCollapsed = false;
 let completenessEdits = null; // {edited_patch, edited_fields} generated from completeness inputs
 let completenessRawValueByPath = new Map(); // key: effective dotted path (with indices), value: raw string
 let completenessSelectedIndexByPromptPath = new Map(); // key: prompt.path (with [*]), value: selected index (number)
 let completenessPendingChanges = false;
+let currentWorkflowStep = "input";
+let reviewMode = "clinician";
+let reviewSectionsCache = [];
+let reviewDrawerContext = null;
+let reviewDrawerLastFocus = null;
+let flatTablesActiveTabId = "patient";
+let flatEvidencePopoverEl = null;
+let flatEvidencePopoverAnchorEl = null;
+let flatEvidencePopoverWired = false;
 
 const TESTER_MODE = new URLSearchParams(location.search).get("tester") === "1";
 if (TESTER_MODE && feedbackPanelEl) feedbackPanelEl.open = true;
@@ -293,6 +360,7 @@ const UI_REVIEW_FOCUS_LS_KEY = "ui.reviewFocus";
 const UI_REVIEW_SPLIT_LS_KEY = "ui.reviewSplit";
 const UI_DETECTIONS_COLLAPSED_LS_KEY = "ui.detectionsCollapsed";
 const UI_COMPLETENESS_COLLAPSED_LS_KEY = "ui.completenessCollapsed";
+const UI_REVIEW_MODE_LS_KEY = "ui.reviewMode";
 const REPORTER_DASHBOARD_TRANSFER_KEY = "ps.reporter_to_dashboard_note_v1";
 const DASHBOARD_REPORTER_TRANSFER_KEY = "ps.dashboard_to_reporter_note_v1";
 const VAULT_USER_ID_LS_KEY = "ps.vault.user_id";
@@ -342,6 +410,138 @@ function safeRemoveStorageItem(storage, key) {
   }
 }
 
+function normalizeReviewMode(value) {
+  const raw = String(value || "").trim().toLowerCase();
+  if (raw === "coder") return "coder";
+  if (raw === "qa") return "qa";
+  return "clinician";
+}
+
+function setWorkflowStep(step, options = {}) {
+  const normalized = step === "processing" || step === "review" ? step : "input";
+  currentWorkflowStep = normalized;
+  const processing = Boolean(options.processing || normalized === "processing");
+
+  const steps = [
+    { key: "input", el: workflowStepInputEl },
+    { key: "processing", el: workflowStepProcessingEl },
+    { key: "review", el: workflowStepReviewEl },
+  ];
+  const order = { input: 0, processing: 1, review: 2 };
+
+  steps.forEach(({ key, el }) => {
+    if (!el) return;
+    const idx = order[key];
+    const activeIdx = order[normalized];
+    el.classList.toggle("is-active", key === normalized);
+    el.classList.toggle("is-complete", idx < activeIdx);
+    if (key === "processing") {
+      el.classList.toggle("is-processing", processing);
+    } else {
+      el.classList.remove("is-processing");
+    }
+  });
+
+  syncStickyChromeMetrics();
+}
+
+function applyReviewMode(nextMode, options = {}) {
+  const { persist = true } = options;
+  const mode = normalizeReviewMode(nextMode);
+  reviewMode = mode;
+
+  const body = document.body;
+  if (body) {
+    body.classList.remove("review-mode-clinician", "review-mode-coder", "review-mode-qa");
+    body.classList.add(`review-mode-${mode}`);
+  }
+
+  const buttons = [
+    [reviewModeClinicianBtn, "clinician"],
+    [reviewModeCoderBtn, "coder"],
+    [reviewModeQaBtn, "qa"],
+  ];
+  buttons.forEach(([btn, key]) => {
+    if (!btn) return;
+    const active = key === mode;
+    btn.classList.toggle("active", active);
+    btn.setAttribute("aria-pressed", active ? "true" : "false");
+    btn.tabIndex = active ? 0 : -1;
+  });
+
+  if (persist) safeSetLocalStorageItem(UI_REVIEW_MODE_LS_KEY, mode);
+
+  if (advancedAllFieldsEl && !advancedAllFieldsEl.dataset.userToggled) {
+    advancedAllFieldsEl.open = true;
+  }
+}
+
+function initReviewModeControls() {
+  const params = new URLSearchParams(location.search);
+  const fromQuery = params.get("reviewMode");
+  const fromStorage = safeGetLocalStorageItem(UI_REVIEW_MODE_LS_KEY);
+  applyReviewMode(fromQuery || fromStorage || "clinician", { persist: false });
+
+  const wire = (btn, mode) => {
+    if (!btn) return;
+    btn.addEventListener("click", () => applyReviewMode(mode));
+  };
+  wire(reviewModeClinicianBtn, "clinician");
+  wire(reviewModeCoderBtn, "coder");
+  wire(reviewModeQaBtn, "qa");
+
+  const modeButtons = [reviewModeClinicianBtn, reviewModeCoderBtn, reviewModeQaBtn].filter(Boolean);
+  modeButtons.forEach((btn, index) => {
+    btn.addEventListener("keydown", (event) => {
+      if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+      event.preventDefault();
+      let nextIndex = index;
+      if (event.key === "ArrowLeft") nextIndex = (index - 1 + modeButtons.length) % modeButtons.length;
+      if (event.key === "ArrowRight") nextIndex = (index + 1) % modeButtons.length;
+      if (event.key === "Home") nextIndex = 0;
+      if (event.key === "End") nextIndex = modeButtons.length - 1;
+      const nextBtn = modeButtons[nextIndex];
+      const nextMode = String(nextBtn?.dataset?.mode || "clinician");
+      applyReviewMode(nextMode);
+      if (nextBtn && typeof nextBtn.focus === "function") nextBtn.focus();
+    });
+  });
+
+  if (advancedAllFieldsEl) {
+    advancedAllFieldsEl.addEventListener("toggle", () => {
+      advancedAllFieldsEl.dataset.userToggled = "1";
+    });
+  }
+}
+
+function moveNeedsAttentionCard() {
+  if (!needsAttentionHostEl || !completenessPromptsCardEl) return;
+  if (completenessPromptsCardEl.parentElement !== needsAttentionHostEl) {
+    needsAttentionHostEl.appendChild(completenessPromptsCardEl);
+  }
+}
+
+function applyClassicModeUi() {
+  if (document.body) {
+    document.body.dataset.uiVariant = UI_VARIANT;
+    document.body.classList.toggle("ui-variant-classic", IS_CLASSIC);
+  }
+  if (!IS_CLASSIC) return;
+  if (classicModeNoticeEl) classicModeNoticeEl.classList.remove("hidden");
+  if (vaultPanelEl) {
+    vaultPanelEl.open = false;
+    vaultPanelEl.classList.add("hidden");
+  }
+  if (vaultIdentityBannerEl) {
+    vaultIdentityBannerEl.classList.remove(
+      "vault-identity-banner--unlocked-nocase",
+      "vault-identity-banner--unlocked-active",
+    );
+    vaultIdentityBannerEl.classList.add("vault-identity-banner--locked");
+    vaultIdentityBannerEl.textContent = "Classic mode: Vault disabled (reduced local protections).";
+  }
+}
+
 function parseReporterTransferPayload(raw) {
   if (!raw) return null;
   try {
@@ -384,6 +584,7 @@ function readEnumSetting(queryKey, storageKey, allowed, defaultValue) {
 }
 
 function isVaultRequiredForSubmission() {
+  if (IS_CLASSIC) return false;
   const params = new URLSearchParams(location.search);
   const qp = params.get("vaultRequired");
   if (qp === "1" || qp === "0") {
@@ -566,6 +767,11 @@ function initLayoutControls() {
 
 applyInitialLayoutPrefs();
 initCompletenessControls();
+initReviewModeControls();
+applyClassicModeUi();
+moveNeedsAttentionCard();
+initReviewDrawer();
+setWorkflowStep("input");
 
 function showRegistryGridUi() {
   if (registryLegacyRightRootEl) registryLegacyRightRootEl.classList.add("hidden");
@@ -598,10 +804,26 @@ function setRegistryGridLoadingPlaceholder(message) {
 function loadRegistryGridBundle() {
   if (registryGridLoadPromise) return registryGridLoadPromise;
 
+  const overallTimeoutMs = 15_000;
   registryGridLoadPromise = new Promise((resolve, reject) => {
+    let settled = false;
+    const finish =
+      (fn) =>
+      (value) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timerId);
+        fn(value);
+      };
+    const onResolve = finish(resolve);
+    const onReject = finish(reject);
+    const timerId = setTimeout(() => {
+      onReject(new Error("RegistryGrid bundle load timed out"));
+    }, overallTimeoutMs);
+
     try {
       if (window.RegistryGrid && typeof window.RegistryGrid.mount === "function") {
-        resolve(window.RegistryGrid);
+        onResolve(window.RegistryGrid);
         return;
       }
 
@@ -623,11 +845,11 @@ function loadRegistryGridBundle() {
         const start = Date.now();
         const tick = () => {
           if (window.RegistryGrid && typeof window.RegistryGrid.mount === "function") {
-            resolve(window.RegistryGrid);
+            onResolve(window.RegistryGrid);
             return;
           }
           if (Date.now() - start > maxWaitMs) {
-            reject(new Error("RegistryGrid bundle tag present but global did not initialize"));
+            onReject(new Error("RegistryGrid bundle tag present but global did not initialize"));
             return;
           }
           setTimeout(tick, 50);
@@ -642,15 +864,15 @@ function loadRegistryGridBundle() {
       script.async = true;
       script.onload = () => {
         if (window.RegistryGrid && typeof window.RegistryGrid.mount === "function") {
-          resolve(window.RegistryGrid);
+          onResolve(window.RegistryGrid);
         } else {
-          reject(new Error("RegistryGrid bundle loaded but window.RegistryGrid is missing"));
+          onReject(new Error("RegistryGrid bundle loaded but window.RegistryGrid is missing"));
         }
       };
-      script.onerror = () => reject(new Error("Failed to load /ui/registry_grid/registry_grid.iife.js"));
+      script.onerror = () => onReject(new Error("Failed to load /ui/registry_grid/registry_grid.iife.js"));
       document.head.appendChild(script);
     } catch (e) {
-      reject(e);
+      onReject(e);
     }
   }).catch((e) => {
     // Allow retry on the next render (e.g., after a fresh build or transient network failure).
@@ -767,8 +989,11 @@ async function saveRegistryGridLocalVaultData(payload) {
     patientJson: normalized,
   });
   vaultPatientMap.set(registryUuid, normalized);
+  activeCaseRegistryUuid = registryUuid;
+  hydrateVaultInputsFromCase(registryUuid);
   renderVaultPatients();
   updateAppendTargetUi();
+  updateVaultBanner();
   noteVaultActivity();
   return { ok: true, registry_uuid: registryUuid };
 }
@@ -777,10 +1002,50 @@ async function fetchRegistryCaseSnapshot(registryUuid, opts = {}) {
   const safeRegistryUuid = String(registryUuid || "").trim();
   if (!safeRegistryUuid || !vaultUserId) return null;
   const silent = Boolean(opts.silent);
+  const forceRemote = Boolean(opts.forceRemote);
+
+  if (!forceRemote && isVaultReady()) {
+    try {
+      const cached = await loadCaseSnapshot(vaultVmk, vaultUserId, safeRegistryUuid);
+      if (cached && typeof cached === "object") {
+        const cachedRegistry = isPlainObject(cached?.registry) ? cached.registry : null;
+        const cachedRegistryUuid = String(cached?.registry_uuid || cached?.registryUuid || safeRegistryUuid).trim();
+        const cachedEvents = Array.isArray(cached?.events) ? cached.events : null;
+
+        if (cachedRegistry && cachedEvents) {
+          // Cached canonical registry case response.
+          registryCaseSnapshotByUuid.set(safeRegistryUuid, cached);
+          return cached;
+        }
+
+        if (cachedRegistry) {
+          // Cached UI snapshot (process response). Coerce into the remote-case shape so RegistryGrid can still render.
+          const emulated = {
+            registry_uuid: cachedRegistryUuid || safeRegistryUuid,
+            schema_version: String(cached?.schema_version || cachedRegistry?.schema_version || "").trim() || null,
+            version: null,
+            source_run_id: String(cached?.run_id || cached?.source_run_id || "").trim() || null,
+            updated_at: String(cached?.updated_at || "").trim() || new Date().toISOString(),
+            registry: cachedRegistry,
+            registry_json: cachedRegistry,
+            manual_overrides: {},
+            events: [],
+            recent_events: [],
+            cache_source: "client_snapshot_cache",
+          };
+          registryCaseSnapshotByUuid.set(safeRegistryUuid, emulated);
+          return emulated;
+        }
+      }
+    } catch {
+      // Ignore corrupt/stale snapshot cache entries.
+    }
+  }
 
   try {
     const res = await fetch(`/api/v1/registry/${encodeURIComponent(safeRegistryUuid)}`, {
       method: "GET",
+      cache: "no-store",
       headers: getVaultAuthHeaders(),
     });
     if (res.status === 404) return null;
@@ -808,6 +1073,10 @@ async function saveRegistryGridRemotePatch(payload) {
   const registryUuid = String(payload?.registry_uuid || "").trim();
   if (!registryUuid) throw new Error("Missing registry_uuid for remote patch");
   if (!vaultUserId) throw new Error("Missing user context for remote patch");
+  const activeUuid = String(activeCaseRegistryUuid || "").trim();
+  if (!activeUuid || activeUuid !== registryUuid) {
+    throw new Error("Remote patch requires an active loaded case.");
+  }
 
   const expectedVersionRaw = payload?.expected_version;
   const expectedVersion = Number.isInteger(expectedVersionRaw) ? Number(expectedVersionRaw) : null;
@@ -848,14 +1117,14 @@ async function maybeRenderRegistryGrid(data, options = {}) {
     return false;
   }
 
-  showRegistryGridUi();
-  setRegistryGridLoadingPlaceholder("Loading registry grid…");
+  const renderToken = Number.isInteger(options?.renderToken) ? options.renderToken : null;
 
   try {
     const api = await loadRegistryGridBundle();
     if (!api || typeof api.mount !== "function") {
       throw new Error("RegistryGrid API missing mount()");
     }
+    if (renderToken !== null && renderToken !== registryGridRenderToken) return false;
     const hostEditedPatch = Object.prototype.hasOwnProperty.call(options || {}, "hostEditedPatch")
       ? options.hostEditedPatch
       : null;
@@ -874,12 +1143,15 @@ async function maybeRenderRegistryGrid(data, options = {}) {
     };
 
     if (!registryGridMounted) {
+      showRegistryGridUi();
+      setRegistryGridLoadingPlaceholder("Loading registry grid…");
       api.mount(mountArgs);
       registryGridMounted = true;
       return true;
     }
 
     if (typeof api.update === "function") {
+      showRegistryGridUi();
       api.update({
         processResponse: data,
         hostEditedPatch,
@@ -891,6 +1163,8 @@ async function maybeRenderRegistryGrid(data, options = {}) {
     }
 
     // Back-compat: if update() isn't present yet, re-mount.
+    showRegistryGridUi();
+    setRegistryGridLoadingPlaceholder("Loading registry grid…");
     api.mount(mountArgs);
     return true;
   } catch (e) {
@@ -1009,6 +1283,35 @@ const EBUS_ACTION_OPTIONS = [
   { value: "forceps_biopsy", label: "Forceps biopsy" },
   { value: "other", label: "Other" },
 ];
+const SPECIMEN_SOURCE_PROCEDURE_OPTIONS = [
+  { value: "", label: "—" },
+  { value: "EBUS-TBNA", label: "EBUS-TBNA" },
+  { value: "Navigation biopsy", label: "Navigation biopsy" },
+  { value: "Endobronchial biopsy", label: "Endobronchial biopsy" },
+  { value: "Transbronchial biopsy", label: "Transbronchial biopsy" },
+  { value: "Transbronchial cryobiopsy", label: "Transbronchial cryobiopsy" },
+  { value: "BAL", label: "BAL" },
+  { value: "Bronchial wash", label: "Bronchial wash" },
+  { value: "Brushing", label: "Brushing" },
+  { value: "Pleural biopsy", label: "Pleural biopsy" },
+  { value: "Pleural fluid", label: "Pleural fluid" },
+  { value: "Other", label: "Other" },
+];
+const SPECIMEN_ADEQUACY_OPTIONS = [
+  { value: "", label: "—" },
+  { value: "Adequate", label: "Adequate" },
+  { value: "Limited", label: "Limited" },
+  { value: "Inadequate", label: "Inadequate" },
+  { value: "Pending", label: "Pending" },
+];
+const PATH_RESULT_OPTIONS = [
+  { value: "", label: "—" },
+  { value: "Positive", label: "Positive" },
+  { value: "Negative", label: "Negative" },
+  { value: "Non-diagnostic", label: "Non-diagnostic" },
+  { value: "Atypical", label: "Atypical" },
+  { value: "Suspicious", label: "Suspicious" },
+];
 const DISPOSITION_OPTIONS = [
   { value: "", label: "—" },
   { value: "Outpatient discharge", label: "Outpatient discharge" },
@@ -1020,6 +1323,29 @@ const DISPOSITION_OPTIONS = [
   { value: "Transfer to another facility", label: "Transfer to another facility" },
   { value: "OR", label: "OR" },
   { value: "Death", label: "Death" },
+];
+const RESPONSE_STATUS_OPTIONS = [
+  { value: "", label: "—" },
+  { value: "Progression", label: "Progression" },
+  { value: "Stable", label: "Stable" },
+  { value: "Response", label: "Response" },
+  { value: "Mixed", label: "Mixed" },
+  { value: "Indeterminate", label: "Indeterminate" },
+];
+const IMAGING_MODALITY_OPTIONS = [
+  { value: "", label: "—" },
+  { value: "ct", label: "CT" },
+  { value: "pet_ct", label: "PET-CT" },
+  { value: "cta", label: "CTA" },
+  { value: "mri", label: "MRI" },
+  { value: "other", label: "Other" },
+];
+const IMAGING_SUBTYPE_OPTIONS = [
+  { value: "", label: "—" },
+  { value: "preop", label: "Preop" },
+  { value: "followup", label: "Follow-up" },
+  { value: "restaging", label: "Restaging" },
+  { value: "surveillance", label: "Surveillance" },
 ];
 
 const HEMITHORAX_OPTIONS = [
@@ -1128,6 +1454,7 @@ if (submitterNameEl) submitterNameEl.addEventListener("input", updateFeedbackBut
 if (vaultUserIdInputEl) {
   const savedUserId = safeGetLocalStorageItem(VAULT_USER_ID_LS_KEY);
   if (savedUserId) vaultUserIdInputEl.value = savedUserId;
+  if (vaultUnlockUserIdInputEl && savedUserId) vaultUnlockUserIdInputEl.value = savedUserId;
 }
 if (vaultIndexDateInputEl && !String(vaultIndexDateInputEl.value || "").trim()) {
   vaultIndexDateInputEl.value = toLocalDateYmd();
@@ -1140,58 +1467,109 @@ if (vaultSyncBtn) vaultSyncBtn.disabled = true;
 updateAppendTargetUi();
 renderVaultPatients();
 setVaultStatus(
-  isVaultRequiredForSubmission()
+  IS_CLASSIC
+    ? "Classic mode: Vault disabled."
+    : isVaultRequiredForSubmission()
     ? "Locked. Vault required for submit (vaultRequired=1). Unlock to continue."
     : "Locked. Optional: unlock to save encrypted local metadata and add events (does not affect extraction)."
 );
+updateVaultBanner();
+syncVaultIdentityBannerOffset();
+window.addEventListener("resize", () => syncVaultIdentityBannerOffset(), { passive: true });
 
 // Vault event handlers are registered before `main()` wires full UI control state.
 // Start with a vault-only refresher, then let `main()` replace it with
 // `updateZkControls()` once runtime editor state exists.
 let refreshZkControls = () => {
-  if (vaultUnlockBtn) vaultUnlockBtn.disabled = vaultBusy;
-  if (vaultLockBtn) vaultLockBtn.disabled = !isVaultReady() || vaultBusy;
-  if (vaultSyncBtn) vaultSyncBtn.disabled = !isVaultReady() || vaultBusy;
-  if (clearAppendTargetBtn) clearAppendTargetBtn.disabled = !appendTargetRegistryUuid || vaultBusy;
+  const vaultActionsDisabled = IS_CLASSIC || vaultBusy;
+  if (vaultUnlockBtn) vaultUnlockBtn.disabled = vaultActionsDisabled;
+  if (vaultLockBtn) vaultLockBtn.disabled = vaultActionsDisabled || !isVaultReady();
+  if (vaultSyncBtn) vaultSyncBtn.disabled = vaultActionsDisabled || !isVaultReady();
+  if (vaultCreateCaseBtn) vaultCreateCaseBtn.disabled = vaultActionsDisabled || !isVaultReady();
+  if (vaultSaveCaseBtn)
+    vaultSaveCaseBtn.disabled = vaultActionsDisabled || !isVaultReady() || !activeCaseRegistryUuid;
+  if (vaultClearActiveCaseBtn)
+    vaultClearActiveCaseBtn.disabled = vaultActionsDisabled || !activeCaseRegistryUuid;
+  if (clearAppendTargetBtn) clearAppendTargetBtn.disabled = vaultActionsDisabled || !appendEventConfig;
 };
 
 if (vaultUnlockBtn) {
-  vaultUnlockBtn.addEventListener("click", async () => {
+  vaultUnlockBtn.addEventListener("click", () => {
+    if (IS_CLASSIC) {
+      setStatus("Classic mode: Vault is disabled.");
+      return;
+    }
     if (vaultBusy) return;
-    const userId = String(vaultUserIdInputEl?.value || "").trim();
-    const password = String(vaultPasswordInputEl?.value || "");
-    if (!userId) {
-      setVaultStatus("User ID is required.");
+
+    const savedUserId = safeGetLocalStorageItem(VAULT_USER_ID_LS_KEY);
+    const candidateUserId = String(vaultUserIdInputEl?.value || vaultUserId || savedUserId || "").trim();
+    if (vaultUnlockUserIdInputEl) vaultUnlockUserIdInputEl.value = candidateUserId;
+    if (vaultUnlockPasswordInputEl) vaultUnlockPasswordInputEl.value = "";
+    setVaultUnlockDialogStatus("");
+
+    if (vaultUnlockDialogEl && typeof vaultUnlockDialogEl.showModal === "function") {
+      vaultUnlockDialogEl.showModal();
       return;
     }
-    if (!password) {
-      setVaultStatus("Vault password is required.");
-      return;
-    }
-    vaultBusy = true;
+
+    // Fallback: no <dialog> support.
+    setVaultStatus("Vault unlock dialog is unavailable in this browser.");
+  });
+}
+
+async function submitVaultUnlockDialog() {
+  if (IS_CLASSIC) return;
+  if (vaultBusy) return;
+  const userId = String(vaultUnlockUserIdInputEl?.value || vaultUserIdInputEl?.value || "").trim();
+  const password = String(vaultUnlockPasswordInputEl?.value || "");
+  if (!userId) {
+    setVaultUnlockDialogStatus("User ID is required.");
+    return;
+  }
+  if (!password) {
+    setVaultUnlockDialogStatus("Vault password is required.");
+    return;
+  }
+
+  vaultBusy = true;
+  refreshZkControls();
+  setVaultUnlockDialogStatus("Unlocking vault…");
+  setVaultStatus("Unlocking vault…");
+  try {
+    const { vmk, created } = await unlockOrInitVault({ userId, password });
+    vaultUserId = userId;
+    vaultVmk = vmk;
+    vaultUnlocked = true;
+    safeSetLocalStorageItem(VAULT_USER_ID_LS_KEY, userId);
+    if (vaultUserIdInputEl) vaultUserIdInputEl.value = userId;
+    if (vaultUnlockPasswordInputEl) vaultUnlockPasswordInputEl.value = "";
+    await syncVaultPatients();
+    setVaultStatus(created ? `Vault initialized and unlocked for ${userId}.` : `Vault unlocked for ${userId}.`);
+    setVaultUnlockDialogStatus("");
+    updateVaultBanner();
+    if (vaultUnlockDialogEl && typeof vaultUnlockDialogEl.close === "function") vaultUnlockDialogEl.close();
+    noteVaultActivity();
+  } catch (err) {
+    lockVault({ reason: "unlock failed" });
+    const message = `Unlock failed: ${String(err?.message || err)}`;
+    setVaultStatus(message);
+    setVaultUnlockDialogStatus(message);
+  } finally {
+    vaultBusy = false;
     refreshZkControls();
-    setVaultStatus("Unlocking vault…");
-    try {
-      const { vmk, created } = await unlockOrInitVault({ userId, password });
-      vaultUserId = userId;
-      vaultVmk = vmk;
-      vaultUnlocked = true;
-      safeSetLocalStorageItem(VAULT_USER_ID_LS_KEY, userId);
-      if (vaultPasswordInputEl) vaultPasswordInputEl.value = "";
-      await syncVaultPatients();
-      setVaultStatus(
-        created
-          ? `Vault initialized and unlocked for ${userId}.`
-          : `Vault unlocked for ${userId}.`
-      );
-      noteVaultActivity();
-    } catch (err) {
-      lockVault({ reason: "unlock failed" });
-      setVaultStatus(`Unlock failed: ${String(err?.message || err)}`);
-    } finally {
-      vaultBusy = false;
-      refreshZkControls();
-    }
+  }
+}
+
+if (vaultUnlockDialogSubmitBtn) {
+  vaultUnlockDialogSubmitBtn.addEventListener("click", () => {
+    void submitVaultUnlockDialog();
+  });
+}
+
+if (vaultUnlockDialogEl) {
+  vaultUnlockDialogEl.addEventListener("close", () => {
+    setVaultUnlockDialogStatus("");
+    if (vaultUnlockPasswordInputEl) vaultUnlockPasswordInputEl.value = "";
   });
 }
 
@@ -1207,12 +1585,77 @@ if (vaultSyncBtn) {
   });
 }
 
-if (clearAppendTargetBtn) {
-  clearAppendTargetBtn.addEventListener("click", () => {
-    appendTargetRegistryUuid = null;
+if (vaultCreateCaseBtn) {
+  vaultCreateCaseBtn.addEventListener("click", async () => {
+    if (vaultBusy) return;
+    if (!isVaultReady()) {
+      setStatus("Unlock vault first to create a local case.");
+      return;
+    }
+
+    const registryUuid = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    activeCaseRegistryUuid = registryUuid;
+    appendEventConfig = null;
     updateAppendTargetUi();
     renderVaultPatients();
-    setStatus("Append target cleared. Submitting now creates a new case.");
+    renderCaseEvents(null);
+    updateVaultBanner();
+    noteVaultActivity();
+
+    try {
+      await saveLocalPatientIdentity(registryUuid);
+      setStatus(`Local case created: ${registryUuid}. Submit a baseline procedure note to extract into this case.`);
+    } catch (err) {
+      setStatus(`Create local case failed: ${String(err?.message || err)}`);
+    }
+  });
+}
+
+if (vaultSaveCaseBtn) {
+  vaultSaveCaseBtn.addEventListener("click", async () => {
+    if (vaultBusy) return;
+    if (!isVaultReady()) {
+      setStatus("Unlock vault first to save case metadata.");
+      return;
+    }
+    const registryUuid = String(activeCaseRegistryUuid || "").trim();
+    if (!registryUuid) {
+      setStatus("No active case selected. Click Load Case or Create Local Case first.");
+      return;
+    }
+    try {
+      await saveLocalPatientIdentity(registryUuid);
+      setStatus(`Saved local case metadata for ${registryUuid}.`);
+    } catch (err) {
+      setStatus(`Save case metadata failed: ${String(err?.message || err)}`);
+    }
+  });
+}
+
+if (vaultClearActiveCaseBtn) {
+  vaultClearActiveCaseBtn.addEventListener("click", () => {
+    activeCaseRegistryUuid = null;
+    appendEventConfig = null;
+    clearVaultPatientInputs();
+    updateAppendTargetUi();
+    renderVaultPatients();
+    renderCaseEvents(null);
+    updateVaultBanner();
+    setStatus("Active case cleared. Submitting now creates a new case.");
+    noteVaultActivity();
+  });
+}
+
+if (clearAppendTargetBtn) {
+  clearAppendTargetBtn.addEventListener("click", () => {
+    appendEventConfig = null;
+    updateAppendTargetUi();
+    renderVaultPatients();
+    setStatus(
+      activeCaseRegistryUuid
+        ? `Event mode cleared. Baseline submissions will target active case ${activeCaseRegistryUuid}.`
+        : "Event mode cleared. No active case selected; submitting will create a new case.",
+    );
     noteVaultActivity();
   });
 }
@@ -1226,11 +1669,13 @@ if (clearAppendTargetBtn) {
 function setStatus(text) {
   if (!statusTextEl) return;
   statusTextEl.textContent = text;
+  syncVaultIdentityBannerOffset();
 }
 
 function setProgress(text) {
   if (!progressTextEl) return;
   progressTextEl.textContent = text || "";
+  syncVaultIdentityBannerOffset();
 }
 
 function setFeedbackStatus(text) {
@@ -1245,6 +1690,95 @@ function setVaultStatus(text) {
 
 function isVaultReady() {
   return Boolean(vaultUnlocked && vaultVmk && vaultUserId);
+}
+
+function setVaultUnlockDialogStatus(text) {
+  if (!vaultUnlockDialogStatusEl) return;
+  vaultUnlockDialogStatusEl.textContent = String(text || "");
+}
+
+function setVaultBannerState(state, primaryText, secondaryText = "") {
+  if (!vaultIdentityBannerEl) return;
+  vaultIdentityBannerEl.classList.remove(
+    "vault-identity-banner--locked",
+    "vault-identity-banner--unlocked-nocase",
+    "vault-identity-banner--unlocked-active",
+  );
+  if (state === "unlocked-active") vaultIdentityBannerEl.classList.add("vault-identity-banner--unlocked-active");
+  else if (state === "unlocked-nocase") vaultIdentityBannerEl.classList.add("vault-identity-banner--unlocked-nocase");
+  else vaultIdentityBannerEl.classList.add("vault-identity-banner--locked");
+
+  vaultIdentityBannerEl.innerHTML = "";
+  const primary = document.createElement("span");
+  primary.textContent = String(primaryText || "");
+  vaultIdentityBannerEl.appendChild(primary);
+  const secondary = String(secondaryText || "").trim();
+  if (secondary) {
+    const extra = document.createElement("span");
+    extra.className = "vault-banner-secondary";
+    extra.textContent = secondary;
+    vaultIdentityBannerEl.appendChild(extra);
+  }
+}
+
+function updateVaultBanner() {
+  if (!vaultIdentityBannerEl) return;
+  if (IS_CLASSIC) {
+    setVaultBannerState(
+      "locked",
+      "Classic mode: Vault disabled.",
+      "Pipeline + review run without local vault protections.",
+    );
+    return;
+  }
+  if (!isVaultReady()) {
+    const requiredHint = isVaultRequiredForSubmission()
+      ? "Vault required for submit (vaultRequired=1)."
+      : "Unlock to enable local identity + device snapshot cache.";
+    setVaultBannerState("locked", "Vault: Locked.", requiredHint);
+    return;
+  }
+
+  const userId = String(vaultUserId || "").trim();
+  const safeRegistryUuid = String(activeCaseRegistryUuid || "").trim();
+  if (!safeRegistryUuid) {
+    setVaultBannerState("unlocked-nocase", `Vault: Unlocked as ${userId || "(unknown)"}.`, "No active case selected.");
+    return;
+  }
+  const patient = vaultPatientMap.get(safeRegistryUuid) || null;
+  const label = patient ? getPatientRowLabel(patient, safeRegistryUuid) : `Case ${safeRegistryUuid.slice(0, 8)}`;
+  setVaultBannerState(
+    "unlocked-active",
+    `Vault: Unlocked as ${userId || "(unknown)"}.`,
+    `Active case: ${label} (${safeRegistryUuid}).`,
+  );
+}
+
+function syncVaultIdentityBannerOffset() {
+  if (!vaultIdentityBannerEl) return;
+  try {
+    const metrics = syncStickyChromeMetrics();
+    const total = Number(metrics?.topbarHeight || 0) + Number(metrics?.stepperHeight || 0);
+    const px = Number.isFinite(total) ? Math.max(0, Math.round(total)) : 0;
+    vaultIdentityBannerEl.style.top = `${px}px`;
+  } catch {
+    vaultIdentityBannerEl.style.top = "0px";
+  }
+}
+
+function syncStickyChromeMetrics() {
+  const root = document.documentElement;
+  const topbarEl = document.querySelector(".topbar");
+  const topbarHeight = topbarEl ? topbarEl.getBoundingClientRect().height : 56;
+  const stepperHeight =
+    workflowStepperEl && !workflowStepperEl.classList.contains("hidden")
+      ? workflowStepperEl.getBoundingClientRect().height
+      : 0;
+  if (root?.style?.setProperty) {
+    root.style.setProperty("--ps-topbar-height", `${Math.max(0, Math.round(Number(topbarHeight) || 0))}px`);
+    root.style.setProperty("--ps-stepper-height", `${Math.max(0, Math.round(Number(stepperHeight) || 0))}px`);
+  }
+  return { topbarHeight, stepperHeight };
 }
 
 function clearVaultIdleTimer() {
@@ -1268,6 +1802,43 @@ function noteVaultActivity() {
   armVaultIdleTimer();
 }
 
+function clearVaultPatientInputs() {
+  if (vaultPatientLabelInputEl) vaultPatientLabelInputEl.value = "";
+  if (vaultIndexDateInputEl) vaultIndexDateInputEl.value = toLocalDateYmd();
+  if (vaultMrnInputEl) vaultMrnInputEl.value = "";
+  if (vaultCustomNotesInputEl) vaultCustomNotesInputEl.value = "";
+}
+
+function hydrateVaultInputsFromCase(registryUuid) {
+  const safeRegistryUuid = String(registryUuid || "").trim();
+  if (!safeRegistryUuid) return;
+  const patient = vaultPatientMap.get(safeRegistryUuid) || null;
+  if (!patient) return;
+
+  if (vaultPatientLabelInputEl) {
+    vaultPatientLabelInputEl.value = String(patient?.patient_label || "");
+  }
+  if (vaultIndexDateInputEl) {
+    const indexRaw = String(patient?.index_date || "").trim();
+    vaultIndexDateInputEl.value = parseIsoDateInput(indexRaw) ? indexRaw : "";
+  }
+  if (vaultMrnInputEl) {
+    vaultMrnInputEl.value = String(patient?.local_meta?.mrn || "");
+  }
+  if (vaultCustomNotesInputEl) {
+    vaultCustomNotesInputEl.value = String(patient?.local_meta?.custom_notes || "");
+  }
+}
+
+function setAddEventNoteStatus(text, tone = "neutral") {
+  if (!addEventNoteStatusEl) return;
+  addEventNoteStatusEl.textContent = String(text || "");
+  addEventNoteStatusEl.classList.remove("is-warning", "is-error", "is-success");
+  if (tone === "warning") addEventNoteStatusEl.classList.add("is-warning");
+  if (tone === "error") addEventNoteStatusEl.classList.add("is-error");
+  if (tone === "success") addEventNoteStatusEl.classList.add("is-success");
+}
+
 function normalizeEventType(value) {
   const candidate = String(value || "").trim().toLowerCase();
   if (!candidate) return "pathology";
@@ -1284,20 +1855,135 @@ function formatEventTypeLabel(value) {
   return "Pathology";
 }
 
+function isContextualAppendEventType(value) {
+  const normalized = normalizeEventType(value);
+  return normalized === "pathology" || normalized === "imaging" || normalized === "clinical_status";
+}
+
+function isPathOrImagingEventType(value) {
+  const normalized = normalizeEventType(value);
+  return normalized === "pathology" || normalized === "imaging";
+}
+
+function buildAppendOnlyDashboardResponse(registryUuid, remoteCaseData, mode) {
+  const registry = isPlainObject(remoteCaseData?.registry) ? remoteCaseData.registry : {};
+  const billingItems = Array.isArray(registry?.billing?.cpt_codes) ? registry.billing.cpt_codes : [];
+  const cptCodes = billingItems
+    .map((item) => normalizeCptCode(item?.code))
+    .filter(Boolean);
+  return {
+    registry_uuid: String(registryUuid || "").trim() || null,
+    registry,
+    cpt_codes: cptCodes,
+    suggestions: [],
+    audit_warnings: [],
+    validation_errors: [],
+    coder_difficulty: "APPEND_ONLY",
+    needs_manual_review: false,
+    review_status: "finalized",
+    pipeline_mode: mode,
+    total_work_rvu: null,
+    estimated_payment: null,
+    per_code_billing: [],
+    missing_field_prompts: [],
+  };
+}
+
 function syncAddEventModeUi() {
+  const eventType = normalizeEventType(addEventTypeSelectEl?.value);
+  const structuredAllowed = eventType === "clinical_status";
+
+  if (addEventModeSelectEl) {
+    const structuredOpt = addEventModeSelectEl.querySelector('option[value="structured"]');
+    if (structuredOpt) structuredOpt.disabled = !structuredAllowed;
+    if (!structuredAllowed && String(addEventModeSelectEl.value) === "structured") {
+      addEventModeSelectEl.value = "note";
+    }
+  }
+
   const mode = String(addEventModeSelectEl?.value || "note");
+  if (addEventNoteFieldsEl) {
+    addEventNoteFieldsEl.classList.toggle("hidden", mode !== "note");
+  }
   if (addEventStructuredFieldsEl) {
-    addEventStructuredFieldsEl.classList.toggle("hidden", mode !== "structured");
+    addEventStructuredFieldsEl.classList.toggle("hidden", mode !== "structured" || !structuredAllowed);
+  }
+  if (addEventImagingMetaFieldsEl) {
+    const showImagingMeta = mode === "note" && eventType === "imaging";
+    addEventImagingMetaFieldsEl.classList.toggle("hidden", !showImagingMeta);
   }
 }
 
 function buildStructuredEventPayload() {
+  const diseaseRaw = String(addEventDiseaseStatusSelectEl?.value || "").trim();
   return {
-    hospital_admission: Boolean(addEventHospitalAdmissionToggleEl?.checked),
-    icu_admission: Boolean(addEventIcuAdmissionToggleEl?.checked),
-    deceased: Boolean(addEventDeceasedToggleEl?.checked),
+    hospital_admission: addEventHospitalAdmissionToggleEl?.checked ? true : null,
+    icu_admission: addEventIcuAdmissionToggleEl?.checked ? true : null,
+    deceased: addEventDeceasedToggleEl?.checked ? true : null,
+    disease_status: diseaseRaw || null,
     comment: String(addEventStatusCommentInputEl?.value || "").trim() || null,
   };
+}
+
+async function rebuildVaultCase(registryUuid) {
+  const safeRegistryUuid = String(registryUuid || "").trim();
+  if (!safeRegistryUuid) return;
+  if (!isVaultReady()) {
+    setStatus("Unlock vault first to rebuild a saved case.");
+    return;
+  }
+
+  noteVaultActivity();
+  setStatus(`Rebuilding case ${safeRegistryUuid} from baseline + all events…`);
+
+  let remoteCaseData = null;
+  try {
+    const res = await fetch(`/api/v1/registry/${encodeURIComponent(safeRegistryUuid)}/rebuild`, {
+      method: "POST",
+      headers: getVaultAuthHeaders(),
+      body: JSON.stringify({}),
+    });
+    const body = await parseJsonResponseSafe(res);
+    if (!res.ok) {
+      const detail =
+        typeof body?.detail === "string"
+          ? body.detail
+          : body?.detail?.message || body?.message || res.statusText || "unknown error";
+      throw new Error(`Rebuild failed (${res.status}): ${String(detail)}`);
+    }
+    remoteCaseData = body && typeof body === "object" ? body : null;
+  } catch (err) {
+    setStatus(String(err?.message || err || "Case rebuild failed"));
+    return;
+  }
+
+  activeCaseRegistryUuid = safeRegistryUuid;
+  activeCaseEventReviewId = null;
+  appendEventConfig = null;
+  hydrateVaultInputsFromCase(safeRegistryUuid);
+  updateAppendTargetUi();
+  renderVaultPatients();
+  updateVaultBanner();
+
+  if (remoteCaseData && typeof remoteCaseData === "object") {
+    registryCaseSnapshotByUuid.set(safeRegistryUuid, remoteCaseData);
+    const appendOnlyData = buildAppendOnlyDashboardResponse(safeRegistryUuid, remoteCaseData, "rebuilt_case");
+    await renderResults(appendOnlyData, {
+      rawData: appendOnlyData,
+      registryUuid: safeRegistryUuid,
+      remoteCaseData,
+    });
+    renderCaseEvents(remoteCaseData);
+    if (String(remoteCaseData.source_run_id || "").trim()) {
+      setStatus(`Rebuilt case ${safeRegistryUuid}. Baseline procedure + appended events reloaded.`);
+    } else {
+      setStatus(
+        `Rebuilt case ${safeRegistryUuid}, but no persisted baseline run was found. Re-submit baseline procedure, then append events.`,
+      );
+    }
+  } else {
+    await loadVaultCaseView(safeRegistryUuid);
+  }
 }
 
 async function loadVaultCaseView(registryUuid) {
@@ -1308,73 +1994,121 @@ async function loadVaultCaseView(registryUuid) {
     return;
   }
 
-  appendTargetRegistryUuid = safeRegistryUuid;
-  if (!appendEventConfig || appendEventConfig.registry_uuid !== safeRegistryUuid) {
-    appendEventConfig = null;
-  }
+  activeCaseRegistryUuid = safeRegistryUuid;
+  activeCaseEventReviewId = null;
+  if (appendEventConfig && appendEventConfig.registry_uuid !== safeRegistryUuid) appendEventConfig = null;
+  hydrateVaultInputsFromCase(safeRegistryUuid);
   updateAppendTargetUi();
   renderVaultPatients();
+  updateVaultBanner();
   noteVaultActivity();
-
-  setStatus(`Loading saved case ${safeRegistryUuid}…`);
-
-  let remoteCaseData = null;
-  try {
-    remoteCaseData = await fetchRegistryCaseSnapshot(safeRegistryUuid, { silent: false });
-  } catch (err) {
-    const message = String(err?.message || err || "Unknown error");
-    setStatus(`Case load failed: ${message}`);
-    return;
-  }
-
-  const localData = vaultPatientMap.get(safeRegistryUuid) || null;
-  const fallbackResponse = {
-    registry: isPlainObject(remoteCaseData?.registry) ? remoteCaseData.registry : {},
-    registry_uuid: safeRegistryUuid,
-  };
-  const gridResponse = isPlainObject(lastServerResponse) ? lastServerResponse : fallbackResponse;
-
-  const container = document.getElementById("resultsContainer");
-  if (container) container.classList.remove("hidden");
 
   // Loading a saved case is a view/switch action, not a persisted run.
   setRunId(null);
   setFeedbackStatus("Loaded saved case view. No new data submitted.");
   resetEditedState();
 
-  await maybeRenderRegistryGrid(gridResponse, {
-    registryUuid: safeRegistryUuid,
-    vaultLocalData: localData,
-    remoteCaseData,
-  });
+  let cachedSnapshot = null;
+  let cacheError = null;
+  try {
+    cachedSnapshot = await loadCaseSnapshot(vaultVmk, vaultUserId, safeRegistryUuid);
+  } catch (err) {
+    cacheError = err;
+    cachedSnapshot = null;
+  }
 
-  if (serverResponseEl) {
-    serverResponseEl.textContent = JSON.stringify(
-      {
+  if (cachedSnapshot && typeof cachedSnapshot === "object") {
+    await renderResults(cachedSnapshot, {
+      rawData: {
         mode: "loaded_saved_case",
+        source: "client_snapshot_cache",
         registry_uuid: safeRegistryUuid,
-        has_remote_case: Boolean(remoteCaseData),
-        remote_case_version: remoteCaseData?.version ?? null,
+        has_remote_case: null,
       },
-      null,
-      2,
+      registryUuid: safeRegistryUuid,
+      remoteCaseData: null,
+      skipRemoteCaseLookup: true,
+      skipSnapshotPersist: true,
+    });
+    setStatus(`Loaded case ${safeRegistryUuid} from device cache. Refreshing canonical remote snapshot…`);
+  } else if (cacheError) {
+    setStatus(
+      `Device snapshot cache is invalid for ${safeRegistryUuid}: ${String(cacheError?.message || cacheError)}. Loading canonical remote snapshot…`,
     );
+  } else {
+    setStatus(`Loading saved case ${safeRegistryUuid}…`);
+  }
+
+  let remoteCaseData = null;
+  try {
+    remoteCaseData = await fetchRegistryCaseSnapshot(safeRegistryUuid, {
+      silent: Boolean(cachedSnapshot),
+      forceRemote: true,
+    });
+  } catch (err) {
+    const message = String(err?.message || err || "Unknown error");
+    renderCaseEvents(null);
+    setStatus(`Case load failed: ${message}`);
+    return;
   }
 
   if (!remoteCaseData) {
+    renderCaseEvents(null);
+    if (cachedSnapshot) {
+      setStatus(
+        `Loaded case ${safeRegistryUuid} from cache. No canonical remote registry record exists (or it is currently unavailable).`,
+      );
+      return;
+    }
     setStatus(
       `Loaded local case ${safeRegistryUuid}. No canonical remote registry record exists yet for this case.`,
     );
     return;
   }
-  setStatus(`Loaded saved case ${safeRegistryUuid} (remote version ${remoteCaseData.version}).`);
+
+  renderCaseEvents(remoteCaseData);
+
+  if (cachedSnapshot && typeof cachedSnapshot === "object") {
+    await renderResults(cachedSnapshot, {
+      rawData: {
+        mode: "loaded_saved_case",
+        source: "client_snapshot_cache",
+        registry_uuid: safeRegistryUuid,
+        has_remote_case: true,
+        remote_case_version: remoteCaseData?.version ?? null,
+        remote_case_updated_at: remoteCaseData?.updated_at ?? null,
+        remote_event_count: Array.isArray(remoteCaseData?.events) ? remoteCaseData.events.length : 0,
+      },
+      registryUuid: safeRegistryUuid,
+      remoteCaseData,
+      skipRemoteCaseLookup: true,
+      skipSnapshotPersist: true,
+    });
+    const ver = Number.isInteger(remoteCaseData?.version) ? Number(remoteCaseData.version) : null;
+    setStatus(
+      ver != null
+        ? `Loaded case ${safeRegistryUuid} from cache (remote version ${ver}).`
+        : `Loaded case ${safeRegistryUuid} from cache (remote snapshot available).`,
+    );
+    return;
+  }
+
+  const appendOnlyData = buildAppendOnlyDashboardResponse(safeRegistryUuid, remoteCaseData, "loaded_case");
+  await renderResults(appendOnlyData, {
+    rawData: appendOnlyData,
+    registryUuid: safeRegistryUuid,
+    remoteCaseData,
+  });
+  const ver = Number.isInteger(remoteCaseData?.version) ? Number(remoteCaseData.version) : null;
+  setStatus(ver != null ? `Loaded saved case ${safeRegistryUuid} (remote version ${ver}).` : `Loaded saved case ${safeRegistryUuid}.`);
 }
 
 function openAddEventModal(registryUuid) {
+  addEventTargetRegistryUuid = registryUuid;
   const existingConfig =
     appendEventConfig && appendEventConfig.registry_uuid === registryUuid ? appendEventConfig : null;
   const structuredData = existingConfig?.structured_data || {};
-  appendTargetRegistryUuid = registryUuid;
+  const noteDraft = String(existingConfig?.note_draft_text || "");
 
   if (addEventRegistryTextEl) {
     addEventRegistryTextEl.textContent = `Case: ${registryUuid}`;
@@ -1391,6 +2125,40 @@ function openAddEventModal(registryUuid) {
     addEventModeSelectEl.value = existingConfig?.mode === "structured" ? "structured" : "note";
     syncAddEventModeUi();
   }
+  if (addEventTitleInputEl) {
+    addEventTitleInputEl.value = String(existingConfig?.event_title || "");
+  }
+  if (addEventImagingModalitySelectEl) {
+    const modality = String(existingConfig?.source_modality || "ct").trim().toLowerCase();
+    addEventImagingModalitySelectEl.value = ["ct", "pet_ct", "mri", "other"].includes(modality) ? modality : "ct";
+  }
+  if (addEventImagingSubtypeSelectEl) {
+    const subtype = String(existingConfig?.event_subtype || "followup").trim().toLowerCase();
+    addEventImagingSubtypeSelectEl.value = ["followup", "preop", "restaging", "surveillance"].includes(subtype)
+      ? subtype
+      : "followup";
+  }
+  if (addEventNoteInputEl) {
+    addEventNoteInputEl.value = noteDraft;
+  }
+  addEventDraftSourceType = String(existingConfig?.note_source_type || "manual_entry").trim() || "manual_entry";
+  if (addEventPdfInputEl) {
+    addEventPdfInputEl.value = "";
+  }
+  if (addEventPdfExtractBtn) {
+    addEventPdfExtractBtn.disabled = true;
+  }
+  if (addEventPdfMaskSelectEl) {
+    addEventPdfMaskSelectEl.value = "auto";
+  }
+  if (noteDraft) {
+    setAddEventNoteStatus("Using saved event-note draft. You can edit or replace it.", "success");
+  } else {
+    setAddEventNoteStatus(
+      "Optional: paste a scrubbed event note or extract local PDF text into this box.",
+      "neutral",
+    );
+  }
   if (addEventHospitalAdmissionToggleEl) {
     addEventHospitalAdmissionToggleEl.checked = Boolean(structuredData.hospital_admission);
   }
@@ -1400,17 +2168,38 @@ function openAddEventModal(registryUuid) {
   if (addEventDeceasedToggleEl) {
     addEventDeceasedToggleEl.checked = Boolean(structuredData.deceased);
   }
+  if (addEventDiseaseStatusSelectEl) {
+    const disease = String(structuredData.disease_status || "").trim();
+    addEventDiseaseStatusSelectEl.value = ["", "Progression", "Stable", "Response", "Mixed", "Indeterminate"].includes(disease)
+      ? disease
+      : "";
+  }
   if (addEventStatusCommentInputEl) {
     addEventStatusCommentInputEl.value = String(structuredData.comment || "");
   }
 
-  updateAppendTargetUi();
-  renderVaultPatients();
-
   if (!addEventModalEl || typeof addEventModalEl.showModal !== "function") {
-    setStatus(
-      `Add Event selected for ${registryUuid}. Browser dialog support unavailable; defaulting to pathology note append on submit.`
-    );
+    appendEventConfig =
+      existingConfig || {
+        registry_uuid: registryUuid,
+        event_type: "pathology",
+        mode: "note",
+        relative_day_offset: 0,
+        event_title: null,
+        source_modality: null,
+        event_subtype: null,
+        structured_data: null,
+        event_date: toLocalDateYmd(),
+        note_draft_text: noteDraft || null,
+        note_source_type: addEventDraftSourceType || "manual_entry",
+      };
+    activeCaseRegistryUuid = registryUuid;
+    hydrateVaultInputsFromCase(registryUuid);
+    updateAppendTargetUi();
+    renderVaultPatients();
+    updateVaultBanner();
+    setStatus(`Event configured for ${registryUuid}. Run Detection, Apply Redactions, then Submit.`);
+    addEventTargetRegistryUuid = null;
     return;
   }
   addEventModalEl.showModal();
@@ -1423,9 +2212,16 @@ if (addEventModeSelectEl) {
   });
 }
 
+if (addEventTypeSelectEl) {
+  addEventTypeSelectEl.addEventListener("change", () => {
+    syncAddEventModeUi();
+  });
+}
+
 if (addEventModalEl) {
   addEventModalEl.addEventListener("close", () => {
-    const registryUuid = String(appendTargetRegistryUuid || "").trim();
+    const registryUuid = String(addEventTargetRegistryUuid || "").trim();
+    addEventTargetRegistryUuid = null;
     if (!registryUuid) return;
     noteVaultActivity();
 
@@ -1433,6 +2229,10 @@ if (addEventModalEl) {
 
     const eventType = normalizeEventType(addEventTypeSelectEl?.value);
     const mode = String(addEventModeSelectEl?.value || "note") === "structured" ? "structured" : "note";
+    if (mode === "structured" && eventType !== "clinical_status") {
+      setStatus("Add Event failed: Structured mode is only supported for Clinical Status events.");
+      return;
+    }
     const eventDate = String(addEventDateInputEl?.value || "").trim() || toLocalDateYmd();
     const eventYmd = parseIsoDateInput(eventDate);
     if (!eventYmd) {
@@ -1441,7 +2241,11 @@ if (addEventModalEl) {
     }
 
     const patient = vaultPatientMap.get(registryUuid) || {};
-    const indexDateRaw = String(patient?.index_date || "").trim();
+    const activeIndexDateRaw =
+      registryUuid === activeCaseRegistryUuid ? String(vaultIndexDateInputEl?.value || "").trim() : "";
+    const indexDateRaw = parseIsoDateInput(activeIndexDateRaw)
+      ? activeIndexDateRaw
+      : String(patient?.index_date || "").trim();
     const indexYmd = parseIsoDateInput(indexDateRaw);
     const computedOffset = indexYmd ? diffDaysUtcNoon(indexYmd, eventYmd) : null;
     const relativeDayOffset = Number.isFinite(computedOffset) ? Number(computedOffset) : 0;
@@ -1454,11 +2258,24 @@ if (addEventModalEl) {
     }
 
     const structuredData = mode === "structured" ? buildStructuredEventPayload() : null;
+    const eventTitle = mode === "note" ? String(addEventTitleInputEl?.value || "").trim() : "";
+    const imagingModality =
+      mode === "note" && eventType === "imaging"
+        ? String(addEventImagingModalitySelectEl?.value || "").trim().toLowerCase()
+        : "";
+    const imagingSubtype =
+      mode === "note" && eventType === "imaging"
+        ? String(addEventImagingSubtypeSelectEl?.value || "").trim().toLowerCase()
+        : "";
+    const noteDraftText = mode === "note" ? String(addEventNoteInputEl?.value || "").trim() : "";
+    const noteSourceType =
+      mode === "note" ? String(addEventDraftSourceType || "manual_entry").trim() || "manual_entry" : null;
     if (mode === "structured") {
       const hasSignal = Boolean(
         structuredData?.hospital_admission ||
           structuredData?.icu_admission ||
           structuredData?.deceased ||
+          String(structuredData?.disease_status || "").trim() ||
           String(structuredData?.comment || "").trim(),
       );
       if (!hasSignal) {
@@ -1472,47 +2289,93 @@ if (addEventModalEl) {
       event_type: eventType,
       mode,
       relative_day_offset: relativeDayOffset,
+      event_title: eventTitle || null,
+      source_modality: imagingModality || null,
+      event_subtype: imagingSubtype || null,
       structured_data: structuredData,
       event_date: eventDate,
+      note_draft_text: noteDraftText || null,
+      note_source_type: noteSourceType,
     };
+    activeCaseRegistryUuid = registryUuid;
+    hydrateVaultInputsFromCase(registryUuid);
 
     updateAppendTargetUi();
     renderVaultPatients();
+    updateVaultBanner();
     refreshZkControls();
+
+    let loadedDraft = false;
+    if (mode === "note" && noteDraftText && typeof loadAppendEventDraftIntoEditor === "function") {
+      loadedDraft = Boolean(
+        loadAppendEventDraftIntoEditor({
+          noteText: noteDraftText,
+          sourceType: noteSourceType || "manual_entry",
+        }),
+      );
+    }
 
     const baseMessage = `Event configured: ${formatEventTypeLabel(eventType)} (${mode}) at ${formatTOffset(
       relativeDayOffset,
     )} DAYS for case ${registryUuid}.`;
-    setStatus(offsetWarning ? `${baseMessage} ${offsetWarning}` : baseMessage);
+    const noteMessage =
+      mode !== "note"
+        ? ""
+        : loadedDraft
+          ? " Event note loaded into the editor. Run Detection, then Apply Redactions, then Submit."
+          : noteDraftText
+            ? " Event note draft saved for this case."
+            : " Using current editor text for this event.";
+    const message = `${baseMessage}${noteMessage}`.trim();
+    setStatus(offsetWarning ? `${message} ${offsetWarning}` : message);
   });
 }
 
 function updateAppendTargetUi() {
-  if (!vaultAppendTargetTextEl) return;
-  if (appendTargetRegistryUuid) {
-    const activeConfig =
-      appendEventConfig && appendEventConfig.registry_uuid === appendTargetRegistryUuid
-        ? appendEventConfig
-        : null;
-    const eventLabel = activeConfig
-      ? `${formatEventTypeLabel(activeConfig.event_type)} @ ${formatTOffset(
-          Number(activeConfig.relative_day_offset || 0)
-        )} DAYS`
-      : "event not configured";
-    vaultAppendTargetTextEl.textContent = `Mode: Add event to case ${appendTargetRegistryUuid} (${eventLabel})`;
-  } else {
-    vaultAppendTargetTextEl.textContent = "Mode: Create new index case";
+  if (vaultActiveCaseTextEl) {
+    if (activeCaseRegistryUuid) {
+      const patient = vaultPatientMap.get(activeCaseRegistryUuid) || null;
+      const label = patient ? getPatientRowLabel(patient, activeCaseRegistryUuid) : `Case ${activeCaseRegistryUuid.slice(0, 8)}`;
+      vaultActiveCaseTextEl.textContent = `Active case: ${label} (${activeCaseRegistryUuid})`;
+    } else {
+      vaultActiveCaseTextEl.textContent = "Active case: (none). Baseline submit will create a new case.";
+    }
   }
+
+  const activeConfig =
+    appendEventConfig && String(appendEventConfig.registry_uuid || "").trim() ? appendEventConfig : null;
+  if (vaultEventModeTextEl) {
+    if (activeConfig) {
+      const uuid = String(activeConfig.registry_uuid || "").trim();
+      const modeLabel = activeConfig.mode === "structured" ? "structured" : "note";
+      const eventLabel = `${formatEventTypeLabel(activeConfig.event_type)} (${modeLabel}) @ ${formatTOffset(
+        Number(activeConfig.relative_day_offset || 0),
+      )} DAYS`;
+      vaultEventModeTextEl.textContent = `Event mode: ${eventLabel} for case ${uuid}.`;
+    } else {
+      vaultEventModeTextEl.textContent = "Event mode: (none).";
+    }
+  }
+
   if (clearAppendTargetBtn) {
-    clearAppendTargetBtn.disabled = !appendTargetRegistryUuid;
+    clearAppendTargetBtn.disabled = IS_CLASSIC || !activeConfig || vaultBusy;
+  }
+
+  if (vaultCreateCaseBtn) vaultCreateCaseBtn.disabled = IS_CLASSIC || !isVaultReady() || vaultBusy;
+  if (vaultSaveCaseBtn)
+    vaultSaveCaseBtn.disabled = IS_CLASSIC || !isVaultReady() || !activeCaseRegistryUuid || vaultBusy;
+  if (vaultClearActiveCaseBtn) vaultClearActiveCaseBtn.disabled = IS_CLASSIC || !activeCaseRegistryUuid || vaultBusy;
+
+  if (contextualAppendBadgeEl) {
+    const showBadge = Boolean(activeConfig && activeConfig.mode === "note" && isPathOrImagingEventType(activeConfig.event_type));
+    contextualAppendBadgeEl.classList.toggle("hidden", !showBadge);
   }
 }
 
 function isStructuredOnlyAppendConfigured() {
   return Boolean(
-    appendTargetRegistryUuid &&
-      appendEventConfig &&
-      appendEventConfig.registry_uuid === appendTargetRegistryUuid &&
+    appendEventConfig &&
+      String(appendEventConfig.registry_uuid || "").trim() &&
       appendEventConfig.mode === "structured" &&
       appendEventConfig.structured_data,
   );
@@ -1535,17 +2398,774 @@ function getPatientMrn(patient) {
   return v || "—";
 }
 
+function formatCaseEventTypeLabel(eventType) {
+  const raw = String(eventType || "").trim();
+  if (!raw) return "Other";
+  const normalized = raw.toLowerCase();
+  if (normalized === "procedure_report") return "Procedure";
+  return raw
+    .replaceAll("_", " ")
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+function caseEventBadgeClass(eventType) {
+  const normalized = String(eventType || "").trim().toLowerCase();
+  if (normalized === "pathology") return "pathology";
+  if (normalized === "imaging") return "imaging";
+  if (normalized === "procedure_report" || normalized === "procedure" || normalized === "procedure_addendum")
+    return "procedure";
+  if (normalized.includes("clinical") || normalized === "treatment_update" || normalized === "complication")
+    return "clinical";
+  return "";
+}
+
+function formatCaseEventCreatedAt(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "—";
+  const d = new Date(raw);
+  if (!Number.isFinite(d.getTime())) return raw;
+  return d.toLocaleString();
+}
+
+function formatCaseEventSource(ev) {
+  const sourceParts = [];
+  if (ev?.source_type) sourceParts.push(String(ev.source_type));
+  if (ev?.source_modality) sourceParts.push(String(ev.source_modality));
+  if (ev?.event_subtype) sourceParts.push(String(ev.event_subtype));
+  return sourceParts.length ? sourceParts.join(" / ") : "—";
+}
+
+function normalizeCaseEventReviewType(eventType) {
+  const normalized = String(eventType || "").trim().toLowerCase();
+  if (normalized === "pathology" || normalized === "imaging") return normalized;
+  if (
+    normalized === "clinical_status" ||
+    normalized === "clinical_update" ||
+    normalized === "treatment_update" ||
+    normalized === "complication"
+  ) {
+    return "clinical";
+  }
+  return normalized;
+}
+
+function normalizeCaseEventStationToken(value) {
+  return String(value || "").replace(/[^0-9A-Za-z]/g, "").toUpperCase().trim();
+}
+
+function toIntOrNull(value) {
+  const num = Number(value);
+  if (!Number.isFinite(num)) return null;
+  return Math.trunc(num);
+}
+
+function normalizeImagingModality(value) {
+  const raw = String(value || "").trim().toLowerCase();
+  return ["ct", "pet_ct", "cta", "mri", "other"].includes(raw) ? raw : "other";
+}
+
+function normalizeImagingSubtype(value) {
+  const raw = String(value || "").trim().toLowerCase();
+  return ["preop", "followup", "restaging", "surveillance"].includes(raw) ? raw : null;
+}
+
+function normalizeResponseStatus(value) {
+  const raw = String(value || "").trim();
+  return ["Progression", "Stable", "Response", "Mixed", "Indeterminate"].includes(raw) ? raw : null;
+}
+
+function buildPathologyEventRegistryPreview(eventRow, extracted, remoteCaseData) {
+  const registry = {};
+  const eventId = String(eventRow?.id || "").trim() || null;
+  const eventOffset = toIntOrNull(eventRow?.relative_day_offset);
+  const remoteRegistry = isPlainObject(remoteCaseData?.registry) ? remoteCaseData.registry : {};
+
+  const pathologyResults = isPlainObject(extracted?.pathology_results_update)
+    ? deepClone(extracted.pathology_results_update)
+    : null;
+  if (pathologyResults && Object.keys(pathologyResults).length) {
+    registry.pathology_results = pathologyResults;
+  }
+
+  const remoteNodeEvents = Array.isArray(remoteRegistry?.procedures_performed?.linear_ebus?.node_events)
+    ? remoteRegistry.procedures_performed.linear_ebus.node_events
+    : [];
+  const remoteNodeByStation = new Map();
+  remoteNodeEvents.forEach((node) => {
+    const key = normalizeCaseEventStationToken(node?.station);
+    if (key && !remoteNodeByStation.has(key)) remoteNodeByStation.set(key, node);
+  });
+
+  const nodeUpdates = Array.isArray(extracted?.node_updates) ? extracted.node_updates : [];
+  const nodeEvents = nodeUpdates
+    .filter((row) => isPlainObject(row))
+    .map((row) => {
+      const stationRaw = String(row?.station || "").trim().toUpperCase();
+      const stationKey = normalizeCaseEventStationToken(stationRaw);
+      const base = stationKey ? remoteNodeByStation.get(stationKey) || {} : {};
+      return {
+        station: stationRaw || String(base?.station || "").trim().toUpperCase() || null,
+        action: base?.action || null,
+        passes: toIntOrNull(base?.passes),
+        elastography_pattern: String(base?.elastography_pattern || "").trim() || null,
+        evidence_quote: String(base?.evidence_quote || "").trim() || null,
+        path_result: String(row?.path_result || "").trim() || null,
+        path_diagnosis_text: String(row?.path_diagnosis_text || "").trim() || null,
+        path_source_event_id: eventId,
+        path_relative_day_offset: eventOffset,
+      };
+    })
+    .filter((row) => row.station);
+
+  if (nodeEvents.length) {
+    registry.procedures_performed = {
+      linear_ebus: {
+        performed: true,
+        stations_sampled: nodeEvents.map((row) => row.station),
+        node_events: nodeEvents,
+      },
+    };
+  }
+
+  const peripheralUpdates = Array.isArray(extracted?.peripheral_updates) ? extracted.peripheral_updates : [];
+  const peripheralTargets = peripheralUpdates
+    .filter((row) => isPlainObject(row))
+    .map((row, idx) => {
+      const fallbackKey = `event_target_${idx + 1}`;
+      return {
+        target_key: String(row?.target_key || "").trim() || fallbackKey,
+        laterality: String(row?.laterality || "").trim() || null,
+        lobe: String(row?.lobe || "").trim() || null,
+        segment: String(row?.segment || "").trim() || null,
+        path_result: String(row?.path_result || "").trim() || null,
+        path_diagnosis_text: String(row?.path_diagnosis_text || "").trim() || null,
+        path_source_event_id: eventId,
+        path_relative_day_offset: eventOffset,
+      };
+    });
+  if (peripheralTargets.length) {
+    registry.targets = registry.targets || {};
+    registry.targets.peripheral_targets = peripheralTargets;
+  }
+
+  return registry;
+}
+
+function buildImagingEventRegistryPreview(eventRow, extracted) {
+  const registry = {};
+  const eventId = String(eventRow?.id || "").trim() || null;
+  const eventOffset = toIntOrNull(eventRow?.relative_day_offset);
+
+  const snapshotRaw = isPlainObject(extracted?.imaging_snapshot) ? extracted.imaging_snapshot : {};
+  const snapshotOffset = toIntOrNull(snapshotRaw?.relative_day_offset);
+  const snapshot = {
+    relative_day_offset: snapshotOffset !== null ? snapshotOffset : eventOffset !== null ? eventOffset : 0,
+    modality: normalizeImagingModality(snapshotRaw?.modality || eventRow?.source_modality || "ct"),
+    subtype: normalizeImagingSubtype(snapshotRaw?.subtype || eventRow?.event_subtype),
+    event_title: String(snapshotRaw?.event_title || eventRow?.event_title || "").trim() || null,
+    response: normalizeResponseStatus(snapshotRaw?.response),
+    overall_impression_text: String(snapshotRaw?.overall_impression_text || "").trim() || null,
+    qa_flags: Array.isArray(snapshotRaw?.qa_flags)
+      ? snapshotRaw.qa_flags.map((flag) => String(flag || "").trim()).filter(Boolean)
+      : [],
+  };
+
+  registry.imaging_summary =
+    snapshot.subtype === "preop"
+      ? { baseline: snapshot, followups: [] }
+      : { baseline: null, followups: [snapshot] };
+
+  const targetsUpdate = isPlainObject(extracted?.targets_update) ? extracted.targets_update : {};
+  const peripheralTargetsRaw = Array.isArray(targetsUpdate?.peripheral_targets) ? targetsUpdate.peripheral_targets : [];
+  const mediastinalTargetsRaw = Array.isArray(targetsUpdate?.mediastinal_targets)
+    ? targetsUpdate.mediastinal_targets
+    : [];
+
+  const peripheralTargets = peripheralTargetsRaw
+    .filter((row) => isPlainObject(row))
+    .map((row, idx) => ({
+      target_key: String(row?.target_key || "").trim() || `event_target_${idx + 1}`,
+      laterality: String(row?.laterality || "").trim() || null,
+      lobe: String(row?.lobe || "").trim() || null,
+      segment: String(row?.segment || "").trim() || null,
+      size_mm_long: toIntOrNull(row?.size_mm_long),
+      size_mm_short: toIntOrNull(row?.size_mm_short),
+      size_mm_cc: toIntOrNull(row?.size_mm_cc),
+      density: String(row?.density || "").trim() || null,
+      pet_avid: typeof row?.pet_avid === "boolean" ? row.pet_avid : null,
+      pet_suvmax: Number.isFinite(Number(row?.pet_suvmax)) ? Number(row.pet_suvmax) : null,
+      pet_delayed_suvmax: Number.isFinite(Number(row?.pet_delayed_suvmax)) ? Number(row.pet_delayed_suvmax) : null,
+      comparative_change: String(row?.comparative_change || "").trim() || null,
+      source_event_id: eventId,
+      source_relative_day_offset: eventOffset,
+    }));
+  const mediastinalTargets = mediastinalTargetsRaw
+    .filter((row) => isPlainObject(row))
+    .map((row) => ({
+      station: String(row?.station || "").trim() || null,
+      location_text: String(row?.location_text || "").trim() || null,
+      short_axis_mm: toIntOrNull(row?.short_axis_mm),
+      pet_avid: typeof row?.pet_avid === "boolean" ? row.pet_avid : null,
+      pet_suvmax: Number.isFinite(Number(row?.pet_suvmax)) ? Number(row.pet_suvmax) : null,
+      pet_delayed_suvmax: Number.isFinite(Number(row?.pet_delayed_suvmax)) ? Number(row.pet_delayed_suvmax) : null,
+      comparative_change: String(row?.comparative_change || "").trim() || null,
+      source_event_id: eventId,
+      source_relative_day_offset: eventOffset,
+    }));
+
+  if (peripheralTargets.length || mediastinalTargets.length) {
+    registry.targets = {};
+    if (peripheralTargets.length) registry.targets.peripheral_targets = peripheralTargets;
+    if (mediastinalTargets.length) registry.targets.mediastinal_targets = mediastinalTargets;
+  }
+
+  return registry;
+}
+
+function buildClinicalEventRegistryPreview(eventRow, extracted) {
+  const registry = {};
+  const eventId = String(eventRow?.id || "").trim() || null;
+  const eventOffset = toIntOrNull(eventRow?.relative_day_offset);
+  const extractedUpdate = isPlainObject(extracted?.clinical_update) ? deepClone(extracted.clinical_update) : null;
+  const structured = isPlainObject(eventRow?.structured_data) ? eventRow.structured_data : null;
+  const update = extractedUpdate || (structured ? deepClone(structured) : null);
+  if (!update) return registry;
+
+  update.relative_day_offset =
+    toIntOrNull(update?.relative_day_offset) !== null
+      ? toIntOrNull(update.relative_day_offset)
+      : eventOffset !== null
+        ? eventOffset
+        : 0;
+  update.update_type = String(update?.update_type || "clinical_update").trim() || "clinical_update";
+  update.event_title = String(update?.event_title || eventRow?.event_title || "").trim() || null;
+  update.source_event_id = String(update?.source_event_id || eventId || "").trim() || null;
+  update.summary_text = String(update?.summary_text || update?.comment || "").trim() || null;
+  update.disease_status = normalizeResponseStatus(update?.disease_status);
+  update.hospital_admission = typeof update?.hospital_admission === "boolean" ? update.hospital_admission : null;
+  update.icu_admission = typeof update?.icu_admission === "boolean" ? update.icu_admission : null;
+  update.deceased = typeof update?.deceased === "boolean" ? update.deceased : null;
+
+  registry.clinical_course = {
+    updates: [update],
+    current_state: {
+      relative_day_offset: update.relative_day_offset,
+      summary_text: update.summary_text,
+      hospital_admission: update.hospital_admission,
+      icu_admission: update.icu_admission,
+      deceased: update.deceased,
+      disease_status: update.disease_status,
+      source_event_id: update.source_event_id,
+    },
+  };
+  return registry;
+}
+
+function buildCaseEventRegistryPreview(eventRow, remoteCaseData) {
+  const extracted = isPlainObject(eventRow?.extracted_json) ? eventRow.extracted_json : {};
+  const reviewType = normalizeCaseEventReviewType(eventRow?.event_type);
+  if (reviewType === "pathology") return buildPathologyEventRegistryPreview(eventRow, extracted, remoteCaseData);
+  if (reviewType === "imaging") return buildImagingEventRegistryPreview(eventRow, extracted);
+  if (reviewType === "clinical") return buildClinicalEventRegistryPreview(eventRow, extracted);
+  return {};
+}
+
+function canOpenCaseEventReview(eventRow) {
+  if (!eventRow || typeof eventRow !== "object") return false;
+  const reviewType = normalizeCaseEventReviewType(eventRow?.event_type);
+  if (!["pathology", "imaging", "clinical"].includes(reviewType)) return false;
+  if (reviewType === "clinical") {
+    return isPlainObject(eventRow?.extracted_json) || isPlainObject(eventRow?.structured_data);
+  }
+  return isPlainObject(eventRow?.extracted_json);
+}
+
+function buildCaseEventDashboardResponse(eventRow, remoteCaseData) {
+  const extracted = isPlainObject(eventRow?.extracted_json) ? eventRow.extracted_json : {};
+  const reviewType = normalizeCaseEventReviewType(eventRow?.event_type);
+  const registry = buildCaseEventRegistryPreview(eventRow, remoteCaseData);
+  const qaFlags = Array.isArray(extracted?.qa_flags)
+    ? extracted.qa_flags.map((flag) => String(flag || "").trim()).filter(Boolean)
+    : [];
+  const auditWarnings = qaFlags.map((flag) => `EVENT_QA: ${flag}`);
+  const needsReview = auditWarnings.length > 0;
+
+  return {
+    registry_uuid: null,
+    registry,
+    cpt_codes: [],
+    suggestions: [],
+    audit_warnings: auditWarnings,
+    warnings: auditWarnings,
+    validation_errors: [],
+    coder_difficulty: "EVENT_REVIEW",
+    needs_manual_review: needsReview,
+    review_status: needsReview ? "manual_review" : "finalized",
+    pipeline_mode: `case_event_review_${reviewType || "other"}`,
+    total_work_rvu: null,
+    estimated_payment: null,
+    per_code_billing: [],
+    missing_field_prompts: [],
+    evidence: isPlainObject(extracted?.evidence) ? extracted.evidence : {},
+  };
+}
+
+async function openCaseEventInReviewPanel(eventRow, remoteCaseData) {
+  if (!canOpenCaseEventReview(eventRow)) {
+    setStatus("Selected event does not yet have a tabular event-preview payload.");
+    return;
+  }
+
+  const reviewData = buildCaseEventDashboardResponse(eventRow, remoteCaseData);
+  const rawPayload = {
+    mode: "case_event_review",
+    event_type: String(eventRow?.event_type || "other"),
+    event: deepClone(eventRow),
+    extracted: isPlainObject(eventRow?.extracted_json) ? eventRow.extracted_json : null,
+    structured_data: isPlainObject(eventRow?.structured_data) ? eventRow.structured_data : null,
+    event_review_registry: reviewData.registry,
+    source_case_registry_uuid: String(activeCaseRegistryUuid || "").trim() || null,
+  };
+
+  await renderResults(reviewData, {
+    rawData: rawPayload,
+    registryUuid: "",
+    remoteCaseData: null,
+    skipRemoteCaseLookup: true,
+  });
+  activeCaseEventReviewId = String(eventRow?.id || "").trim() || null;
+  setRunId(null);
+  setFeedbackStatus("Viewing selected event extraction snapshot (preview mode).");
+  setStatus(`${formatCaseEventTypeLabel(eventRow?.event_type)} event loaded in review panel (preview).`);
+}
+
+async function restoreActiveCaseSnapshotView() {
+  const registryUuid = String(activeCaseRegistryUuid || "").trim();
+  if (!registryUuid) {
+    setStatus("No active case selected.");
+    return;
+  }
+  activeCaseEventReviewId = null;
+  await loadVaultCaseView(registryUuid);
+}
+
+function renderCaseEventDetails(eventRow, remoteCaseData = null) {
+  if (!vaultCaseEventDetailHostEl) return;
+  clearEl(vaultCaseEventDetailHostEl);
+
+  if (!eventRow || typeof eventRow !== "object") {
+    vaultCaseEventDetailHostEl.textContent = "Select an event to inspect extraction details.";
+    return;
+  }
+
+  const titleEl = document.createElement("div");
+  titleEl.className = "vault-case-event-detail-title";
+  titleEl.textContent = `${formatCaseEventTypeLabel(eventRow?.event_type)} event details`;
+  vaultCaseEventDetailHostEl.appendChild(titleEl);
+
+  const metaGrid = document.createElement("div");
+  metaGrid.className = "vault-case-event-detail-meta";
+  [
+    ["Event ID", String(eventRow?.id || "—")],
+    ["Created", formatCaseEventCreatedAt(eventRow?.created_at)],
+    ["T offset", formatTOffset(eventRow?.relative_day_offset || 0)],
+    ["Source", formatCaseEventSource(eventRow)],
+    ["Title", String(eventRow?.event_title || "—")],
+  ].forEach(([label, value]) => {
+    const item = document.createElement("div");
+    item.innerHTML = `<strong>${safeHtml(label)}:</strong> ${safeHtml(value)}`;
+    metaGrid.appendChild(item);
+  });
+  vaultCaseEventDetailHostEl.appendChild(metaGrid);
+
+  const actions = document.createElement("div");
+  actions.className = "vault-case-event-detail-actions";
+
+  const openReviewBtn = document.createElement("button");
+  openReviewBtn.type = "button";
+  openReviewBtn.className = "secondary";
+  openReviewBtn.textContent = "Open Event In Review Panel";
+  openReviewBtn.disabled = !canOpenCaseEventReview(eventRow);
+  openReviewBtn.addEventListener("click", async () => {
+    try {
+      openReviewBtn.disabled = true;
+      await openCaseEventInReviewPanel(eventRow, remoteCaseData);
+    } finally {
+      openReviewBtn.disabled = !canOpenCaseEventReview(eventRow);
+    }
+  });
+  actions.appendChild(openReviewBtn);
+
+  const showCaseBtn = document.createElement("button");
+  showCaseBtn.type = "button";
+  showCaseBtn.className = "secondary";
+  showCaseBtn.textContent = "Show Full Case Snapshot";
+  showCaseBtn.disabled = !String(activeCaseRegistryUuid || "").trim();
+  showCaseBtn.addEventListener("click", async () => {
+    try {
+      showCaseBtn.disabled = true;
+      await restoreActiveCaseSnapshotView();
+    } catch (err) {
+      setStatus(`Failed to restore case snapshot view: ${String(err?.message || err)}`);
+    } finally {
+      showCaseBtn.disabled = !String(activeCaseRegistryUuid || "").trim();
+    }
+  });
+  actions.appendChild(showCaseBtn);
+
+  vaultCaseEventDetailHostEl.appendChild(actions);
+
+  const extractedPayload = isPlainObject(eventRow?.extracted_json) ? eventRow.extracted_json : null;
+  const structuredPayload = isPlainObject(eventRow?.structured_data) ? eventRow.structured_data : null;
+  const reviewType = normalizeCaseEventReviewType(eventRow?.event_type);
+
+  const appendRawJson = (labelText, payload) => {
+    const details = document.createElement("details");
+    details.className = "dash-details";
+    const summary = document.createElement("summary");
+    summary.textContent = labelText;
+    details.appendChild(summary);
+    const pre = document.createElement("pre");
+    pre.className = "vault-case-event-detail-pre";
+    pre.textContent = JSON.stringify(payload, null, 2);
+    details.appendChild(pre);
+    vaultCaseEventDetailHostEl.appendChild(details);
+  };
+
+  const renderSimpleTable = (headers, rows) => {
+    const table = document.createElement("table");
+    table.className = "dash-table striped";
+    const thead = document.createElement("thead");
+    const tr = document.createElement("tr");
+    headers.forEach((h) => {
+      const th = document.createElement("th");
+      th.textContent = h;
+      tr.appendChild(th);
+    });
+    thead.appendChild(tr);
+    table.appendChild(thead);
+    const tbody = document.createElement("tbody");
+    rows.forEach((cells) => {
+      const rowTr = document.createElement("tr");
+      cells.forEach((cell) => {
+        const td = document.createElement("td");
+        td.textContent = String(cell ?? "—");
+        rowTr.appendChild(td);
+      });
+      tbody.appendChild(rowTr);
+    });
+    table.appendChild(tbody);
+    return table;
+  };
+
+  if (reviewType === "clinical") {
+    const update = isPlainObject(extractedPayload?.clinical_update)
+      ? extractedPayload.clinical_update
+      : structuredPayload || null;
+    if (update) {
+      const block = document.createElement("div");
+      block.className = "vault-case-event-detail-block";
+      const label = document.createElement("div");
+      label.className = "vault-case-event-detail-label";
+      label.textContent = "Clinical status summary";
+      block.appendChild(label);
+      const rows = [
+        ["Hospital admission", update.hospital_admission === true ? "Yes" : update.hospital_admission === false ? "No" : "—"],
+        ["ICU admission", update.icu_admission === true ? "Yes" : update.icu_admission === false ? "No" : "—"],
+        ["Deceased", update.deceased === true ? "Yes" : update.deceased === false ? "No" : "—"],
+        ["Disease status", String(update.disease_status || "—")],
+        ["Comment", String(update.comment || update.summary_text || "—")],
+      ];
+      const table = document.createElement("table");
+      table.className = "dash-table kv-table";
+      const tbody = document.createElement("tbody");
+      rows.forEach(([k, v]) => {
+        const tr = document.createElement("tr");
+        const tdK = document.createElement("td");
+        tdK.textContent = k;
+        const tdV = document.createElement("td");
+        tdV.textContent = v;
+        tr.appendChild(tdK);
+        tr.appendChild(tdV);
+        tbody.appendChild(tr);
+      });
+      table.appendChild(tbody);
+      block.appendChild(table);
+      vaultCaseEventDetailHostEl.appendChild(block);
+    }
+  } else if (reviewType === "pathology" && extractedPayload) {
+    const nodeUpdates = Array.isArray(extractedPayload?.node_updates) ? extractedPayload.node_updates : [];
+    const peripheralUpdates = Array.isArray(extractedPayload?.peripheral_updates) ? extractedPayload.peripheral_updates : [];
+
+    if (nodeUpdates.length > 0) {
+      const block = document.createElement("div");
+      block.className = "vault-case-event-detail-block";
+      const label = document.createElement("div");
+      label.className = "vault-case-event-detail-label";
+      label.textContent = "Pathology (LN stations)";
+      block.appendChild(label);
+      const rows = nodeUpdates
+        .filter((r) => r && typeof r === "object")
+        .map((r) => [String(r.station || "—"), String(r.path_result || "—"), String(r.path_diagnosis_text || "—")]);
+      block.appendChild(renderSimpleTable(["Station", "Result", "Diagnosis"], rows));
+      vaultCaseEventDetailHostEl.appendChild(block);
+    }
+
+    if (peripheralUpdates.length > 0) {
+      const block = document.createElement("div");
+      block.className = "vault-case-event-detail-block";
+      const label = document.createElement("div");
+      label.className = "vault-case-event-detail-label";
+      label.textContent = "Pathology (peripheral targets)";
+      block.appendChild(label);
+      const rows = peripheralUpdates
+        .filter((r) => r && typeof r === "object")
+        .map((r) => [
+          String(r.target_key || [r.laterality, r.lobe, r.segment].filter(Boolean).join(" ") || "—"),
+          String(r.path_result || "—"),
+          String(r.path_diagnosis_text || "—"),
+        ]);
+      block.appendChild(renderSimpleTable(["Target", "Result", "Diagnosis"], rows));
+      vaultCaseEventDetailHostEl.appendChild(block);
+    }
+  } else if (reviewType === "imaging" && extractedPayload) {
+    const snap = isPlainObject(extractedPayload?.imaging_snapshot) ? extractedPayload.imaging_snapshot : {};
+    const targetsUpdate = isPlainObject(extractedPayload?.targets_update) ? extractedPayload.targets_update : {};
+    const mediastinalTargets = Array.isArray(targetsUpdate?.mediastinal_targets) ? targetsUpdate.mediastinal_targets : [];
+    const peripheralTargets = Array.isArray(targetsUpdate?.peripheral_targets) ? targetsUpdate.peripheral_targets : [];
+
+    const snapBlock = document.createElement("div");
+    snapBlock.className = "vault-case-event-detail-block";
+    const snapLabel = document.createElement("div");
+    snapLabel.className = "vault-case-event-detail-label";
+    snapLabel.textContent = "Imaging summary";
+    snapBlock.appendChild(snapLabel);
+    const snapRows = [
+      ["Modality", String(snap.modality || eventRow?.source_modality || "—")],
+      ["Subtype", String(snap.subtype || eventRow?.event_subtype || "—")],
+      ["Response", String(snap.response || "—")],
+      ["Impression", String(snap.overall_impression_text || "—")],
+    ];
+    const table = document.createElement("table");
+    table.className = "dash-table kv-table";
+    const tbody = document.createElement("tbody");
+    snapRows.forEach(([k, v]) => {
+      const tr = document.createElement("tr");
+      const tdK = document.createElement("td");
+      tdK.textContent = k;
+      const tdV = document.createElement("td");
+      tdV.textContent = v;
+      tr.appendChild(tdK);
+      tr.appendChild(tdV);
+      tbody.appendChild(tr);
+    });
+    table.appendChild(tbody);
+    snapBlock.appendChild(table);
+    vaultCaseEventDetailHostEl.appendChild(snapBlock);
+
+    if (mediastinalTargets.length > 0) {
+      const block = document.createElement("div");
+      block.className = "vault-case-event-detail-block";
+      const label = document.createElement("div");
+      label.className = "vault-case-event-detail-label";
+      label.textContent = "Mediastinal targets";
+      block.appendChild(label);
+      const rows = mediastinalTargets
+        .filter((r) => r && typeof r === "object")
+        .map((r) => [
+          String(r.station || "—"),
+          r.short_axis_mm ?? "—",
+          typeof r.pet_avid === "boolean" ? (r.pet_avid ? "Yes" : "No") : "—",
+          r.pet_suvmax ?? "—",
+          String(r.comparative_change || "—"),
+        ]);
+      block.appendChild(renderSimpleTable(["Station", "Short axis (mm)", "PET avid", "SUVmax", "Change"], rows));
+      vaultCaseEventDetailHostEl.appendChild(block);
+    }
+
+    if (peripheralTargets.length > 0) {
+      const block = document.createElement("div");
+      block.className = "vault-case-event-detail-block";
+      const label = document.createElement("div");
+      label.className = "vault-case-event-detail-label";
+      label.textContent = "Peripheral targets";
+      block.appendChild(label);
+      const rows = peripheralTargets
+        .filter((r) => r && typeof r === "object")
+        .map((r) => [
+          String(r.target_key || [r.laterality, r.lobe, r.segment].filter(Boolean).join(" ") || "—"),
+          r.size_mm_long ?? "—",
+          r.size_mm_short ?? "—",
+          r.pet_suvmax ?? "—",
+          String(r.comparative_change || "—"),
+        ]);
+      block.appendChild(renderSimpleTable(["Target", "Long (mm)", "Short (mm)", "SUVmax", "Change"], rows));
+      vaultCaseEventDetailHostEl.appendChild(block);
+    }
+  }
+
+  if (structuredPayload) appendRawJson("Structured payload (raw)", structuredPayload);
+  if (extractedPayload) appendRawJson("Extracted payload (raw)", extractedPayload);
+
+  if (!structuredPayload && !extractedPayload) {
+    const fallback = document.createElement("div");
+    fallback.className = "subtle";
+    fallback.textContent = eventRow?.is_synthetic
+      ? "Synthetic baseline procedure event; no per-event extraction payload is stored."
+      : "No extracted payload was saved for this event.";
+    vaultCaseEventDetailHostEl.appendChild(fallback);
+  }
+}
+
+function renderCaseEvents(remoteCaseData) {
+  if (!vaultCaseEventsHostEl) return;
+  clearEl(vaultCaseEventsHostEl);
+
+  if (!remoteCaseData || typeof remoteCaseData !== "object") {
+    vaultCaseEventsHostEl.textContent = "Load a case to view events.";
+    selectedCaseEventId = null;
+    activeCaseEventReviewId = null;
+    renderCaseEventDetails(null);
+    return;
+  }
+
+  const events = Array.isArray(remoteCaseData?.events) ? remoteCaseData.events : [];
+  if (events.length === 0) {
+    vaultCaseEventsHostEl.textContent = "No events saved for this case yet.";
+    selectedCaseEventId = null;
+    activeCaseEventReviewId = null;
+    renderCaseEventDetails(null);
+    return;
+  }
+
+  const table = document.createElement("table");
+  table.className = "vault-events-table";
+  table.innerHTML = `
+    <thead>
+      <tr>
+        <th>Type</th>
+        <th>T offset</th>
+        <th>Created</th>
+        <th>Source</th>
+        <th>Has note</th>
+        <th>Has structured</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  `;
+  const tbody = table.querySelector("tbody");
+  if (!tbody) return;
+
+  const eventRows = Array.isArray(events) ? events : [];
+  const rowById = new Map();
+
+  const applySelection = (eventId, options = {}) => {
+    const openReview = Boolean(options?.openReview);
+    const id = String(eventId || "").trim();
+    selectedCaseEventId = id || null;
+    rowById.forEach((rowEl, rowId) => {
+      rowEl.classList.toggle("is-selected", rowId === selectedCaseEventId);
+    });
+    const selected =
+      eventRows.find((ev) => String(ev?.id || "").trim() === selectedCaseEventId) || eventRows[0] || null;
+    if (selected && !selectedCaseEventId) {
+      selectedCaseEventId = String(selected?.id || "").trim() || null;
+    }
+    renderCaseEventDetails(selected, remoteCaseData);
+    if (openReview && selected) {
+      void openCaseEventInReviewPanel(selected, remoteCaseData);
+    }
+  };
+
+  eventRows.forEach((ev) => {
+    const tr = document.createElement("tr");
+    tr.className = "vault-event-row";
+    tr.tabIndex = 0;
+
+    const typeTd = document.createElement("td");
+    const typeWrap = document.createElement("div");
+    typeWrap.className = "vault-event-type";
+    const badge = document.createElement("span");
+    badge.className = `vault-event-type-badge ${caseEventBadgeClass(ev?.event_type)}`.trim();
+    badge.textContent = formatCaseEventTypeLabel(ev?.event_type);
+    typeWrap.appendChild(badge);
+    if (ev?.is_synthetic) {
+      const muted = document.createElement("span");
+      muted.className = "vault-event-muted";
+      muted.textContent = "(synthetic)";
+      typeWrap.appendChild(muted);
+    }
+    typeTd.appendChild(typeWrap);
+    const title = String(ev?.event_title || "").trim();
+    if (title) {
+      const titleEl = document.createElement("div");
+      titleEl.className = "vault-event-muted";
+      titleEl.textContent = title;
+      typeTd.appendChild(titleEl);
+    }
+    tr.appendChild(typeTd);
+
+    const offsetTd = document.createElement("td");
+    offsetTd.textContent = formatTOffset(ev?.relative_day_offset || 0);
+    tr.appendChild(offsetTd);
+
+    const createdTd = document.createElement("td");
+    createdTd.textContent = formatCaseEventCreatedAt(ev?.created_at);
+    tr.appendChild(createdTd);
+
+    const sourceTd = document.createElement("td");
+    sourceTd.textContent = formatCaseEventSource(ev);
+    tr.appendChild(sourceTd);
+
+    const noteTd = document.createElement("td");
+    noteTd.textContent = fmtBool(Boolean(ev?.has_note_text));
+    tr.appendChild(noteTd);
+
+    const structuredTd = document.createElement("td");
+    structuredTd.textContent = fmtBool(Boolean(ev?.has_structured_data));
+    tr.appendChild(structuredTd);
+
+    const eventId = String(ev?.id || "").trim();
+    if (eventId) {
+      rowById.set(eventId, tr);
+      tr.addEventListener("click", () => applySelection(eventId, { openReview: true }));
+      tr.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          applySelection(eventId, { openReview: true });
+        }
+      });
+    }
+
+    tbody.appendChild(tr);
+  });
+
+  vaultCaseEventsHostEl.appendChild(table);
+
+  const preservedSelection = String(selectedCaseEventId || "").trim();
+  const firstEventId = String(eventRows[0]?.id || "").trim();
+  const defaultSelection =
+    preservedSelection && rowById.has(preservedSelection) ? preservedSelection : firstEventId;
+  if (defaultSelection) applySelection(defaultSelection, { openReview: false });
+  else renderCaseEventDetails(eventRows[0] || null, remoteCaseData);
+}
+
 async function removeVaultPatient(registryUuid) {
   if (!isVaultReady()) return;
   try {
     await deleteVaultPatient({ userId: vaultUserId, registryUuid });
     vaultPatientMap.delete(registryUuid);
-    if (appendTargetRegistryUuid === registryUuid) {
-      appendTargetRegistryUuid = null;
-      appendEventConfig = null;
+    if (activeCaseRegistryUuid === registryUuid) {
+      activeCaseRegistryUuid = null;
+      clearVaultPatientInputs();
     }
+    if (appendEventConfig && appendEventConfig.registry_uuid === registryUuid) appendEventConfig = null;
     renderVaultPatients();
     updateAppendTargetUi();
+    updateVaultBanner();
+    renderCaseEvents(
+      activeCaseRegistryUuid ? registryCaseSnapshotByUuid.get(activeCaseRegistryUuid) || null : null,
+    );
     noteVaultActivity();
   } catch (err) {
     setVaultStatus(`Delete failed: ${String(err?.message || err)}`);
@@ -1557,88 +3177,120 @@ function renderVaultPatients() {
   vaultPatientsHostEl.innerHTML = "";
   if (!isVaultReady()) {
     vaultPatientsHostEl.textContent = "Unlock vault to view local encrypted patients.";
+    renderCaseEvents(null);
     return;
   }
 
   if (!vaultPatientMap || vaultPatientMap.size === 0) {
-    vaultPatientsHostEl.textContent = "No local patients yet. Submit a new case to create one.";
+    vaultPatientsHostEl.textContent = "No local patients yet. Create Local Case or submit a new case to create one.";
+    renderCaseEvents(null);
     return;
   }
 
-  const table = document.createElement("table");
-  table.className = "vault-patients-table";
-  table.innerHTML = `
-    <thead>
-      <tr>
-        <th>Patient (local)</th>
-        <th>Index Date</th>
-        <th>MRN (local)</th>
-        <th>Registry UUID</th>
-        <th>Action</th>
-      </tr>
-    </thead>
-    <tbody></tbody>
-  `;
-  const tbody = table.querySelector("tbody");
-  if (!tbody) return;
+  const snapshotRows = listCaseSnapshotMeta(vaultUserId);
+  const snapshotMetaByUuid = new Map(snapshotRows.map((row) => [String(row.registry_uuid || ""), row]));
+
+  const formatSavedAt = (iso) => {
+    const raw = String(iso || "").trim();
+    if (!raw) return "—";
+    try {
+      const dt = new Date(raw);
+      if (Number.isNaN(dt.getTime())) return raw;
+      return dt.toLocaleString();
+    } catch {
+      return raw;
+    }
+  };
+
+  const formatRvu = (value) => (Number.isFinite(value) ? Number(value).toFixed(2) : "—");
+
+  const cardsWrap = document.createElement("div");
+  cardsWrap.className = "vault-patient-cards";
 
   const rows = Array.from(vaultPatientMap.entries()).sort((a, b) => String(a[0]).localeCompare(String(b[0])));
   for (const [registryUuid, patient] of rows) {
-    const tr = document.createElement("tr");
-    if (appendTargetRegistryUuid === registryUuid) tr.classList.add("active");
+    const isActive = activeCaseRegistryUuid === registryUuid;
+    const card = document.createElement("div");
+    card.className = `vault-patient-card${isActive ? " active" : ""}`;
 
-    const labelTd = document.createElement("td");
-    labelTd.textContent = getPatientRowLabel(patient, registryUuid);
-    tr.appendChild(labelTd);
+    const title = document.createElement("div");
+    title.className = "vault-patient-card-title";
+    const label = document.createElement("span");
+    label.textContent = getPatientRowLabel(patient, registryUuid);
+    const uuid = document.createElement("span");
+    uuid.className = "vault-patient-uuid";
+    uuid.textContent = registryUuid;
+    title.appendChild(label);
+    title.appendChild(uuid);
+    card.appendChild(title);
 
-    const indexTd = document.createElement("td");
-    indexTd.textContent = getPatientIndexDate(patient);
-    tr.appendChild(indexTd);
+    const meta = document.createElement("div");
+    meta.className = "vault-patient-card-meta";
+    meta.innerHTML = `
+      <span><strong>Index:</strong> ${safeHtml(getPatientIndexDate(patient))}</span>
+      <span><strong>MRN:</strong> ${safeHtml(getPatientMrn(patient))}</span>
+    `;
+    card.appendChild(meta);
 
-    const mrnTd = document.createElement("td");
-    mrnTd.textContent = getPatientMrn(patient);
-    tr.appendChild(mrnTd);
+    const snapshotMeta = snapshotMetaByUuid.get(registryUuid) || null;
+    const snapshot = document.createElement("div");
+    snapshot.className = "vault-snapshot-meta";
+    if (!snapshotMeta) {
+      snapshot.textContent = "No device snapshot cached yet for this case.";
+    } else {
+      const cptCount = Number.isFinite(snapshotMeta?.cpt_count) ? Number(snapshotMeta.cpt_count) : 0;
+      const totalRvu = formatRvu(snapshotMeta?.total_work_rvu);
+      const savedAt = formatSavedAt(snapshotMeta?.saved_at);
+      snapshot.innerHTML = `
+        <span><strong>Snapshot:</strong> ${safeHtml(String(cptCount))} CPT</span>
+        <span><strong>wRVU:</strong> ${safeHtml(totalRvu)}</span>
+        <span><strong>Saved:</strong> ${safeHtml(savedAt)}</span>
+      `;
+    }
+    card.appendChild(snapshot);
 
-    const idTd = document.createElement("td");
-    idTd.textContent = registryUuid;
-    idTd.className = "vault-registry-uuid";
-    tr.appendChild(idTd);
+    const actions = document.createElement("div");
+    actions.className = "vault-patient-card-actions";
 
-    const actionTd = document.createElement("td");
     const loadCaseBtn = document.createElement("button");
     loadCaseBtn.type = "button";
     loadCaseBtn.className = "secondary";
     loadCaseBtn.textContent = "Load Case";
-    loadCaseBtn.addEventListener("click", () => {
-      loadVaultCaseView(registryUuid);
-    });
-    actionTd.appendChild(loadCaseBtn);
+    loadCaseBtn.disabled = vaultBusy;
+    loadCaseBtn.addEventListener("click", () => loadVaultCaseView(registryUuid));
+    actions.appendChild(loadCaseBtn);
+
+    const rebuildBtn = document.createElement("button");
+    rebuildBtn.type = "button";
+    rebuildBtn.className = "secondary";
+    rebuildBtn.textContent = "Rebuild";
+    rebuildBtn.disabled = vaultBusy;
+    rebuildBtn.addEventListener("click", () => rebuildVaultCase(registryUuid));
+    actions.appendChild(rebuildBtn);
 
     const addEventBtn = document.createElement("button");
     addEventBtn.type = "button";
     addEventBtn.className = "secondary";
-    addEventBtn.textContent = appendTargetRegistryUuid === registryUuid ? "Selected…" : "Add Event";
-    addEventBtn.style.marginLeft = "8px";
-    addEventBtn.addEventListener("click", () => {
-      openAddEventModal(registryUuid);
-    });
-    actionTd.appendChild(addEventBtn);
+    addEventBtn.textContent =
+      appendEventConfig && appendEventConfig.registry_uuid === registryUuid ? "Edit Event" : "Add Event";
+    addEventBtn.disabled = vaultBusy || !activeCaseRegistryUuid || !isActive;
+    addEventBtn.title = addEventBtn.disabled ? "Load this case to enable Add Event." : "";
+    addEventBtn.addEventListener("click", () => openAddEventModal(registryUuid));
+    actions.appendChild(addEventBtn);
 
     const removeBtn = document.createElement("button");
     removeBtn.type = "button";
     removeBtn.className = "secondary";
     removeBtn.textContent = "Remove";
-    removeBtn.style.marginLeft = "8px";
-    removeBtn.addEventListener("click", () => {
-      removeVaultPatient(registryUuid);
-    });
-    actionTd.appendChild(removeBtn);
+    removeBtn.disabled = vaultBusy;
+    removeBtn.addEventListener("click", () => removeVaultPatient(registryUuid));
+    actions.appendChild(removeBtn);
 
-    tr.appendChild(actionTd);
-    tbody.appendChild(tr);
+    card.appendChild(actions);
+    cardsWrap.appendChild(card);
   }
 
-  vaultPatientsHostEl.appendChild(table);
+  vaultPatientsHostEl.appendChild(cardsWrap);
 }
 
 async function syncVaultPatients() {
@@ -1650,19 +3302,27 @@ async function syncVaultPatients() {
   try {
     const patients = await loadVaultPatients({ userId, vmk });
     vaultPatientMap = patients;
-    if (appendTargetRegistryUuid && !vaultPatientMap.has(appendTargetRegistryUuid)) {
-      appendTargetRegistryUuid = null;
+    if (activeCaseRegistryUuid && !vaultPatientMap.has(activeCaseRegistryUuid)) {
+      activeCaseRegistryUuid = null;
+      clearVaultPatientInputs();
+    }
+    if (!activeCaseRegistryUuid && vaultPatientMap.size === 1) {
+      activeCaseRegistryUuid = Array.from(vaultPatientMap.keys())[0] || null;
+    }
+    if (appendEventConfig && !vaultPatientMap.has(String(appendEventConfig.registry_uuid || ""))) {
       appendEventConfig = null;
     }
     setVaultStatus(`Unlocked. ${patients.size} patient${patients.size === 1 ? "" : "s"} loaded.`);
-    renderVaultPatients();
-    updateAppendTargetUi();
+    if (activeCaseRegistryUuid) hydrateVaultInputsFromCase(activeCaseRegistryUuid);
     noteVaultActivity();
   } catch (err) {
     setVaultStatus(`Sync failed: ${String(err?.message || err)}`);
   } finally {
     vaultBusy = false;
     refreshZkControls();
+    renderVaultPatients();
+    updateAppendTargetUi();
+    updateVaultBanner();
   }
 }
 
@@ -1670,16 +3330,34 @@ async function saveLocalPatientIdentity(registryUuid) {
   if (!isVaultReady()) return;
   const safeRegistryUuid = String(registryUuid || "").trim();
   if (!safeRegistryUuid) return;
-  const patientLabel = String(vaultPatientLabelInputEl?.value || "").trim();
-  const label = patientLabel || `Case ${safeRegistryUuid.slice(0, 8)}`;
+  const existing = vaultPatientMap.get(safeRegistryUuid) || null;
+
+  // Fill-missing-only semantics: don't overwrite existing local identity with blanks.
+  const inputLabel = String(vaultPatientLabelInputEl?.value || "").trim();
+  const label =
+    inputLabel ||
+    String(existing?.patient_label || "").trim() ||
+    `Case ${safeRegistryUuid.slice(0, 8)}`;
+
   const indexDateRaw = String(vaultIndexDateInputEl?.value || "").trim();
-  const indexDate = parseIsoDateInput(indexDateRaw) ? indexDateRaw : toLocalDateYmd();
-  const localMrn = String(vaultMrnInputEl?.value || "").trim();
-  const localCustomNotes = String(vaultCustomNotesInputEl?.value || "").trim();
+  const existingIndexRaw = String(existing?.index_date || "").trim();
+  const indexDate = parseIsoDateInput(indexDateRaw)
+    ? indexDateRaw
+    : parseIsoDateInput(existingIndexRaw)
+      ? existingIndexRaw
+      : null;
+
+  const inputMrn = String(vaultMrnInputEl?.value || "").trim();
+  const existingMrn = String(existing?.local_meta?.mrn || "").trim();
+  const localMrn = inputMrn || existingMrn;
+
+  const inputCustomNotes = String(vaultCustomNotesInputEl?.value || "").trim();
+  const existingCustomNotes = String(existing?.local_meta?.custom_notes || "").trim();
+  const localCustomNotes = inputCustomNotes || existingCustomNotes;
   const payload = {
     schema_version: 2,
     patient_label: label,
-    index_date: indexDate || null,
+    index_date: indexDate,
     local_meta: {
       mrn: localMrn || null,
       custom_notes: localCustomNotes || null,
@@ -1696,10 +3374,13 @@ async function saveLocalPatientIdentity(registryUuid) {
     patientJson: normalized,
   });
   vaultPatientMap.set(safeRegistryUuid, normalized);
-  if (vaultPatientLabelInputEl) vaultPatientLabelInputEl.value = "";
+  activeCaseRegistryUuid = safeRegistryUuid;
+  hydrateVaultInputsFromCase(safeRegistryUuid);
   renderVaultPatients();
   updateAppendTargetUi();
+  updateVaultBanner();
   noteVaultActivity();
+  return normalized;
 }
 
 function lockVault(options = {}) {
@@ -1708,13 +3389,16 @@ function lockVault(options = {}) {
   vaultVmk = null;
   vaultBusy = false;
   vaultPatientMap = new Map();
-  appendTargetRegistryUuid = null;
+  activeCaseRegistryUuid = null;
   appendEventConfig = null;
+  addEventTargetRegistryUuid = null;
   updateAppendTargetUi();
   renderVaultPatients();
-  if (vaultPasswordInputEl) vaultPasswordInputEl.value = "";
+  if (vaultUnlockPasswordInputEl) vaultUnlockPasswordInputEl.value = "";
+  setVaultUnlockDialogStatus("");
   const reason = String(options.reason || "").trim();
   setVaultStatus(reason ? `Locked (${reason}).` : "Locked.");
+  updateVaultBanner();
   refreshZkControls();
 }
 
@@ -2283,6 +3967,241 @@ function getRegistry(data) {
   return data?.registry || {};
 }
 
+function normalizeEbusStationToken(value) {
+  if (L && typeof L.normalizeTokenStation === "function") {
+    const linked = L.normalizeTokenStation(value);
+    if (linked) return linked;
+  }
+  const normalized = normalizeCompletenessStationToken(value);
+  if (normalized) return normalized;
+  const raw = String(value ?? "").trim();
+  if (!raw) return "";
+  return raw.replace(/[\s_-]+/g, "").toUpperCase();
+}
+
+function buildNormalizedEbusStationsDetail(registry) {
+  const granular = registry?.granular_data || {};
+  const primaryRaw = Array.isArray(granular?.linear_ebus_stations_detail) ? granular.linear_ebus_stations_detail : [];
+  const primaryRows = primaryRaw
+    .filter((row) => row && typeof row === "object" && !Array.isArray(row))
+    .map((row) => {
+      const out = { ...row };
+      const canonical = normalizeEbusStationToken(row?.station);
+      const raw = String(row?.station ?? "").trim();
+      if (canonical) out.station = canonical;
+      else if (raw) out.station = raw.toUpperCase();
+      return out;
+    });
+
+  const linearEbus = registry?.procedures_performed?.linear_ebus || {};
+  const sampledStations = Array.isArray(linearEbus?.stations_sampled) ? linearEbus.stations_sampled : [];
+  const eventStations = Array.isArray(linearEbus?.node_events) ? linearEbus.node_events.map((ev) => ev?.station) : [];
+  const fallbackTokens = [];
+  const seen = new Set();
+  [sampledStations, eventStations].forEach((list) => {
+    (Array.isArray(list) ? list : []).forEach((station) => {
+      const token = normalizeEbusStationToken(station);
+      if (!token || seen.has(token)) return;
+      seen.add(token);
+      fallbackTokens.push(token);
+    });
+  });
+  const fallbackRows = fallbackTokens.map((station) => ({ station, sampled: true }));
+
+  const needleGaugeSeed = parseNumber(linearEbus?.needle_gauge);
+
+  if (!L || typeof L.mergeEntities !== "function") {
+    // Fallback: preserve primary ordering + append missing fallback stations.
+    const existing = primaryRows.slice();
+    const primaryKeys = new Set(existing.map((row) => normalizeEbusStationToken(row?.station)).filter(Boolean));
+    fallbackTokens.forEach((token) => {
+      if (primaryKeys.has(token)) return;
+      const placeholder = { station: token, sampled: true };
+      if (needleGaugeSeed !== null) placeholder.needle_gauge = Math.trunc(needleGaugeSeed);
+      existing.push(placeholder);
+    });
+    return existing;
+  }
+
+  const merged = L.mergeEntities({
+    primaryRows,
+    fallbackRows,
+    getKey: (row) => normalizeEbusStationToken(row?.station),
+    mergeRow: (primaryRow, fallbackRow) => {
+      const out = primaryRow && typeof primaryRow === "object" ? { ...primaryRow } : {};
+      const fb = fallbackRow && typeof fallbackRow === "object" ? fallbackRow : {};
+      Object.keys(fb).forEach((k) => {
+        if (String(k || "").startsWith("__")) return;
+        if (out[k] === null || out[k] === undefined || out[k] === "") out[k] = fb[k];
+      });
+      const canonical = normalizeEbusStationToken(out?.station || fb?.station);
+      if (canonical) out.station = canonical;
+      if ((out.needle_gauge === null || out.needle_gauge === undefined || out.needle_gauge === "") && needleGaugeSeed !== null) {
+        out.needle_gauge = Math.trunc(needleGaugeSeed);
+      }
+      return out;
+    },
+  });
+
+  return Array.isArray(merged) ? merged : primaryRows;
+}
+
+function buildEntityIndex(registry) {
+  const r = registry && typeof registry === "object" ? registry : {};
+
+  const sedation = r?.sedation && typeof r.sedation === "object" ? r.sedation : {};
+  const setting = r?.procedure_setting && typeof r.procedure_setting === "object" ? r.procedure_setting : {};
+
+  const index = {
+    stations: new Map(),
+    specimens: new Map(),
+    sedation: {
+      type: String(sedation?.type || "").trim(),
+      anesthesia_provider: String(sedation?.anesthesia_provider || "").trim(),
+      airway_type: String(setting?.airway_type || "").trim(),
+      location: String(setting?.location || "").trim(),
+      patient_position: String(setting?.patient_position || "").trim(),
+    },
+  };
+
+  // EBUS stations (canonical by normalized station token).
+  const ebusDetailRows = buildNormalizedEbusStationsDetail(r);
+  const ebus = r?.procedures_performed?.linear_ebus || {};
+  const gaugeSeed = parseNumber(ebus?.needle_gauge);
+  const passesSumByStation = new Map();
+  const roseByStation = new Map();
+  (Array.isArray(ebus?.node_events) ? ebus.node_events : []).forEach((ev) => {
+    const token = normalizeEbusStationToken(ev?.station);
+    if (!token) return;
+    const passes = parseNumber(ev?.passes);
+    if (passes !== null) {
+      const prev = passesSumByStation.get(token) || 0;
+      passesSumByStation.set(token, prev + passes);
+    }
+    const rose = String(ev?.rose_result || "").trim();
+    if (rose && !roseByStation.has(token)) roseByStation.set(token, rose);
+  });
+
+  (Array.isArray(ebusDetailRows) ? ebusDetailRows : []).forEach((row) => {
+    const token = normalizeEbusStationToken(row?.station);
+    if (!token || index.stations.has(token)) return;
+
+    const rawGauge = parseNumber(row?.needle_gauge);
+    const needleGauge =
+      rawGauge === null
+        ? gaugeSeed === null
+          ? null
+          : Math.trunc(gaugeSeed)
+        : Math.trunc(rawGauge);
+
+    const rawPasses = parseNumber(row?.number_of_passes);
+    const passes =
+      rawPasses === null
+        ? passesSumByStation.has(token)
+          ? Math.trunc(passesSumByStation.get(token))
+          : null
+        : Math.trunc(rawPasses);
+
+    const rose = String(row?.rose_result || "").trim() || String(roseByStation.get(token) || "").trim();
+
+    index.stations.set(token, {
+      station: token,
+      sampled: row?.sampled ?? null,
+      needle_gauge: needleGauge,
+      number_of_passes: passes,
+      rose_result: rose ? rose : null,
+      lymphocytes_present: row?.lymphocytes_present ?? null,
+      __entityKey: token,
+    });
+  });
+
+  // Specimens (merged primary + fallback).
+  const granular = r?.granular_data || {};
+  const specimensPrimaryRaw = Array.isArray(granular?.specimens_collected) ? granular.specimens_collected : [];
+  const specimensPrimary = specimensPrimaryRaw
+    .filter((row) => row && typeof row === "object" && !Array.isArray(row))
+    .map((row) => ({ ...row }));
+
+  const specimenFallback = [];
+  const specimenFallbackSeen = new Set();
+  const normalizeSpecimenLocation = (proc, locRaw) => {
+    const raw = String(locRaw || "").trim();
+    if (!raw) return "";
+    if (proc === "EBUS-TBNA") return normalizeEbusStationToken(raw);
+    return L?.normalizeWhitespaceCase ? L.normalizeWhitespaceCase(raw) : raw;
+  };
+  const getSpecimenKey = (row) => {
+    const proc = String(row?.source_procedure || row?.sourceProcedure || "").trim();
+    const loc = normalizeSpecimenLocation(proc, row?.source_location || row?.sourceLocation);
+    return L?.stableKeyFromParts ? L.stableKeyFromParts("specimen", proc, loc) : `${proc}|${loc}`.toLowerCase();
+  };
+  const addSpecimenFallback = (row) => {
+    const proc = String(row?.source_procedure || "").trim();
+    const loc = normalizeSpecimenLocation(proc, row?.source_location);
+    if (!proc || !loc) return;
+    const key = L?.stableKeyFromParts ? L.stableKeyFromParts("specimen_fallback", proc, loc) : `${proc}|${loc}`.toLowerCase();
+    if (specimenFallbackSeen.has(key)) return;
+    specimenFallbackSeen.add(key);
+    specimenFallback.push({ ...row, source_procedure: proc, source_location: loc });
+  };
+
+  const ebusForSpecimens = r?.procedures_performed?.linear_ebus || {};
+  const ebusEventsForSpecimens = Array.isArray(ebusForSpecimens?.node_events) ? ebusForSpecimens.node_events : [];
+  ebusEventsForSpecimens.forEach((ev) => {
+    const action = String(ev?.action || "").trim();
+    if (!action || action === "inspected_only") return;
+    const station = normalizeEbusStationToken(ev?.station);
+    if (!station) return;
+    const rose = String(ev?.rose_result || "").trim();
+    addSpecimenFallback({
+      source_procedure: "EBUS-TBNA",
+      source_location: station,
+      rose_performed: rose ? true : null,
+      rose_result: rose ? rose : null,
+    });
+  });
+
+  const balSpec = r?.procedures_performed?.bal || {};
+  const balLoc = cleanLocationForDisplay(balSpec?.location) || "";
+  if (balLoc && (isPerformedProcedure(balSpec) || hasProcedureDetails(balSpec))) {
+    addSpecimenFallback({ source_procedure: "BAL", source_location: balLoc });
+  }
+
+  const mergedSpecimens =
+    specimensPrimary.length || specimenFallback.length
+      ? L?.mergeEntities
+        ? L.mergeEntities({
+            primaryRows: specimensPrimary,
+            fallbackRows: specimenFallback,
+            getKey: (row) => getSpecimenKey(row),
+            mergeRow: (primaryRow, fallbackRow) => {
+              const out = primaryRow && typeof primaryRow === "object" ? { ...primaryRow } : {};
+              const fb = fallbackRow && typeof fallbackRow === "object" ? fallbackRow : {};
+              Object.keys(fb).forEach((k) => {
+                if (String(k || "").startsWith("__")) return;
+                if (out[k] === null || out[k] === undefined || out[k] === "") out[k] = fb[k];
+              });
+              const proc = String(out?.source_procedure || "").trim();
+              const locRaw = String(out?.source_location || "").trim();
+              out.source_location = normalizeSpecimenLocation(proc, locRaw);
+              return out;
+            },
+          })
+        : [...specimensPrimary, ...specimenFallback]
+      : [];
+
+  (Array.isArray(mergedSpecimens) ? mergedSpecimens : []).forEach((row) => {
+    const key = getSpecimenKey(row);
+    if (!key || index.specimens.has(key)) return;
+    index.specimens.set(key, {
+      ...(row && typeof row === "object" ? row : {}),
+      __entityKey: row?.__entityKey || key,
+    });
+  });
+
+  return index;
+}
+
 function hasDisplayValue(value) {
   return value !== null && value !== undefined && (typeof value !== "string" || value.trim() !== "");
 }
@@ -2375,6 +4294,41 @@ function getBillingByCode(data) {
 function deepClone(value) {
   if (typeof structuredClone === "function") return structuredClone(value);
   return JSON.parse(JSON.stringify(value));
+}
+
+function jsonStructuresEqual(left, right) {
+  try {
+    return JSON.stringify(left) === JSON.stringify(right);
+  } catch {
+    return false;
+  }
+}
+
+function mergeRegistriesPreferOverlay(baseValue, overlayValue) {
+  if (Array.isArray(overlayValue)) return deepClone(overlayValue);
+  if (!isPlainObject(overlayValue)) return deepClone(overlayValue);
+
+  const baseObj = isPlainObject(baseValue) ? baseValue : {};
+  const out = {};
+  const keys = new Set([...Object.keys(baseObj), ...Object.keys(overlayValue)]);
+  keys.forEach((key) => {
+    const baseNext = baseObj[key];
+    const overlayNext = overlayValue[key];
+    if (overlayNext === undefined) {
+      out[key] = deepClone(baseNext);
+      return;
+    }
+    if (isPlainObject(overlayNext) && isPlainObject(baseNext)) {
+      out[key] = mergeRegistriesPreferOverlay(baseNext, overlayNext);
+      return;
+    }
+    if (Array.isArray(overlayNext)) {
+      out[key] = deepClone(overlayNext);
+      return;
+    }
+    out[key] = deepClone(overlayNext);
+  });
+  return out;
 }
 
 function decodeJsonPointerSegment(seg) {
@@ -2598,10 +4552,97 @@ function makeEvidenceDetails(spans, summaryText = "Evidence") {
   return details;
 }
 
+function closeFlatEvidencePopover() {
+  if (!flatEvidencePopoverEl) return;
+  flatEvidencePopoverEl.classList.remove("is-open");
+  flatEvidencePopoverEl.innerHTML = "";
+  flatEvidencePopoverAnchorEl = null;
+}
+
+function positionFlatEvidencePopover(anchorEl) {
+  if (!flatEvidencePopoverEl || !anchorEl || !flatEvidencePopoverEl.classList.contains("is-open")) return;
+  const margin = 8;
+  const gap = 8;
+  const anchorRect = anchorEl.getBoundingClientRect();
+  const popRect = flatEvidencePopoverEl.getBoundingClientRect();
+  let left = anchorRect.left;
+  let top = anchorRect.bottom + gap;
+
+  if (left + popRect.width > globalThis.innerWidth - margin) {
+    left = Math.max(margin, globalThis.innerWidth - popRect.width - margin);
+  }
+  if (top + popRect.height > globalThis.innerHeight - margin) {
+    top = Math.max(margin, anchorRect.top - popRect.height - gap);
+  }
+
+  flatEvidencePopoverEl.style.left = `${Math.round(left)}px`;
+  flatEvidencePopoverEl.style.top = `${Math.round(top)}px`;
+}
+
+function ensureFlatEvidencePopover() {
+  if (!document.body) return null;
+  if (!flatEvidencePopoverEl) {
+    flatEvidencePopoverEl = document.createElement("div");
+    flatEvidencePopoverEl.id = "flatEvidencePopover";
+    flatEvidencePopoverEl.className = "evidence-popover";
+    document.body.appendChild(flatEvidencePopoverEl);
+  }
+  if (!flatEvidencePopoverWired) {
+    flatEvidencePopoverWired = true;
+    document.addEventListener(
+      "mousedown",
+      (event) => {
+        if (!flatEvidencePopoverEl || !flatEvidencePopoverEl.classList.contains("is-open")) return;
+        const target = event.target;
+        if (flatEvidencePopoverEl.contains(target)) return;
+        if (flatEvidencePopoverAnchorEl && flatEvidencePopoverAnchorEl.contains(target)) return;
+        closeFlatEvidencePopover();
+      },
+      true,
+    );
+    document.addEventListener("keydown", (event) => {
+      if (event.key !== "Escape") return;
+      if (!flatEvidencePopoverEl || !flatEvidencePopoverEl.classList.contains("is-open")) return;
+      closeFlatEvidencePopover();
+    });
+    globalThis.addEventListener(
+      "scroll",
+      () => {
+        if (!flatEvidencePopoverEl || !flatEvidencePopoverEl.classList.contains("is-open")) return;
+        if (!flatEvidencePopoverAnchorEl || !document.documentElement.contains(flatEvidencePopoverAnchorEl)) {
+          closeFlatEvidencePopover();
+          return;
+        }
+        positionFlatEvidencePopover(flatEvidencePopoverAnchorEl);
+      },
+      true,
+    );
+    globalThis.addEventListener("resize", () => {
+      if (!flatEvidencePopoverEl || !flatEvidencePopoverEl.classList.contains("is-open")) return;
+      if (!flatEvidencePopoverAnchorEl) return;
+      positionFlatEvidencePopover(flatEvidencePopoverAnchorEl);
+    });
+  }
+  return flatEvidencePopoverEl;
+}
+
+function showFlatEvidencePopover(anchorEl, spans, summaryText = "Evidence") {
+  const pop = ensureFlatEvidencePopover();
+  if (!pop || !anchorEl) return;
+  const details = makeEvidenceDetails(spans, summaryText);
+  if (!details) return;
+  details.open = true;
+  pop.innerHTML = "";
+  pop.appendChild(details);
+  pop.classList.add("is-open");
+  flatEvidencePopoverAnchorEl = anchorEl;
+  positionFlatEvidencePopover(anchorEl);
+}
+
 /**
  * Main Orchestrator: Renders the clean clinical dashboard
  */
-function renderDashboard(data) {
+function renderDashboard(data, options = {}) {
   renderStatusBannerHost(data);
   renderStatCards(data);
 
@@ -2615,7 +4656,7 @@ function renderDashboard(data) {
   renderCompletenessPrompts(data);
 
   // Right column (clinical) - procedures first, then context
-  renderProceduresSummaryTable(data);
+  renderProceduresSummaryTable(data, options);
   renderClinicalContextTable(data);
 
   // Clear detail panels host, then render sub-panels
@@ -2629,6 +4670,721 @@ function renderDashboard(data) {
   renderEvidenceTraceability(data);
 
   renderDebugLogs(data);
+}
+
+function toPreviewText(value, fallback = "Not documented") {
+  if (Array.isArray(value)) {
+    const clean = value.map((v) => String(v || "").trim()).filter(Boolean);
+    return clean.length ? clean.join(", ") : fallback;
+  }
+  const text = String(value ?? "").trim();
+  return text || fallback;
+}
+
+function getPerformedProcedureLabels(registry) {
+  const out = [];
+  const procs = registry?.procedures_performed;
+  if (procs && typeof procs === "object") {
+    Object.entries(procs).forEach(([key, value]) => {
+      if (isPerformedProcedure(value)) out.push(titleCaseKey(key));
+    });
+  }
+  const pleural = registry?.pleural_procedures;
+  if (pleural && typeof pleural === "object") {
+    Object.entries(pleural).forEach(([key, value]) => {
+      if (isPerformedProcedure(value)) out.push(titleCaseKey(key));
+    });
+  }
+  return out;
+}
+
+function getFlatSummaryValue(path) {
+  const dotted = String(path || "").trim();
+  if (!dotted) return "";
+  const fullPath = dotted.startsWith("registry.") ? dotted : `registry.${dotted}`;
+  const hit = findFlatFieldValueRowByRegistryPath(flatTablesState, fullPath);
+  return String(hit?.row?.value || "").trim();
+}
+
+const EVIDENCE_ALIASES = (() => {
+  const base = {
+    "granular_data.linear_ebus_stations_detail": [
+      "procedures_performed.linear_ebus.stations_sampled",
+      "procedures_performed.linear_ebus.node_events",
+    ],
+    "procedures_performed.linear_ebus.stations_sampled": ["procedures_performed.linear_ebus.node_events"],
+  };
+  const out = { ...base };
+  Object.entries(base).forEach(([key, aliasList]) => {
+    const cleanKey = String(key || "").trim();
+    if (!cleanKey || cleanKey.startsWith("registry.")) return;
+    out[`registry.${cleanKey}`] = (Array.isArray(aliasList) ? aliasList : []).map((p) =>
+      String(p || "").startsWith("registry.") ? String(p || "") : `registry.${p}`
+    );
+  });
+  return out;
+})();
+
+function buildEvidencePathVariants(path) {
+  const raw = String(path || "").trim();
+  if (!raw) return [];
+  const variants = new Set();
+  variants.add(raw);
+  variants.add(raw.replace(/\[(\d+)\]/g, ".$1"));
+  variants.add(raw.replace(/\.([0-9]+)(?=\.|$)/g, "[$1]"));
+  return Array.from(variants).filter(Boolean);
+}
+
+function buildEvidenceLookupRoots(path, options = {}) {
+  const includeAliases = options.includeAliases !== false;
+  const roots = new Set();
+  const raw = String(path || "").trim();
+  if (!raw) return [];
+
+  const addRoot = (candidate) => {
+    buildEvidencePathVariants(candidate).forEach((variant) => {
+      roots.add(variant);
+      if (variant.startsWith("registry.")) roots.add(variant.slice("registry.".length));
+    });
+  };
+
+  addRoot(raw);
+
+  if (includeAliases) {
+    buildEvidencePathVariants(raw).forEach((variant) => {
+      const aliases = Array.isArray(EVIDENCE_ALIASES?.[variant]) ? EVIDENCE_ALIASES[variant] : [];
+      aliases.forEach(addRoot);
+    });
+  }
+
+  return Array.from(roots).filter(Boolean);
+}
+
+function collectEvidenceSpansForPaths(data, paths) {
+  const evidence = getEvidence(data);
+  const evidenceKeys = evidence && typeof evidence === "object" ? Object.keys(evidence) : [];
+  const merged = [];
+  const seen = new Set();
+
+  const addSpan = (span) => {
+    const start = Number(span?.start ?? span?.span?.[0] ?? span?.span?.start);
+    const end = Number(span?.end ?? span?.span?.[1] ?? span?.span?.end);
+    const key = L?.stableKeyFromParts
+      ? L.stableKeyFromParts(start, end, span?.text || span?.quote || span?.snippet, span?.source)
+      : `${start}:${end}:${String(span?.text || span?.quote || span?.snippet || "")}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    merged.push(span);
+  };
+
+  (Array.isArray(paths) ? paths : []).forEach((path) => {
+    const rawPath = String(path || "").trim();
+    if (!rawPath) return;
+    const addEvidenceByKey = (key) => {
+      const spans = Array.isArray(evidence?.[key]) ? evidence[key] : [];
+      spans.forEach(addSpan);
+    };
+
+    const candidateRoots = buildEvidenceLookupRoots(rawPath, { includeAliases: true });
+
+    candidateRoots.forEach((root) => {
+      if (!root) return;
+      if (L && typeof L.resolveEvidenceForPath === "function") {
+        const spans = L.resolveEvidenceForPath(evidence, root, { aliases: EVIDENCE_ALIASES });
+        (Array.isArray(spans) ? spans : []).forEach(addSpan);
+      }
+      addEvidenceByKey(root);
+    });
+
+    evidenceKeys.forEach((key) => {
+      candidateRoots.forEach((root) => {
+        if (!root) return;
+        if (key.startsWith(`${root}.`) || key.startsWith(`${root}[`)) addEvidenceByKey(key);
+      });
+    });
+  });
+
+  merged.sort((a, b) => {
+    const aStart = Number(a?.start ?? a?.span?.[0] ?? a?.span?.start);
+    const bStart = Number(b?.start ?? b?.span?.[0] ?? b?.span?.start);
+    if (Number.isFinite(aStart) && Number.isFinite(bStart) && aStart !== bStart) return aStart - bStart;
+    const aEnd = Number(a?.end ?? a?.span?.[1] ?? a?.span?.end);
+    const bEnd = Number(b?.end ?? b?.span?.[1] ?? b?.span?.end);
+    if (Number.isFinite(aEnd) && Number.isFinite(bEnd) && aEnd !== bEnd) return aEnd - bEnd;
+    return String(a?.text || a?.quote || "").localeCompare(String(b?.text || b?.quote || ""));
+  });
+
+  return merged;
+}
+
+function buildCaseSummaryItems(data) {
+  const registry = getRegistry(data) || {};
+  const entities = buildEntityIndex(registry);
+  const performed = getPerformedProcedureLabels(registry);
+  const ebus = registry?.procedures_performed?.linear_ebus || {};
+  const stations =
+    Array.isArray(ebus?.stations_sampled) && ebus.stations_sampled.length > 0
+      ? ebus.stations_sampled.join(", ")
+      : "";
+  const needle = String(ebus?.needle_gauge || "").trim();
+  const passes = Array.isArray(ebus?.node_events)
+    ? ebus.node_events
+        .map((ev) => Number(ev?.passes))
+        .filter((n) => Number.isFinite(n))
+        .reduce((acc, n) => acc + n, 0)
+    : 0;
+  const selectedCodes = getCodingLines(data)
+    .filter((ln) => String(ln?.selection_status || "selected").toLowerCase() === "selected")
+    .map((ln) => normalizeCptCode(ln?.code))
+    .filter(Boolean);
+
+  const complications = [];
+  const comp = registry?.complications || {};
+  Object.entries(comp).forEach(([k, v]) => {
+    if (!v || typeof v !== "object") return;
+    if (v.performed === true || v.present === true || v.occurred === true) {
+      complications.push(titleCaseKey(k));
+      return;
+    }
+    const detail = String(v.detail || v.summary || "").trim();
+    if (detail) complications.push(`${titleCaseKey(k)}: ${detail}`);
+  });
+
+  const sedationType = getFlatSummaryValue("sedation.type") || entities?.sedation?.type || "";
+  const airwayType = getFlatSummaryValue("procedure_setting.airway_type") || entities?.sedation?.airway_type || "";
+
+  return [
+    {
+      label: "Indication",
+      value: toPreviewText(
+        getFlatSummaryValue("clinical_context.primary_indication")
+          || pickRegistryPathValue(registry, ["clinical_context.primary_indication", "procedure.indication"]).value,
+      ),
+    },
+    {
+      label: "Sedation / Airway",
+      value: toPreviewText(
+        [
+          sedationType,
+          airwayType,
+        ].filter(Boolean).join(" / "),
+      ),
+    },
+    {
+      label: "Procedures Performed",
+      value: toPreviewText(performed.length ? performed.slice(0, 6).join(", ") : ""),
+    },
+    {
+      label: "EBUS Stations",
+      value: toPreviewText(
+        [
+          stations ? `Stations ${stations}` : "",
+          needle ? `Needle ${needle}` : "",
+          passes > 0 ? `${passes} passes` : "",
+        ]
+          .filter(Boolean)
+          .join(" | "),
+      ),
+    },
+    {
+      label: "Complications",
+      value: toPreviewText(complications.length ? complications.join(", ") : "None documented"),
+    },
+    {
+      label: "Disposition",
+      value: toPreviewText(
+        getFlatSummaryValue("disposition.status")
+          || pickRegistryPathValue(registry, ["procedure_setting.disposition", "disposition.plan", "disposition.status"]).value,
+      ),
+    },
+    {
+      label: "Coding Summary",
+      value: toPreviewText(
+        selectedCodes.length ? `${selectedCodes.length} selected: ${selectedCodes.slice(0, 5).join(", ")}` : "",
+      ),
+    },
+  ];
+}
+
+function buildClinicianReviewSections(data) {
+  const registry = getRegistry(data) || {};
+  const entities = buildEntityIndex(registry);
+  const sed = entities?.sedation || {};
+  const selectedCodes = getCodingLines(data)
+    .filter((ln) => String(ln?.selection_status || "selected").toLowerCase() === "selected")
+    .map((ln) => normalizeCptCode(ln?.code))
+    .filter(Boolean);
+
+  return [
+    {
+      id: "clinical_context",
+      title: "Clinical context",
+      preview: toPreviewText(
+        pickRegistryPathValue(registry, ["clinical_context.primary_indication", "clinical_context.indication_category"]).value,
+      ),
+      fields: [
+        {
+          label: "Primary indication",
+          path: "clinical_context.primary_indication",
+          value: pickRegistryPathValue(registry, ["clinical_context.primary_indication"]).value,
+        },
+        {
+          label: "Indication category",
+          path: "clinical_context.indication_category",
+          value: pickRegistryPathValue(registry, ["clinical_context.indication_category"]).value,
+        },
+        {
+          label: "Bronchus sign",
+          path: "clinical_context.bronchus_sign",
+          value: pickRegistryPathValue(registry, ["clinical_context.bronchus_sign"]).value,
+        },
+      ],
+      evidencePaths: [
+        "clinical_context.primary_indication",
+        "clinical_context.indication_category",
+        "clinical_context.bronchus_sign",
+      ],
+    },
+    {
+      id: "procedure_setting",
+      title: "Procedure setting + sedation",
+      preview: toPreviewText(
+        [
+          sed?.type || "",
+          sed?.anesthesia_provider || "",
+          sed?.airway_type || "",
+        ]
+          .filter(Boolean)
+          .join(" | "),
+      ),
+      fields: [
+        {
+          label: "Sedation type",
+          path: "sedation.type",
+          value: sed?.type || "",
+        },
+        {
+          label: "Anesthesia provider",
+          path: "sedation.anesthesia_provider",
+          value: sed?.anesthesia_provider || "",
+        },
+        {
+          label: "Airway type",
+          path: "procedure_setting.airway_type",
+          value: sed?.airway_type || "",
+        },
+      ],
+      evidencePaths: ["sedation.type", "sedation.anesthesia_provider", "procedure_setting.airway_type"],
+    },
+    {
+      id: "diagnostic_bronchoscopy",
+      title: "Diagnostic bronchoscopy",
+      preview: toPreviewText(
+        [
+          isPerformedProcedure(registry?.procedures_performed?.diagnostic_bronchoscopy)
+            ? "Diagnostic bronchoscopy performed"
+            : "Diagnostic bronchoscopy not explicitly performed",
+          pickRegistryPathValue(registry, ["procedures_performed.diagnostic_bronchoscopy.inspection_findings"]).value,
+        ]
+          .filter(Boolean)
+          .join(" | "),
+      ),
+      fields: [
+        {
+          label: "Performed",
+          path: "procedures_performed.diagnostic_bronchoscopy.performed",
+          value: fmtBool(pickRegistryPathValue(registry, ["procedures_performed.diagnostic_bronchoscopy.performed"]).value),
+        },
+        {
+          label: "Inspection findings",
+          path: "procedures_performed.diagnostic_bronchoscopy.inspection_findings",
+          value: pickRegistryPathValue(registry, ["procedures_performed.diagnostic_bronchoscopy.inspection_findings"]).value,
+        },
+        {
+          label: "BAL performed",
+          path: "procedures_performed.bal.performed",
+          value: fmtBool(pickRegistryPathValue(registry, ["procedures_performed.bal.performed"]).value),
+        },
+      ],
+      evidencePaths: [
+        "procedures_performed.diagnostic_bronchoscopy.performed",
+        "procedures_performed.diagnostic_bronchoscopy.inspection_findings",
+        "procedures_performed.bal.performed",
+      ],
+    },
+    {
+      id: "linear_ebus",
+      title: "Linear EBUS",
+      preview: toPreviewText(
+        [
+          isPerformedProcedure(registry?.procedures_performed?.linear_ebus) ? "Performed" : "Not performed",
+          toPreviewText(
+            pickRegistryPathValue(registry, ["procedures_performed.linear_ebus.stations_sampled"]).value,
+            "",
+          ),
+          pickRegistryPathValue(registry, ["procedures_performed.linear_ebus.needle_gauge"]).value,
+        ]
+          .filter(Boolean)
+          .join(" | "),
+      ),
+      fields: [
+        {
+          label: "Performed",
+          path: "procedures_performed.linear_ebus.performed",
+          value: fmtBool(pickRegistryPathValue(registry, ["procedures_performed.linear_ebus.performed"]).value),
+        },
+        {
+          label: "Stations sampled",
+          path: "procedures_performed.linear_ebus.stations_sampled",
+          value: toPreviewText(
+            pickRegistryPathValue(registry, ["procedures_performed.linear_ebus.stations_sampled"]).value,
+            "",
+          ),
+        },
+        {
+          label: "Needle gauge",
+          path: "procedures_performed.linear_ebus.needle_gauge",
+          value: pickRegistryPathValue(registry, ["procedures_performed.linear_ebus.needle_gauge"]).value,
+        },
+      ],
+      evidencePaths: [
+        "procedures_performed.linear_ebus.performed",
+        "procedures_performed.linear_ebus.stations_sampled",
+        "procedures_performed.linear_ebus.needle_gauge",
+      ],
+    },
+    {
+      id: "complications",
+      title: "Complications & outcomes",
+      preview: toPreviewText(
+        [
+          data?.needs_manual_review ? "Manual review required" : "",
+          pickRegistryPathValue(registry, ["complications.summary", "complications.notes"]).value,
+          pickRegistryPathValue(registry, ["disposition.status", "disposition.plan"]).value,
+        ]
+          .filter(Boolean)
+          .join(" | "),
+      ),
+      fields: [
+        {
+          label: "Complication summary",
+          path: "complications.summary",
+          value: pickRegistryPathValue(registry, ["complications.summary", "complications.notes"]).value,
+        },
+        {
+          label: "Disposition",
+          path: "disposition.status",
+          value: pickRegistryPathValue(registry, ["disposition.status", "disposition.plan"]).value,
+        },
+        {
+          label: "Needs manual review",
+          path: "",
+          value: data?.needs_manual_review ? "Yes" : "No",
+          readOnly: true,
+        },
+      ],
+      evidencePaths: ["complications.summary", "complications.notes", "disposition.status", "disposition.plan"],
+    },
+    {
+      id: "coding",
+      title: "Coding & rationale",
+      preview: toPreviewText(
+        selectedCodes.length ? `${selectedCodes.length} selected CPT: ${selectedCodes.slice(0, 6).join(", ")}` : "",
+      ),
+      fields: [
+        {
+          label: "Selected CPT codes",
+          path: "",
+          value: selectedCodes.length ? selectedCodes.join(", ") : "None selected",
+          readOnly: true,
+        },
+        {
+          label: "Review status",
+          path: "",
+          value: String(data?.review_status || "finalized"),
+          readOnly: true,
+        },
+      ],
+      evidencePaths: selectedCodes.map((code) => `billing.${code}`),
+    },
+  ];
+}
+
+function renderCaseSummaryStrip(data) {
+  if (!caseSummaryStripEl) return;
+  clearEl(caseSummaryStripEl);
+  const items = buildCaseSummaryItems(data);
+  items.forEach((item) => {
+    const card = document.createElement("div");
+    card.className = "case-summary-item";
+    const label = document.createElement("div");
+    label.className = "case-summary-label";
+    label.textContent = item.label;
+    const value = document.createElement("div");
+    value.className = "case-summary-value";
+    value.textContent = toPreviewText(item.value);
+    card.appendChild(label);
+    card.appendChild(value);
+    caseSummaryStripEl.appendChild(card);
+  });
+}
+
+function applyReviewDrawerFieldChange(path, rawValue) {
+  const fullPath = String(path || "").trim();
+  if (!fullPath) return false;
+  let value = rawValue;
+  const stateLoc = findFlatFieldValueRowByRegistryPath(flatTablesState, fullPath);
+  const meta = stateLoc?.row?.__meta || {};
+  if (meta?.valueType === "boolean") {
+    const parsed = parseYesNo(rawValue);
+    value = parsed === null ? "" : parsed ? "Yes" : "No";
+  }
+  if (meta?.valueType === "list" && typeof rawValue === "string") {
+    value = rawValue
+      .split(",")
+      .map((v) => String(v || "").trim())
+      .filter(Boolean);
+  }
+  const updatedTable = applyCompletenessValueToFlatTables(fullPath, value);
+  if (updatedTable) {
+    editedDirty = true;
+    renderFlatTablesFromState();
+    updateEditedPayload();
+    return true;
+  }
+
+  const source = editedPayload || lastServerResponse;
+  if (!source || !source.registry) return false;
+  const cloned = deepClone(source);
+  if (!cloned.registry || typeof cloned.registry !== "object") return false;
+  setByPath(cloned.registry, fullPath, value);
+  editedPayload = cloned;
+  editedDirty = true;
+  if (editedResponseEl) editedResponseEl.textContent = JSON.stringify(editedPayload, null, 2);
+  if (exportEditedBtn) exportEditedBtn.disabled = false;
+  return true;
+}
+
+function closeReviewDrawer(options = {}) {
+  const { restoreFocus = true } = options;
+  if (reviewDrawerEl) {
+    reviewDrawerEl.classList.add("hidden");
+    reviewDrawerEl.setAttribute("aria-hidden", "true");
+  }
+  if (reviewDrawerBackdropEl) reviewDrawerBackdropEl.classList.add("hidden");
+  if (document.body) document.body.classList.remove("review-drawer-open");
+  reviewDrawerContext = null;
+  if (restoreFocus && reviewDrawerLastFocus && typeof reviewDrawerLastFocus.focus === "function") {
+    reviewDrawerLastFocus.focus();
+  }
+  reviewDrawerLastFocus = null;
+}
+
+function openReviewDrawer(section) {
+  if (!reviewDrawerEl || !reviewDrawerFieldsEl) return;
+  reviewDrawerContext = section || null;
+  reviewDrawerLastFocus = document.activeElement;
+  if (reviewDrawerTitleEl) reviewDrawerTitleEl.textContent = section?.title || "Edit Section";
+  if (reviewDrawerSubtitleEl) {
+    reviewDrawerSubtitleEl.textContent = section?.preview ? String(section.preview) : "";
+  }
+  clearEl(reviewDrawerFieldsEl);
+
+  const fields = Array.isArray(section?.fields) ? section.fields : [];
+  if (fields.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "review-field-readonly";
+    empty.textContent = "No editable fields in this section.";
+    reviewDrawerFieldsEl.appendChild(empty);
+  }
+
+  fields.forEach((field) => {
+    const row = document.createElement("div");
+    row.className = "review-field-row";
+    const label = document.createElement("div");
+    label.className = "review-field-label";
+    label.textContent = String(field?.label || "Field");
+    row.appendChild(label);
+
+    const wrap = document.createElement("div");
+    wrap.className = "review-field-input-wrap";
+    const fieldPath = String(field?.path || "").trim();
+    const readOnly = Boolean(field?.readOnly || !fieldPath);
+    if (readOnly) {
+      const text = document.createElement("div");
+      text.className = "review-field-readonly";
+      text.textContent = toPreviewText(field?.value);
+      wrap.appendChild(text);
+    } else {
+      const input = document.createElement("input");
+      input.className = "review-field-input";
+      input.type = "text";
+      input.value = Array.isArray(field?.value) ? field.value.join(", ") : String(field?.value ?? "");
+      input.addEventListener("change", () => {
+        const ok = applyReviewDrawerFieldChange(fieldPath, input.value);
+        if (ok) setStatus(`Updated ${field.label}.`);
+      });
+      wrap.appendChild(input);
+
+      const evBtn = document.createElement("button");
+      evBtn.type = "button";
+      evBtn.className = "secondary small-btn";
+      evBtn.textContent = "Evidence";
+      evBtn.addEventListener("click", () => {
+        const spans = collectEvidenceSpansForPaths(lastServerResponse || {}, [fieldPath]);
+        if (spans.length === 0) {
+          setStatus(`No evidence spans found for ${field.label}.`);
+          return;
+        }
+        highlightSpanInEditor(Number(spans[0]?.start || spans[0]?.span?.[0]), Number(spans[0]?.end || spans[0]?.span?.[1]));
+      });
+      wrap.appendChild(evBtn);
+    }
+    row.appendChild(wrap);
+    reviewDrawerFieldsEl.appendChild(row);
+  });
+
+  reviewDrawerEl.classList.remove("hidden");
+  reviewDrawerEl.setAttribute("aria-hidden", "false");
+  if (reviewDrawerBackdropEl) reviewDrawerBackdropEl.classList.remove("hidden");
+  if (document.body) document.body.classList.add("review-drawer-open");
+  const firstInput = reviewDrawerFieldsEl.querySelector("input, button, select, textarea");
+  if (firstInput && typeof firstInput.focus === "function") firstInput.focus();
+  else if (reviewDrawerCloseBtn && typeof reviewDrawerCloseBtn.focus === "function") reviewDrawerCloseBtn.focus();
+  else if (typeof reviewDrawerEl.focus === "function") reviewDrawerEl.focus();
+}
+
+function initReviewDrawer() {
+  if (reviewDrawerBackdropEl && !reviewDrawerBackdropEl.dataset.wired) {
+    reviewDrawerBackdropEl.dataset.wired = "1";
+    reviewDrawerBackdropEl.addEventListener("click", () => closeReviewDrawer());
+  }
+  if (reviewDrawerCloseBtn && !reviewDrawerCloseBtn.dataset.wired) {
+    reviewDrawerCloseBtn.dataset.wired = "1";
+    reviewDrawerCloseBtn.addEventListener("click", () => closeReviewDrawer());
+  }
+  if (!document.body.dataset.reviewDrawerKeyHandler) {
+    document.body.dataset.reviewDrawerKeyHandler = "1";
+    document.addEventListener("keydown", (event) => {
+      if (!reviewDrawerEl || reviewDrawerEl.classList.contains("hidden")) return;
+      if (event.key === "Escape") {
+        event.preventDefault();
+        closeReviewDrawer();
+        return;
+      }
+      if (event.key === "Tab") {
+        const focusable = Array.from(
+          reviewDrawerEl.querySelectorAll(
+            'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [href], [tabindex]:not([tabindex="-1"])',
+          ),
+        ).filter((el) => !el.hasAttribute("hidden") && !el.classList.contains("hidden"));
+        if (focusable.length === 0) {
+          event.preventDefault();
+          if (reviewDrawerCloseBtn && typeof reviewDrawerCloseBtn.focus === "function") {
+            reviewDrawerCloseBtn.focus();
+          }
+          return;
+        }
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+        const active = document.activeElement;
+        if (event.shiftKey && active === first) {
+          event.preventDefault();
+          last.focus();
+        } else if (!event.shiftKey && active === last) {
+          event.preventDefault();
+          first.focus();
+        }
+      }
+    });
+  }
+}
+
+function renderReviewSections(data) {
+  if (!reviewSectionsHostEl) return;
+  clearEl(reviewSectionsHostEl);
+  const sections = buildClinicianReviewSections(data);
+  reviewSectionsCache = sections;
+
+  sections.forEach((section, idx) => {
+    const card = document.createElement("details");
+    card.className = "review-section-card";
+    if (idx === 0) card.open = true;
+
+    const summary = document.createElement("summary");
+    const head = document.createElement("div");
+    head.className = "review-section-head";
+    const title = document.createElement("div");
+    title.className = "review-section-title";
+    title.textContent = section.title;
+    head.appendChild(title);
+
+    const actions = document.createElement("div");
+    actions.className = "review-section-actions";
+    const editBtn = document.createElement("button");
+    editBtn.type = "button";
+    editBtn.className = "secondary small-btn";
+    editBtn.textContent = "Edit";
+    editBtn.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      openReviewDrawer(section);
+    });
+    actions.appendChild(editBtn);
+
+    const sectionEvidence = collectEvidenceSpansForPaths(data, section.evidencePaths);
+    let evidenceWrap = null;
+    if (sectionEvidence.length > 0) {
+      const evidenceBtn = document.createElement("button");
+      evidenceBtn.type = "button";
+      evidenceBtn.className = "secondary small-btn";
+      evidenceBtn.textContent = "Evidence";
+      evidenceBtn.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        if (evidenceWrap) evidenceWrap.classList.toggle("hidden");
+      });
+      actions.appendChild(evidenceBtn);
+    }
+
+    head.appendChild(actions);
+    summary.appendChild(head);
+
+    const preview = document.createElement("div");
+    preview.className = "review-section-preview";
+    preview.textContent = toPreviewText(section.preview);
+    summary.appendChild(preview);
+    card.appendChild(summary);
+
+    const body = document.createElement("div");
+    body.className = "review-section-body";
+    const topLines = (Array.isArray(section.fields) ? section.fields : [])
+      .slice(0, 2)
+      .map((field) => `${field.label}: ${toPreviewText(field.value)}`);
+    const previewText = document.createElement("div");
+    previewText.className = "review-field-readonly";
+    previewText.textContent = topLines.join(" | ") || "No section details available.";
+    body.appendChild(previewText);
+
+    if (sectionEvidence.length > 0) {
+      evidenceWrap = document.createElement("div");
+      evidenceWrap.className = "review-evidence-panel hidden";
+      sectionEvidence.slice(0, 8).forEach((span) => {
+        evidenceWrap.appendChild(makeEvidenceChip(span));
+      });
+      body.appendChild(evidenceWrap);
+    }
+
+    card.appendChild(body);
+    reviewSectionsHostEl.appendChild(card);
+  });
+}
+
+function renderClinicianReviewShell(data) {
+  if (!atlasClinicianShellEl) return;
+  moveNeedsAttentionCard();
+  renderCaseSummaryStrip(data);
+  renderReviewSections(data);
 }
 
 function severityRank(severity) {
@@ -2755,6 +5511,88 @@ function setCompletenessPendingChanges(pending) {
   updateCompletenessApplyButtonState();
 }
 
+function mapKeyedEbusStationCompletenessField(fieldToken) {
+  const raw = String(fieldToken || "").trim();
+  if (!raw) return "";
+  const cleaned = raw.replace(/^morphology\./i, "");
+  const lower = cleaned.toLowerCase();
+  const aliases = {
+    size_short_axis_mm: "short_axis_mm",
+    short_axis_mm: "short_axis_mm",
+    size_long_axis_mm: "long_axis_mm",
+    long_axis_mm: "long_axis_mm",
+    passes: "number_of_passes",
+    number_of_passes: "number_of_passes",
+    needle_gauge: "needle_gauge",
+    lymphocytes: "lymphocytes_present",
+    lymphocytes_present: "lymphocytes_present",
+    rose: "rose_result",
+    rose_result: "rose_result",
+  };
+  const allowed = new Set([
+    "station",
+    "sampled",
+    "short_axis_mm",
+    "long_axis_mm",
+    "shape",
+    "margin",
+    "echogenicity",
+    "chs_present",
+    "necrosis_present",
+    "calcification_present",
+    "needle_gauge",
+    "number_of_passes",
+    "rose_result",
+    "lymphocytes_present",
+    "morphologic_impression",
+  ]);
+  if (allowed.has(lower)) return lower;
+  const mapped = aliases[lower] || aliases[lower.replace(/^size_/, "").replace(/^node_/, "")] || "";
+  return allowed.has(mapped) ? mapped : "";
+}
+
+function parseKeyedEbusStationPromptPath(promptPath) {
+  const raw = String(promptPath || "").trim();
+  const match = raw.match(/^ebus_station\{([^}]*)\}\.(.+)$/i);
+  if (!match) return null;
+  const paramsText = String(match[1] || "");
+  const fieldRaw = String(match[2] || "");
+  const fieldKey = mapKeyedEbusStationCompletenessField(fieldRaw);
+  if (!fieldKey) return null;
+
+  let station = "";
+  paramsText.split(/[,;]+/).forEach((seg) => {
+    const parts = String(seg || "").split("=");
+    if (parts.length < 2) return;
+    const k = String(parts[0] || "").trim().toLowerCase();
+    const v = parts.slice(1).join("=");
+    if (k === "station") station = v;
+  });
+  const token = normalizeEbusStationToken(station);
+  if (!token) return null;
+  return { stationToken: token, fieldKey };
+}
+
+function resolveKeyedPromptPath(registry, promptPath) {
+  const parsed = parseKeyedEbusStationPromptPath(promptPath);
+  if (!parsed) return "";
+
+  const stationToken = parsed.stationToken;
+  let idx = findEbusStationDetailRowIndexByToken(stationToken);
+  if (idx === null) {
+    const rows = buildNormalizedEbusStationsDetail(registry);
+    for (let i = 0; i < rows.length; i += 1) {
+      const rowToken = normalizeEbusStationToken(rows[i]?.station);
+      if (rowToken && rowToken === stationToken) {
+        idx = i;
+        break;
+      }
+    }
+  }
+  if (idx === null) return "";
+  return `granular_data.linear_ebus_stations_detail[${idx}].${parsed.fieldKey}`;
+}
+
 function getWildcardItemsForPrompt(registry, promptPath) {
   const path = String(promptPath || "");
   if (path.startsWith("granular_data.navigation_targets[*].")) {
@@ -2762,8 +5600,7 @@ function getWildcardItemsForPrompt(registry, promptPath) {
     return Array.isArray(list) ? list : [];
   }
   if (path.startsWith("granular_data.linear_ebus_stations_detail[*].")) {
-    const list = registry?.granular_data?.linear_ebus_stations_detail;
-    return Array.isArray(list) ? list : [];
+    return buildNormalizedEbusStationsDetail(registry);
   }
   return [];
 }
@@ -2784,6 +5621,8 @@ function describeWildcardItemForPrompt(promptPath, item, idx) {
 
 function resolvePromptPath(registry, promptPath) {
   const base = String(promptPath || "").trim();
+  const keyed = resolveKeyedPromptPath(registry, base);
+  if (keyed) return { effectivePath: keyed, hasWildcard: false, wildcardCount: 0 };
   if (!base.includes("[*]")) return { effectivePath: base, hasWildcard: false, wildcardCount: 0 };
 
   const items = getWildcardItemsForPrompt(registry, base);
@@ -2804,7 +5643,11 @@ function normalizeCompletenessPromptPath(promptPath) {
 }
 
 function getCompletenessInputSpec(promptPath) {
-  const normalizedPromptPath = normalizeCompletenessPromptPath(promptPath);
+  let normalizedPromptPath = normalizeCompletenessPromptPath(promptPath);
+  const keyed = parseKeyedEbusStationPromptPath(promptPath);
+  if (keyed) {
+    normalizedPromptPath = `granular_data.linear_ebus_stations_detail[*].${keyed.fieldKey}`;
+  }
   const map = {
     "patient_demographics.age_years": { type: "integer", placeholder: "e.g., 67" },
     "patient.age": { type: "integer", placeholder: "e.g., 67" },
@@ -3044,12 +5887,34 @@ function applyCompletenessPromptInputs(data) {
   }
 
   const hintsByIndex = buildCompletenessEbusStationHintsByIndex(prompts);
-  const stationHintResolver = (prompt, effectivePath) =>
-    getCompletenessEbusStationHintForPath(prompt, effectivePath, hintsByIndex, (idx) => {
+  const stationHintResolver = (prompt, effectivePath) => {
+    const hint = getCompletenessEbusStationHintForPath(prompt, effectivePath, hintsByIndex, (idx) => {
       const table = getFlatTableStateById("linear_ebus_stations_detail");
       const row = Array.isArray(table?.rows) ? table.rows[idx] : null;
       return row?.station;
     });
+    if (hint) return hint;
+
+    const match = String(effectivePath || "").trim().match(
+      /^granular_data\.linear_ebus_stations_detail\[(\d+)\]\.[^.]+$/
+    );
+    const idx = match ? Number.parseInt(match[1], 10) : null;
+    if (Number.isFinite(idx)) {
+      const mapped = hintsByIndex.get(idx);
+      if (mapped) return mapped;
+    }
+
+    const stationMatch = String(prompt?.label || "")
+      .concat(" ", String(prompt?.message || ""))
+      .match(/station\s+([0-9]{1,2}(?:[LR])?(?:RS|LS|R|L)?)\b/i);
+    const normalized = stationMatch ? normalizeCompletenessStationToken(stationMatch[1]) : "";
+    if (normalized) {
+      if (Number.isFinite(idx)) hintsByIndex.set(idx, normalized);
+      return normalized;
+    }
+
+    return "";
+  };
 
   const { entries, invalidCount } = collectStagedCompletenessEntries({
     prompts,
@@ -3164,6 +6029,80 @@ function getFlatTableStateById(tableId) {
   return tables.find((t) => t?.id === tableId) || null;
 }
 
+function findEbusStationDetailRowIndexByToken(stationToken) {
+  const token = normalizeEbusStationToken(stationToken);
+  if (!token) return null;
+  const table = getFlatTableStateById("linear_ebus_stations_detail");
+  const rows = Array.isArray(table?.rows) ? table.rows : [];
+  for (let i = 0; i < rows.length; i += 1) {
+    const rowToken = normalizeEbusStationToken(rows[i]?.station);
+    if (rowToken && rowToken === token) return i;
+  }
+  return null;
+}
+
+function ensureEbusStationDetailRowForToken(stationToken) {
+  const token = normalizeEbusStationToken(stationToken);
+  if (!token) return null;
+  const table = getFlatTableStateById("linear_ebus_stations_detail");
+  if (!table || !Array.isArray(table.rows)) return null;
+  const existing = findEbusStationDetailRowIndexByToken(token);
+  if (existing !== null) return existing;
+
+  const newRow = {};
+  (Array.isArray(table.columns) ? table.columns : []).forEach((col) => {
+    if (!col?.key) return;
+    newRow[col.key] = "";
+  });
+  newRow.station = token;
+  table.rows.push(newRow);
+  return table.rows.length - 1;
+}
+
+function syncEbusStationDetailRowToNodeEvents(detailRowIndex, key) {
+  const stationTable = getFlatTableStateById("linear_ebus_stations_detail");
+  const nodeTable = getFlatTableStateById("ebus_node_events");
+  if (!stationTable || !nodeTable) return;
+  const detailRow = Array.isArray(stationTable.rows) ? stationTable.rows[detailRowIndex] : null;
+  if (!detailRow || typeof detailRow !== "object") return;
+  const stationToken = normalizeEbusStationToken(detailRow?.station);
+  if (!stationToken) return;
+
+  (Array.isArray(nodeTable.rows) ? nodeTable.rows : []).forEach((nodeRow) => {
+    if (!nodeRow || typeof nodeRow !== "object") return;
+    const nodeToken = normalizeEbusStationToken(nodeRow?.station);
+    if (!nodeToken || nodeToken !== stationToken) return;
+
+    if (key === "needle_gauge") nodeRow.needle_gauge = detailRow.needle_gauge ?? "";
+    if (key === "lymphocytes_present") nodeRow.lymphocytes_present = detailRow.lymphocytes_present ?? "";
+    if (key === "number_of_passes") {
+      const curr = String(nodeRow.passes ?? "").trim();
+      if (!curr) nodeRow.passes = detailRow.number_of_passes ?? "";
+    }
+    if (key === "rose_result") {
+      const curr = String(nodeRow.rose_result ?? "").trim();
+      if (!curr) nodeRow.rose_result = detailRow.rose_result ?? "";
+    }
+  });
+}
+
+function syncEbusNodeEventRowToStationDetail(nodeEventRow, key) {
+  const stationToken = normalizeEbusStationToken(nodeEventRow?.station);
+  if (!stationToken) return;
+  if (!["needle_gauge", "lymphocytes_present"].includes(String(key || ""))) return;
+  const detailIdx = ensureEbusStationDetailRowForToken(stationToken);
+  if (detailIdx === null) return;
+  const stationTable = getFlatTableStateById("linear_ebus_stations_detail");
+  const detailRow = Array.isArray(stationTable?.rows) ? stationTable.rows[detailIdx] : null;
+  if (!detailRow || typeof detailRow !== "object") return;
+
+  if (key === "needle_gauge") detailRow.needle_gauge = String(nodeEventRow?.needle_gauge ?? "");
+  if (key === "lymphocytes_present")
+    detailRow.lymphocytes_present = String(nodeEventRow?.lymphocytes_present ?? "");
+
+  syncEbusStationDetailRowToNodeEvents(detailIdx, key);
+}
+
 function findFlatFieldValueRowByRegistryPath(tables, registryPath) {
   const list = Array.isArray(tables) ? tables : [];
   const full = String(registryPath || "").trim();
@@ -3261,6 +6200,9 @@ function applyCompletenessValueToFlatTables(targetEffectivePath, coercedValue, o
 
     if (restoreBase) {
       row[key] = baseRow ? baseRow[key] ?? "" : "";
+      if (["needle_gauge", "number_of_passes", "lymphocytes_present", "rose_result"].includes(key)) {
+        syncEbusStationDetailRowToNodeEvents(rowIndex, key);
+      }
       return true;
     }
 
@@ -3269,6 +6211,9 @@ function applyCompletenessValueToFlatTables(targetEffectivePath, coercedValue, o
     else if (Array.isArray(coercedValue))
       row[key] = coercedValue.map((v) => String(v || "").trim()).filter((v) => v !== "").join(", ");
     else row[key] = String(coercedValue ?? "");
+    if (["needle_gauge", "number_of_passes", "lymphocytes_present", "rose_result"].includes(key)) {
+      syncEbusStationDetailRowToNodeEvents(rowIndex, key);
+    }
     return true;
   }
 
@@ -3320,9 +6265,12 @@ function renderCompletenessPrompts(data) {
   const prompts = Array.isArray(data?.missing_field_prompts) ? data.missing_field_prompts : [];
   lastCompletenessPrompts = prompts;
   const registry = getRegistry(data) || {};
+  const normalizedEbusStations = buildNormalizedEbusStationsDetail(registry);
+  const ebusHintsByIndex = buildCompletenessEbusStationHintsByIndex(prompts);
 
   if (!prompts.length || data?.error) {
     completenessPromptsCardEl.classList.add("hidden");
+    if (needsAttentionHostEl) needsAttentionHostEl.classList.add("hidden");
     if (completenessToggleBtn) completenessToggleBtn.disabled = true;
     if (completenessCopyBtn) completenessCopyBtn.disabled = true;
     setCompletenessPendingChanges(false);
@@ -3330,6 +6278,7 @@ function renderCompletenessPrompts(data) {
   }
 
   completenessPromptsCardEl.classList.remove("hidden");
+  if (needsAttentionHostEl) needsAttentionHostEl.classList.remove("hidden");
   if (completenessToggleBtn) completenessToggleBtn.disabled = false;
   if (completenessCopyBtn) completenessCopyBtn.disabled = false;
   updateCompletenessApplyButtonState();
@@ -3468,6 +6417,28 @@ function renderCompletenessPrompts(data) {
 
       const spec = getCompletenessInputSpec(promptPath);
       const effectivePath = resolved.effectivePath;
+      const ebusIndexedMatch = String(effectivePath || "").match(
+        /^granular_data\.linear_ebus_stations_detail\[(\d+)\]\.[^.]+$/
+      );
+      if (ebusIndexedMatch) {
+        const idx = Number.parseInt(ebusIndexedMatch[1], 10);
+        let stationHint = "";
+        const fromRegistry = normalizedEbusStations?.[idx]?.station;
+        stationHint = normalizeEbusStationToken(fromRegistry);
+        if (!stationHint) stationHint = ebusHintsByIndex.get(idx) || "";
+        if (!stationHint) {
+          const labelText = String(p?.label || "");
+          const messageText = String(p?.message || "");
+          const match = `${labelText} ${messageText}`.match(/station\s+([0-9]{1,2}(?:[LR])?(?:RS|LS|R|L)?)\b/i);
+          stationHint = match ? normalizeCompletenessStationToken(match[1]) : "";
+        }
+        if (stationHint) {
+          const meta = document.createElement("div");
+          meta.className = "completeness-item-path";
+          meta.textContent = `Station ${stationHint}`;
+          main.appendChild(meta);
+        }
+      }
       const stored = completenessRawValueByPath.get(effectivePath);
 
       let input = null;
@@ -3568,6 +6539,7 @@ function renderCompletenessPrompts(data) {
   });
 
   updateCompletenessApplyButtonState();
+  moveNeedsAttentionCard();
 }
 
 /**
@@ -4285,8 +7257,8 @@ function renderClinicalContextTable(data) {
   const sex = normalizeSexDisplay(sexRaw);
 
   const ctx = registry?.clinical_context || {};
-  const sed = registry?.sedation || {};
-  const setting = registry?.procedure_setting || {};
+  const entities = buildEntityIndex(registry);
+  const sed = entities?.sedation || {};
 
   const rows = [
     { label: "Primary indication", value: cleanIndicationForDisplay(indication), fullWidth: true },
@@ -4297,9 +7269,9 @@ function renderClinicalContextTable(data) {
     { label: "Bronchus sign", value: ctx?.bronchus_sign },
     { label: "Sedation type", value: sed?.type },
     { label: "Anesthesia provider", value: sed?.anesthesia_provider },
-    { label: "Airway type", value: setting?.airway_type },
-    { label: "Procedure location", value: setting?.location },
-    { label: "Patient position", value: setting?.patient_position },
+    { label: "Airway type", value: sed?.airway_type },
+    { label: "Procedure location", value: sed?.location },
+    { label: "Patient position", value: sed?.patient_position },
   ].filter((r) => r.value !== null && r.value !== undefined && String(r.value).trim() !== "");
 
   if (rows.length === 0) {
@@ -4531,12 +7503,25 @@ function summarizeProcedure(procKey, procObj) {
   return parts.join(" · ") || "—";
 }
 
-function renderProceduresSummaryTable(data) {
+function renderProceduresSummaryTable(data, options = {}) {
   const host = document.getElementById("proceduresSummaryHost");
   if (!host) return;
   clearEl(host);
 
   const registry = getRegistry(data);
+  const remoteEvents = Array.isArray(options?.remoteCaseData?.events) ? options.remoteCaseData.events : [];
+  try {
+    const joined = buildJoinedTargetSummary(registry, remoteEvents);
+    host.innerHTML = renderProcedureSummaryCard(registry, joined, remoteEvents);
+  } catch {
+    host.innerHTML = '<div class="dash-empty" style="padding: 10px 12px;">Failed to render case summary.</div>';
+  }
+
+  const details = document.createElement("details");
+  details.className = "dash-details";
+  const detailsSummary = document.createElement("summary");
+  detailsSummary.textContent = "Procedures performed (registry)";
+  details.appendChild(detailsSummary);
   const procs = registry?.procedures_performed;
   const pleural = registry?.pleural_procedures;
   const hasProcs = procs && typeof procs === "object";
@@ -4547,7 +7532,8 @@ function renderProceduresSummaryTable(data) {
     empty.className = "dash-empty";
     empty.style.padding = "10px 12px";
     empty.textContent = "No procedures available.";
-    host.appendChild(empty);
+    details.appendChild(empty);
+    host.appendChild(details);
     return;
   }
 
@@ -4574,7 +7560,8 @@ function renderProceduresSummaryTable(data) {
     empty.className = "dash-empty";
     empty.style.padding = "10px 12px";
     empty.textContent = "No procedures found.";
-    host.appendChild(empty);
+    details.appendChild(empty);
+    host.appendChild(details);
     return;
   }
 
@@ -4654,7 +7641,8 @@ function renderProceduresSummaryTable(data) {
   });
 
   table.appendChild(tbody);
-  host.appendChild(table);
+  details.appendChild(table);
+  host.appendChild(details);
 }
 
 function toggleCard(cardId, visible) {
@@ -5435,7 +8423,60 @@ function buildFlattenedTables(data) {
     emptyMessage: "No navigation targets.",
   });
 
-  const ebusStations = Array.isArray(granular?.linear_ebus_stations_detail) ? granular.linear_ebus_stations_detail : [];
+  const ebus = registry?.procedures_performed?.linear_ebus || {};
+  const ebusPerformed = isPerformedProcedure(ebus);
+  const nodeEvents = Array.isArray(ebus?.node_events) ? ebus.node_events : [];
+  tables.push({
+    id: "linear_ebus_summary",
+    title: "Linear EBUS Technical Summary",
+    columns: [
+      { key: "field", label: "Field", readOnly: true },
+      { key: "value", label: "Value", type: "text" },
+    ],
+    rows: [
+      {
+        field: "Stations sampled",
+        value: ebusPerformed && Array.isArray(ebus?.stations_sampled) ? ebus.stations_sampled.join(", ") : "",
+        __meta: {
+          path: "registry.procedures_performed.linear_ebus.stations_sampled",
+          valueType: "list",
+        },
+      },
+      {
+        field: "Needle gauge",
+        value: ebusPerformed ? ebus?.needle_gauge || "" : "",
+        __meta: { path: "registry.procedures_performed.linear_ebus.needle_gauge", valueType: "text" },
+      },
+      {
+        field: "Elastography used",
+        value: ebusPerformed ? toYesNo(ebus?.elastography_used) : "",
+        __meta: {
+          path: "registry.procedures_performed.linear_ebus.elastography_used",
+          valueType: "boolean",
+          inputType: "select",
+          options: YES_NO_OPTIONS,
+        },
+      },
+      {
+        field: "Elastography pattern",
+        value: ebusPerformed ? deriveLinearEbusElastographyPattern(ebus) : "",
+        __meta: {
+          path: "registry.procedures_performed.linear_ebus.elastography_pattern",
+          valueType: "text",
+        },
+      },
+    ],
+    allowAdd: false,
+    allowDelete: false,
+  });
+
+  const ebusStations = buildNormalizedEbusStationsDetail(registry);
+  const ebusStationDetailByToken = new Map();
+  ebusStations.forEach((row) => {
+    const token = normalizeEbusStationToken(row?.station);
+    if (token && !ebusStationDetailByToken.has(token)) ebusStationDetailByToken.set(token, row);
+  });
+  const hideEbusEventFieldsInMorphology = nodeEvents.length > 0;
   tables.push({
     id: "linear_ebus_stations_detail",
     title: "Linear EBUS Stations (Morphology)",
@@ -5450,10 +8491,16 @@ function buildFlattenedTables(data) {
       { key: "chs_present", label: "CHS Present", type: "select", options: YES_NO_OPTIONS },
       { key: "necrosis_present", label: "Necrosis", type: "select", options: YES_NO_OPTIONS },
       { key: "calcification_present", label: "Calcification", type: "select", options: YES_NO_OPTIONS },
-      { key: "needle_gauge", label: "Needle Gauge", type: "text" },
-      { key: "number_of_passes", label: "Passes", type: "number" },
-      { key: "rose_result", label: "ROSE Result", type: "text" },
-      { key: "lymphocytes_present", label: "Lymphocytes", type: "select", options: YES_NO_OPTIONS },
+      { key: "needle_gauge", label: "Needle Gauge", type: "text", hidden: hideEbusEventFieldsInMorphology },
+      { key: "number_of_passes", label: "Passes", type: "number", hidden: hideEbusEventFieldsInMorphology },
+      { key: "rose_result", label: "ROSE Result", type: "text", hidden: hideEbusEventFieldsInMorphology },
+      {
+        key: "lymphocytes_present",
+        label: "Lymphocytes",
+        type: "select",
+        options: YES_NO_OPTIONS,
+        hidden: hideEbusEventFieldsInMorphology,
+      },
       { key: "morphologic_impression", label: "Morphologic Impression", type: "text" },
     ],
     rows: ebusStations.map((s) => ({
@@ -5472,10 +8519,64 @@ function buildFlattenedTables(data) {
       rose_result: s?.rose_result || "",
       lymphocytes_present: toYesNo(s?.lymphocytes_present),
       morphologic_impression: s?.morphologic_impression || "",
+      __derived: Boolean(s?.__derived),
+      __source: s?.__source || "",
+      __entityKey: s?.__entityKey || "",
     })),
     allowAdd: false,
     allowDelete: false,
     emptyMessage: "No station detail entries.",
+  });
+
+  tables.push({
+    id: "ebus_node_events",
+    title: "Linear EBUS Node Events",
+    columns: [
+      { key: "station", label: "Station", type: "text" },
+      { key: "action", label: "Action", type: "select", options: EBUS_ACTION_OPTIONS },
+      { key: "needle_gauge", label: "Needle Gauge", type: "text" },
+      { key: "passes", label: "Passes", type: "number" },
+      { key: "rose_result", label: "ROSE Result", type: "text" },
+      { key: "lymphocytes_present", label: "Lymphocytes", type: "select", options: YES_NO_OPTIONS },
+      { key: "elastography_pattern", label: "Elastography", type: "text" },
+      { key: "path_result", label: "Path Result", type: "select", options: PATH_RESULT_OPTIONS },
+      { key: "path_diagnosis_text", label: "Path Diagnosis", type: "text" },
+      { key: "path_source_event_id", label: "Path Source Event", readOnly: true },
+      { key: "path_relative_day_offset", label: "Path T Offset", readOnly: true },
+      { key: "evidence_quote", label: "Evidence", type: "text" },
+    ],
+    rows: nodeEvents.map((ev) => {
+      const stationToken = normalizeEbusStationToken(ev?.station);
+      const detail = stationToken ? ebusStationDetailByToken.get(stationToken) : null;
+      const gaugeDisplay = detail?.needle_gauge ? String(detail.needle_gauge) : "";
+      const passesDisplay = Number.isFinite(ev?.passes)
+        ? String(ev.passes)
+        : Number.isFinite(detail?.number_of_passes)
+          ? String(detail.number_of_passes)
+          : "";
+      const roseDisplay = ev?.rose_result || detail?.rose_result || "";
+      const lymphDisplay = toYesNo(detail?.lymphocytes_present);
+      return {
+        station: stationToken || ev?.station || "",
+        action: ev?.action || "",
+        needle_gauge: gaugeDisplay,
+        passes: passesDisplay,
+        rose_result: roseDisplay,
+        lymphocytes_present: lymphDisplay,
+        elastography_pattern: ev?.elastography_pattern || "",
+        path_result: ev?.path_result || "",
+        path_diagnosis_text: ev?.path_diagnosis_text || "",
+        path_source_event_id: ev?.path_source_event_id ? String(ev.path_source_event_id) : "",
+        path_relative_day_offset:
+          Number.isFinite(ev?.path_relative_day_offset) || ev?.path_relative_day_offset === 0
+            ? String(ev.path_relative_day_offset)
+            : "",
+        evidence_quote: ev?.evidence_quote || "",
+      };
+    }),
+    allowAdd: true,
+    allowDelete: true,
+    emptyMessage: "No node events.",
   });
 
   const caoSites = Array.isArray(granular?.cao_interventions_detail) ? granular.cao_interventions_detail : [];
@@ -5829,73 +8930,368 @@ function buildFlattenedTables(data) {
     emptyMessage: outcomesHasAny ? "" : "No outcomes documented.",
   });
 
-  const ebus = registry?.procedures_performed?.linear_ebus || {};
-  const ebusPerformed = isPerformedProcedure(ebus);
+  const specimensPrimaryRaw = Array.isArray(granular?.specimens_collected) ? granular.specimens_collected : [];
+  const specimensPrimary = specimensPrimaryRaw
+    .filter((row) => row && typeof row === "object" && !Array.isArray(row))
+    .map((row) => ({ ...row }));
+  const usedSpecimenNumbers = new Set();
+  let maxSpecimenNumber = 0;
+  specimensPrimary.forEach((row) => {
+    const n = parseNumber(row?.specimen_number);
+    if (n === null) return;
+    const v = Math.trunc(n);
+    if (v >= 1) {
+      usedSpecimenNumbers.add(v);
+      if (v > maxSpecimenNumber) maxSpecimenNumber = v;
+    }
+  });
+  let nextSpecimenNumber = Math.max(1, maxSpecimenNumber + 1);
+
+  const specimenFallback = [];
+  const specimenFallbackSeen = new Set();
+  const addSpecimenFallback = (row) => {
+    const proc = String(row?.source_procedure || "").trim();
+    const locRaw = String(row?.source_location || "").trim();
+    if (!proc || !locRaw) return;
+    const loc = proc === "EBUS-TBNA" ? normalizeEbusStationToken(locRaw) : (L?.normalizeWhitespaceCase ? L.normalizeWhitespaceCase(locRaw) : locRaw);
+    const key = L?.stableKeyFromParts ? L.stableKeyFromParts("specimen_fallback", proc, loc) : `${proc}|${loc}`.toLowerCase();
+    if (specimenFallbackSeen.has(key)) return;
+    specimenFallbackSeen.add(key);
+    const out = { ...row };
+    out.source_procedure = proc;
+    out.source_location = loc;
+    if (parseNumber(out?.specimen_number) === null) {
+      while (usedSpecimenNumbers.has(nextSpecimenNumber)) nextSpecimenNumber += 1;
+      out.specimen_number = nextSpecimenNumber;
+      usedSpecimenNumbers.add(nextSpecimenNumber);
+      nextSpecimenNumber += 1;
+    }
+    specimenFallback.push(out);
+  };
+
+  // Fallback: EBUS sampling events imply specimens were taken.
+  const ebusForSpecimens = registry?.procedures_performed?.linear_ebus || {};
+  const ebusEventsForSpecimens = Array.isArray(ebusForSpecimens?.node_events) ? ebusForSpecimens.node_events : [];
+  ebusEventsForSpecimens.forEach((ev) => {
+    const action = String(ev?.action || "").trim();
+    if (!action || action === "inspected_only") return;
+    const station = normalizeEbusStationToken(ev?.station);
+    if (!station) return;
+    const rose = String(ev?.rose_result || "").trim();
+    addSpecimenFallback({
+      source_procedure: "EBUS-TBNA",
+      source_location: station,
+      rose_performed: rose ? true : null,
+      rose_result: rose ? rose : null,
+    });
+  });
+
+  // Fallback: BAL location implies a specimen was collected.
+  const balSpec = registry?.procedures_performed?.bal || {};
+  const balLoc = cleanLocationForDisplay(balSpec?.location) || "";
+  if (balLoc && (isPerformedProcedure(balSpec) || hasProcedureDetails(balSpec))) {
+    addSpecimenFallback({ source_procedure: "BAL", source_location: balLoc });
+  }
+
+  if (specimensPrimary.length > 0 || specimenFallback.length > 0) {
+    const normalizeSpecimenKey = (row) => {
+      const proc = String(row?.source_procedure || row?.sourceProcedure || "").trim();
+      const locRaw = String(row?.source_location || row?.sourceLocation || "").trim();
+      const loc = proc === "EBUS-TBNA" ? normalizeEbusStationToken(locRaw) : (L?.normalizeWhitespaceCase ? L.normalizeWhitespaceCase(locRaw) : locRaw);
+      return L?.stableKeyFromParts ? L.stableKeyFromParts("specimen", proc, loc) : `${proc}|${loc}`.toLowerCase();
+    };
+
+    const mergedSpecimens = L?.mergeEntities
+      ? L.mergeEntities({
+          primaryRows: specimensPrimary,
+          fallbackRows: specimenFallback,
+          getKey: (row) => normalizeSpecimenKey(row),
+          mergeRow: (primaryRow, fallbackRow) => {
+            const out = primaryRow && typeof primaryRow === "object" ? { ...primaryRow } : {};
+            const fb = fallbackRow && typeof fallbackRow === "object" ? fallbackRow : {};
+            Object.keys(fb).forEach((k) => {
+              if (String(k || "").startsWith("__")) return;
+              if (out[k] === null || out[k] === undefined || out[k] === "") out[k] = fb[k];
+            });
+            const proc = String(out?.source_procedure || "").trim();
+            const locRaw = String(out?.source_location || "").trim();
+            if (proc === "EBUS-TBNA") out.source_location = normalizeEbusStationToken(locRaw);
+            else out.source_location = L?.normalizeWhitespaceCase ? L.normalizeWhitespaceCase(locRaw) : locRaw;
+            return out;
+          },
+        })
+      : [...specimensPrimary, ...specimenFallback];
+
+    tables.push({
+      id: "specimens_collected",
+      title: "Specimens (Merged)",
+      columns: [
+        { key: "specimen_number", label: "Specimen #", type: "number" },
+        { key: "source_procedure", label: "Source", type: "select", options: SPECIMEN_SOURCE_PROCEDURE_OPTIONS },
+        { key: "source_location", label: "Location", type: "text" },
+        { key: "specimen_count", label: "Count", type: "number" },
+        { key: "specimen_adequacy", label: "Adequacy", type: "select", options: SPECIMEN_ADEQUACY_OPTIONS },
+        { key: "destinations", label: "Destinations", type: "text" },
+        { key: "rose_performed", label: "ROSE", type: "select", options: YES_NO_OPTIONS },
+        { key: "rose_result", label: "ROSE Result", type: "text" },
+        {
+          key: "final_pathology_diagnosis",
+          label: "Final Pathology",
+          type: "text",
+          placeholder: "Pending/Unknown",
+        },
+        { key: "notes", label: "Notes", type: "text" },
+      ],
+      rows: (Array.isArray(mergedSpecimens) ? mergedSpecimens : []).map((s, idx) => {
+        const specimenNumber = parseNumber(s?.specimen_number);
+        const specimenCount = parseNumber(s?.specimen_count);
+        return {
+          specimen_number: specimenNumber === null ? String(idx + 1) : String(Math.trunc(specimenNumber)),
+        source_procedure: String(s?.source_procedure || "").trim(),
+        source_location: String(s?.source_location || "").trim(),
+          specimen_count: specimenCount === null ? "" : String(Math.trunc(specimenCount)),
+        specimen_adequacy: String(s?.specimen_adequacy || "").trim(),
+        destinations: Array.isArray(s?.destinations) ? s.destinations.join(", ") : String(s?.destinations || "").trim(),
+        rose_performed: toYesNo(s?.rose_performed),
+        rose_result: String(s?.rose_result || "").trim(),
+        final_pathology_diagnosis: String(s?.final_pathology_diagnosis || "").trim(),
+        notes: String(s?.notes || "").trim(),
+        __derived: Boolean(s?.__derived),
+        __source: s?.__source || "",
+        __entityKey: s?.__entityKey || normalizeSpecimenKey(s),
+        };
+      }),
+      allowAdd: true,
+      allowDelete: true,
+      emptyMessage: "No specimen rows.",
+    });
+  }
+
+  const pathologyResults =
+    registry?.pathology_results && typeof registry.pathology_results === "object" ? registry.pathology_results : {};
+  const molecularMarkersSummary =
+    pathologyResults?.molecular_markers && typeof pathologyResults.molecular_markers === "object"
+      ? Object.entries(pathologyResults.molecular_markers)
+          .map(([k, v]) => `${k}: ${String(v ?? "").trim()}`)
+          .filter((line) => !line.endsWith(":"))
+          .join("; ")
+      : "";
+  const pathologyHasAny =
+    pathologyResults && typeof pathologyResults === "object" && Object.keys(pathologyResults).length > 0;
   tables.push({
-    id: "linear_ebus_summary",
-    title: "Linear EBUS Technical Summary",
+    id: "pathology_results_summary",
+    title: "Pathology Results (Summary)",
     columns: [
       { key: "field", label: "Field", readOnly: true },
       { key: "value", label: "Value", type: "text" },
     ],
     rows: [
       {
-        field: "Stations sampled",
-        value: ebusPerformed && Array.isArray(ebus?.stations_sampled) ? ebus.stations_sampled.join(", ") : "",
+        field: "Final diagnosis",
+        value: pathologyResults?.final_diagnosis || "",
+        __meta: { path: "registry.pathology_results.final_diagnosis", valueType: "text" },
+      },
+      {
+        field: "Final staging",
+        value: pathologyResults?.final_staging || "",
+        __meta: { path: "registry.pathology_results.final_staging", valueType: "text" },
+      },
+      {
+        field: "Histology",
+        value: pathologyResults?.histology || "",
+        __meta: { path: "registry.pathology_results.histology", valueType: "text" },
+      },
+      {
+        field: "PD-L1 TPS %",
+        value: Number.isFinite(pathologyResults?.pdl1_tps_percent) ? String(pathologyResults.pdl1_tps_percent) : "",
+        __meta: { path: "registry.pathology_results.pdl1_tps_percent", valueType: "number" },
+      },
+      {
+        field: "PD-L1 TPS text",
+        value: pathologyResults?.pdl1_tps_text || "",
+        __meta: { path: "registry.pathology_results.pdl1_tps_text", valueType: "text" },
+      },
+      {
+        field: "Microbiology results",
+        value: pathologyResults?.microbiology_results || "",
+        __meta: { path: "registry.pathology_results.microbiology_results", valueType: "text" },
+      },
+      {
+        field: "Pathology result date",
+        value: pathologyResults?.pathology_result_date || "",
+        __meta: { path: "registry.pathology_results.pathology_result_date", valueType: "text" },
+      },
+      {
+        field: "Molecular markers",
+        value: molecularMarkersSummary,
+        __meta: { valueType: "text" },
+      },
+    ],
+    allowAdd: false,
+    allowDelete: false,
+    emptyMessage: pathologyHasAny ? "" : "No pathology summary fields populated.",
+  });
+
+  const imagingSummary =
+    registry?.imaging_summary && typeof registry.imaging_summary === "object" ? registry.imaging_summary : {};
+  const imagingBaseline =
+    imagingSummary?.baseline && typeof imagingSummary.baseline === "object" ? imagingSummary.baseline : null;
+  const imagingFollowups = Array.isArray(imagingSummary?.followups) ? imagingSummary.followups : [];
+  const latestImaging = imagingFollowups.length
+    ? imagingFollowups[imagingFollowups.length - 1]
+    : imagingBaseline || null;
+  const latestPrefix = imagingFollowups.length
+    ? `registry.imaging_summary.followups[${imagingFollowups.length - 1}]`
+    : "registry.imaging_summary.baseline";
+  tables.push({
+    id: "imaging_summary",
+    title: "Imaging Summary",
+    columns: [
+      { key: "field", label: "Field", readOnly: true },
+      { key: "value", label: "Value", type: "text" },
+    ],
+    rows: [
+      {
+        field: "Baseline modality",
+        value: imagingBaseline?.modality || "",
         __meta: {
-          path: "registry.procedures_performed.linear_ebus.stations_sampled",
-          valueType: "list",
+          path: "registry.imaging_summary.baseline.modality",
+          valueType: "text",
+          inputType: "select",
+          options: IMAGING_MODALITY_OPTIONS,
         },
       },
       {
-        field: "Needle gauge",
-        value: ebusPerformed ? ebus?.needle_gauge || "" : "",
-        __meta: { path: "registry.procedures_performed.linear_ebus.needle_gauge", valueType: "text" },
+        field: "Baseline subtype",
+        value: imagingBaseline?.subtype || "",
+        __meta: {
+          path: "registry.imaging_summary.baseline.subtype",
+          valueType: "text",
+          inputType: "select",
+          options: IMAGING_SUBTYPE_OPTIONS,
+        },
       },
       {
-        field: "Elastography used",
-        value: ebusPerformed ? toYesNo(ebus?.elastography_used) : "",
+        field: "Baseline response",
+        value: imagingBaseline?.response || "",
         __meta: {
-          path: "registry.procedures_performed.linear_ebus.elastography_used",
+          path: "registry.imaging_summary.baseline.response",
+          valueType: "text",
+          inputType: "select",
+          options: RESPONSE_STATUS_OPTIONS,
+        },
+      },
+      {
+        field: "Baseline impression",
+        value: imagingBaseline?.overall_impression_text || "",
+        __meta: { path: "registry.imaging_summary.baseline.overall_impression_text", valueType: "text" },
+      },
+      {
+        field: "Follow-up count",
+        value: String(imagingFollowups.length),
+        __meta: { valueType: "text" },
+      },
+      {
+        field: "Latest response",
+        value: latestImaging?.response || "",
+        __meta: {
+          path: `${latestPrefix}.response`,
+          valueType: "text",
+          inputType: "select",
+          options: RESPONSE_STATUS_OPTIONS,
+        },
+      },
+      {
+        field: "Latest impression",
+        value: latestImaging?.overall_impression_text || "",
+        __meta: { path: `${latestPrefix}.overall_impression_text`, valueType: "text" },
+      },
+    ],
+    allowAdd: false,
+    allowDelete: false,
+    emptyMessage: "No imaging summary fields populated.",
+  });
+
+  const clinicalCourse =
+    registry?.clinical_course && typeof registry.clinical_course === "object" ? registry.clinical_course : {};
+  const currentState =
+    clinicalCourse?.current_state && typeof clinicalCourse.current_state === "object"
+      ? clinicalCourse.current_state
+      : {};
+  const updates = Array.isArray(clinicalCourse?.updates) ? clinicalCourse.updates : [];
+  tables.push({
+    id: "clinical_followup_summary",
+    title: "Clinical Follow-up (Current State)",
+    columns: [
+      { key: "field", label: "Field", readOnly: true },
+      { key: "value", label: "Value", type: "text" },
+    ],
+    rows: [
+      {
+        field: "Disease status",
+        value: currentState?.disease_status || "",
+        __meta: {
+          path: "registry.clinical_course.current_state.disease_status",
+          valueType: "text",
+          inputType: "select",
+          options: RESPONSE_STATUS_OPTIONS,
+        },
+      },
+      {
+        field: "Hospital admission",
+        value: toYesNo(currentState?.hospital_admission),
+        __meta: {
+          path: "registry.clinical_course.current_state.hospital_admission",
           valueType: "boolean",
           inputType: "select",
           options: YES_NO_OPTIONS,
         },
       },
       {
-        field: "Elastography pattern",
-        value: ebusPerformed ? deriveLinearEbusElastographyPattern(ebus) : "",
+        field: "ICU admission",
+        value: toYesNo(currentState?.icu_admission),
         __meta: {
-          path: "registry.procedures_performed.linear_ebus.elastography_pattern",
+          path: "registry.clinical_course.current_state.icu_admission",
+          valueType: "boolean",
+          inputType: "select",
+          options: YES_NO_OPTIONS,
+        },
+      },
+      {
+        field: "Deceased",
+        value: toYesNo(currentState?.deceased),
+        __meta: {
+          path: "registry.clinical_course.current_state.deceased",
+          valueType: "boolean",
+          inputType: "select",
+          options: YES_NO_OPTIONS,
+        },
+      },
+      {
+        field: "Current summary",
+        value: currentState?.summary_text || "",
+        __meta: {
+          path: "registry.clinical_course.current_state.summary_text",
           valueType: "text",
         },
+      },
+      {
+        field: "Current source event",
+        value: currentState?.source_event_id || "",
+        __meta: {
+          path: "registry.clinical_course.current_state.source_event_id",
+          valueType: "text",
+        },
+      },
+      {
+        field: "Follow-up update count",
+        value: String(updates.length),
+        __meta: { valueType: "text" },
       },
     ],
     allowAdd: false,
     allowDelete: false,
-  });
-
-  const nodeEvents = Array.isArray(ebus?.node_events) ? ebus.node_events : [];
-  tables.push({
-    id: "ebus_node_events",
-    title: "Linear EBUS Node Events",
-    columns: [
-      { key: "station", label: "Station", type: "text" },
-      { key: "action", label: "Action", type: "select", options: EBUS_ACTION_OPTIONS },
-      { key: "passes", label: "Passes", type: "number" },
-      { key: "elastography_pattern", label: "Elastography", type: "text" },
-      { key: "evidence_quote", label: "Evidence", type: "text" },
-    ],
-    rows: nodeEvents.map((ev) => ({
-      station: ev?.station || "",
-      action: ev?.action || "",
-      passes: Number.isFinite(ev?.passes) ? String(ev.passes) : "",
-      elastography_pattern: ev?.elastography_pattern || "",
-      evidence_quote: ev?.evidence_quote || "",
-    })),
-    allowAdd: true,
-    allowDelete: true,
-    emptyMessage: "No node events.",
+    emptyMessage: "No clinical follow-up fields populated.",
   });
 
   const evidence = getEvidence(data);
@@ -5964,6 +9360,26 @@ function getFlatTableBaseById(tableId) {
   return base.find((t) => t?.id === tableId) || null;
 }
 
+function isFlatTableModified(tableId) {
+  const baseTable = getFlatTableBaseById(tableId);
+  const stateTable = getFlatTableStateById(tableId);
+  if (!baseTable || !stateTable) return true;
+  const baseRows = Array.isArray(baseTable?.rows) ? baseTable.rows : [];
+  const stateRows = Array.isArray(stateTable?.rows) ? stateTable.rows : [];
+  if (baseRows.length !== stateRows.length) return true;
+  const keys = (Array.isArray(stateTable?.columns) ? stateTable.columns : [])
+    .map((col) => col?.key)
+    .filter(Boolean);
+  for (let i = 0; i < stateRows.length; i += 1) {
+    const baseRow = baseRows[i] && typeof baseRows[i] === "object" ? baseRows[i] : {};
+    const stateRow = stateRows[i] && typeof stateRows[i] === "object" ? stateRows[i] : {};
+    for (const key of keys) {
+      if (String(baseRow[key] ?? "") !== String(stateRow[key] ?? "")) return true;
+    }
+  }
+  return false;
+}
+
 function getFlatTableRowKey(table, row, rowIndex) {
   if (table?.allowAdd || table?.allowDelete) return `idx:${rowIndex}`;
   const meta = row?.__meta || {};
@@ -6021,6 +9437,35 @@ function computeFieldFeedbackPath(table, row, rowIndex, col) {
 
   // Fallback (still useful for QA, even if not a registry field).
   return `ui_tables.${table.id}[${rowIndex}].${col.key}`;
+}
+
+function computeFieldEvidencePath(table, row, rowIndex, col, feedbackPath = null) {
+  if (feedbackPath) return feedbackPath;
+  if (!table || !row || !col) return null;
+
+  const meta = row.__meta || {};
+  if (meta.path && col.key === "value") return meta.path;
+
+  if (table.id === "procedures_summary" && meta.procKey) {
+    const section = meta.section === "pleural_procedures" ? "pleural_procedures" : "procedures_performed";
+    if (col.key === "performed") return `registry.${section}.${meta.procKey}.performed`;
+    if (col.key === "details" || col.key === "procedure") return `registry.${section}.${meta.procKey}`;
+  }
+
+  if (table.id === "navigation_targets") {
+    return `registry.granular_data.navigation_targets[${rowIndex}].${col.key}`;
+  }
+  if (table.id === "linear_ebus_stations_detail") {
+    return `registry.granular_data.linear_ebus_stations_detail[${rowIndex}].${col.key}`;
+  }
+  if (table.id === "cao_interventions_detail") {
+    return `registry.granular_data.cao_interventions_detail[${rowIndex}].${col.key}`;
+  }
+  if (table.id === "ebus_node_events") {
+    return `registry.procedures_performed.linear_ebus.node_events[${rowIndex}].${col.key}`;
+  }
+
+  return null;
 }
 
 let fieldFeedbackPathEl = null;
@@ -6204,8 +9649,10 @@ function getFlatTableGroupId(tableId) {
   if (id.startsWith("coding_") || id === "rules_applied" || id === "financial_summary") return "coding";
   if (id === "audit_flags") return "quality";
   if (id === "complications_details") return "quality";
-  if (id === "clinical_context") return "patient";
-  if (id === "diagnostic_findings") return "diagnostics";
+  if (id === "clinical_context" || id === "clinical_followup_summary") return "patient";
+  if (id === "specimens_collected") return "diagnostics";
+  if (id === "diagnostic_findings" || id === "pathology_results_summary" || id === "imaging_summary")
+    return "diagnostics";
   if (id === "evidence_traceability") return "evidence";
   return "procedures";
 }
@@ -6222,6 +9669,7 @@ const FLAT_TABLE_GROUP_META = [
 
 function renderFlatTablesFromState() {
   if (!flattenedTablesHost) return;
+  closeFlatEvidencePopover();
   clearEl(flattenedTablesHost);
 
   const tables = Array.isArray(flatTablesState) ? flatTablesState : [];
@@ -6231,277 +9679,437 @@ function renderFlatTablesFromState() {
     return;
   }
 
+  const data = lastServerResponse || {};
+  const evidence = getEvidence(data);
+  const evidenceKeys = evidence && typeof evidence === "object" ? Object.keys(evidence) : [];
+  const hasEvidencePathCache = new Map();
+  const hasEvidenceForPath = (path) => {
+    const rawPath = String(path || "").trim();
+    if (!rawPath || rawPath.startsWith("ui_tables.")) return false;
+    if (hasEvidencePathCache.has(rawPath)) return hasEvidencePathCache.get(rawPath);
+
+    const roots = buildEvidenceLookupRoots(rawPath, { includeAliases: true });
+    let found = false;
+    for (const root of roots) {
+      if (!root) continue;
+      const direct = evidence?.[root];
+      if (Array.isArray(direct) && direct.length > 0) {
+        found = true;
+        break;
+      }
+      const dotPrefix = `${root}.`;
+      const bracketPrefix = `${root}[`;
+      if (evidenceKeys.some((key) => key.startsWith(dotPrefix) || key.startsWith(bracketPrefix))) {
+        found = true;
+        break;
+      }
+    }
+    hasEvidencePathCache.set(rawPath, found);
+    return found;
+  };
+
+  const createEvidenceButton = (fieldPath) => {
+    if (!hasEvidenceForPath(fieldPath)) return null;
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "evidence-btn";
+    btn.textContent = "🔎";
+    btn.title = "View evidence";
+    btn.setAttribute("aria-label", "View evidence");
+    btn.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const spans = collectEvidenceSpansForPaths(lastServerResponse || {}, [fieldPath]);
+      if (!Array.isArray(spans) || spans.length === 0) return;
+      showFlatEvidencePopover(btn, spans, "Evidence");
+    });
+    return btn;
+  };
+
   const grouped = new Map();
   tables.forEach((table) => {
     const groupId = getFlatTableGroupId(table?.id);
     if (!grouped.has(groupId)) grouped.set(groupId, []);
     grouped.get(groupId).push(table);
   });
+  const groups = [];
+  FLAT_TABLE_GROUP_META.forEach((meta) => {
+    const groupTables = grouped.get(meta.id) || [];
+    if (groupTables.length > 0) {
+      groups.push({ ...meta, tables: groupTables });
+    }
+  });
 
-  FLAT_TABLE_GROUP_META.forEach((group) => {
-    const groupTables = grouped.get(group.id) || [];
-    if (!groupTables.length) return;
+  if (groups.length === 0) {
+    flattenedTablesHost.innerHTML =
+      '<div class="dash-empty" style="padding: 12px;">No grouped tables available.</div>';
+    return;
+  }
 
-    const groupEl = document.createElement("details");
-    groupEl.className = "registry-group";
-    groupEl.open = Boolean(group.defaultOpen);
+  if (!groups.some((g) => g.id === flatTablesActiveTabId)) {
+    flatTablesActiveTabId = groups[0].id;
+  }
 
-    const summary = document.createElement("summary");
-    summary.className = "registry-group-header";
-    summary.textContent = group.title;
-    groupEl.appendChild(summary);
+  const tabsWrap = document.createElement("div");
+  tabsWrap.className = "flat-tabs";
+  const tablist = document.createElement("div");
+  tablist.className = "flat-tablist";
+  tablist.setAttribute("role", "tablist");
+  tablist.setAttribute("aria-label", "All fields sections");
+  tablist.setAttribute("aria-orientation", "horizontal");
 
-    const groupBody = document.createElement("div");
-    groupBody.className = "registry-group-body";
+  const panelsWrap = document.createElement("div");
+  const tabButtons = [];
+  const tabPanels = [];
 
-    groupTables.forEach((table) => {
-      const section = document.createElement("div");
-      section.className = "flat-table-section";
+  const activateTab = (groupId, options = {}) => {
+    const { focus = false } = options;
+    closeFlatEvidencePopover();
+    flatTablesActiveTabId = groupId;
+    tabButtons.forEach(({ id, button }) => {
+      const active = id === groupId;
+      button.classList.toggle("is-active", active);
+      button.setAttribute("aria-selected", active ? "true" : "false");
+      button.tabIndex = active ? 0 : -1;
+      if (focus && active) button.focus();
+    });
+    tabPanels.forEach(({ id, panel }) => {
+      panel.hidden = id !== groupId;
+    });
+  };
 
-      const header = document.createElement("div");
-      header.className = "flat-table-header";
+  const renderTableSection = (table) => {
+    const section = document.createElement("div");
+    section.className = "flat-table-section";
 
-      const title = document.createElement("div");
-      title.className = "flat-table-title";
-      title.textContent = table.title || table.id;
+    const visibleColumns = (Array.isArray(table?.columns) ? table.columns : []).filter((col) => !col?.hidden);
 
-      const actions = document.createElement("div");
-      actions.className = "flat-table-actions";
+    const header = document.createElement("div");
+    header.className = "flat-table-header";
 
-      if (table.allowAdd) {
-        const addBtn = document.createElement("button");
-        addBtn.type = "button";
-        addBtn.className = "secondary row-action-btn";
-        addBtn.textContent = "Add row";
-        addBtn.addEventListener("click", () => {
-          const newRow = {};
-          table.columns.forEach((col) => {
-            if (col.readOnly) return;
-            if (col.type === "select" && Array.isArray(col.options) && col.options.length > 0) {
-              newRow[col.key] = col.options[0].value ?? "";
-            } else {
-              newRow[col.key] = "";
-            }
-          });
-          table.rows.push(newRow);
-          editedDirty = true;
-          renderFlatTablesFromState();
-          updateEditedPayload();
+    const title = document.createElement("div");
+    title.className = "flat-table-title";
+    title.textContent = table.title || table.id;
+
+    const actions = document.createElement("div");
+    actions.className = "flat-table-actions";
+
+    if (table.allowAdd) {
+      const addBtn = document.createElement("button");
+      addBtn.type = "button";
+      addBtn.className = "secondary row-action-btn";
+      addBtn.textContent = "Add row";
+      addBtn.addEventListener("click", () => {
+        const newRow = {};
+        table.columns.forEach((col) => {
+          if (col.readOnly) return;
+          if (col.type === "select" && Array.isArray(col.options) && col.options.length > 0) {
+            newRow[col.key] = col.options[0].value ?? "";
+          } else {
+            newRow[col.key] = "";
+          }
         });
-        actions.appendChild(addBtn);
-      }
-
-      header.appendChild(title);
-      header.appendChild(actions);
-      section.appendChild(header);
-
-      const tableScroll = document.createElement("div");
-      tableScroll.className = "flat-table-scroll";
-
-      const tableEl = document.createElement("table");
-      tableEl.className = "flat-table";
-
-      const thead = document.createElement("thead");
-      const headRow = document.createElement("tr");
-      table.columns.forEach((col) => {
-        const th = document.createElement("th");
-        th.textContent = col.label || col.key;
-        headRow.appendChild(th);
+        table.rows.push(newRow);
+        editedDirty = true;
+        renderFlatTablesFromState();
+        updateEditedPayload();
       });
-      if (table.allowDelete) {
-        const th = document.createElement("th");
-        th.textContent = "Remove";
-        headRow.appendChild(th);
-      }
-      thead.appendChild(headRow);
-      tableEl.appendChild(thead);
+      actions.appendChild(addBtn);
+    }
 
-      const tbody = document.createElement("tbody");
-      if (!Array.isArray(table.rows) || table.rows.length === 0) {
+    header.appendChild(title);
+    header.appendChild(actions);
+    section.appendChild(header);
+
+    const tableScroll = document.createElement("div");
+    tableScroll.className = "flat-table-scroll";
+
+    const tableEl = document.createElement("table");
+    tableEl.className = "flat-table";
+
+    const thead = document.createElement("thead");
+    const headRow = document.createElement("tr");
+    visibleColumns.forEach((col) => {
+      const th = document.createElement("th");
+      th.textContent = col.label || col.key;
+      headRow.appendChild(th);
+    });
+    if (table.allowDelete) {
+      const th = document.createElement("th");
+      th.textContent = "Remove";
+      headRow.appendChild(th);
+    }
+    thead.appendChild(headRow);
+    tableEl.appendChild(thead);
+
+    const tbody = document.createElement("tbody");
+    if (!Array.isArray(table.rows) || table.rows.length === 0) {
+      const tr = document.createElement("tr");
+      const td = document.createElement("td");
+      td.colSpan = visibleColumns.length + (table.allowDelete ? 1 : 0);
+      td.className = "dash-empty";
+      td.textContent = table.emptyMessage || "No rows.";
+      tr.appendChild(td);
+      tbody.appendChild(tr);
+    } else {
+      const baseRowMap = buildBaseRowMap(table);
+
+      table.rows.forEach((row, rowIndex) => {
         const tr = document.createElement("tr");
-        const td = document.createElement("td");
-        td.colSpan = table.columns.length + (table.allowDelete ? 1 : 0);
-        td.className = "dash-empty";
-        td.textContent = table.emptyMessage || "No rows.";
-        tr.appendChild(td);
-        tbody.appendChild(tr);
-      } else {
-        const baseRowMap = buildBaseRowMap(table);
 
-        table.rows.forEach((row, rowIndex) => {
-          const tr = document.createElement("tr");
+        visibleColumns.forEach((col) => {
+          const td = document.createElement("td");
+          const rawValue = row[col.key] ?? "";
+          const meta = row.__meta || {};
+          const inputType = meta.inputType || col.type;
+          const options = meta.options || col.options;
+          const feedbackPath = computeFieldFeedbackPath(table, row, rowIndex, col);
+          const evidencePath = computeFieldEvidencePath(table, row, rowIndex, col, feedbackPath);
+          const evidenceBtn = createEvidenceButton(evidencePath);
 
-          table.columns.forEach((col) => {
-            const td = document.createElement("td");
-            const rawValue = row[col.key] ?? "";
-            const meta = row.__meta || {};
-            const inputType = meta.inputType || col.type;
-            const options = meta.options || col.options;
-
-            if (col.readOnly || table.readOnly) {
-              const span = document.createElement("span");
-              span.className = "flat-readonly";
-              span.textContent = String(rawValue ?? "");
-              td.appendChild(span);
-              tr.appendChild(td);
-              return;
-            }
-
-            const cellWrap = document.createElement("div");
-            cellWrap.className = "cell-input-wrap";
-
-            const isYesNo =
-              Array.isArray(options) &&
-              options.length === YES_NO_OPTIONS.length &&
-              options.every((o, idx) => o.value === YES_NO_OPTIONS[idx].value);
-
-            const needsToggle = meta.valueType === "boolean" || (inputType === "select" && isYesNo);
-
-            if (needsToggle) {
-              const toggle = document.createElement("div");
-              toggle.className = "bool-toggle";
-
-              const buttons = [
-                { value: "", label: "—", title: "Unset" },
-                { value: "Yes", label: "✅", title: "Yes" },
-                { value: "No", label: "❌", title: "No" },
-              ];
-
-              const setActive = (val) => {
-                Array.from(toggle.querySelectorAll("button")).forEach((btn) => {
-                  btn.classList.toggle("active", btn.dataset.value === String(val ?? ""));
-                });
-              };
-
-              buttons.forEach((b) => {
-                const btn = document.createElement("button");
-                btn.type = "button";
-                btn.className = "bool-toggle-btn";
-                btn.textContent = b.label;
-                btn.title = b.title;
-                btn.dataset.value = b.value;
-                btn.addEventListener("click", () => {
-                  row[col.key] = b.value;
-                  editedDirty = true;
-                  setActive(b.value);
-                  toggle.classList.toggle(
-                    "cell-modified",
-                    isFlatCellModified(table, row, rowIndex, col.key, baseRowMap)
-                  );
-                  updateEditedPayload();
-                });
-                toggle.appendChild(btn);
-              });
-
-              setActive(rawValue ?? "");
-              toggle.classList.toggle("cell-modified", isFlatCellModified(table, row, rowIndex, col.key, baseRowMap));
-              cellWrap.appendChild(toggle);
-            } else if (inputType === "select") {
-              const select = document.createElement("select");
-              select.className = "flat-select";
-              (Array.isArray(options) ? options : []).forEach((opt) => {
-                const option = document.createElement("option");
-                option.value = opt.value;
-                option.textContent = opt.label ?? opt.value;
-                select.appendChild(option);
-              });
-              select.value = rawValue ?? "";
-              select.classList.toggle("cell-modified", isFlatCellModified(table, row, rowIndex, col.key, baseRowMap));
-              select.addEventListener("change", () => {
-                row[col.key] = select.value;
-                editedDirty = true;
-                select.classList.toggle(
-                  "cell-modified",
-                  isFlatCellModified(table, row, rowIndex, col.key, baseRowMap)
-                );
-                updateEditedPayload();
-              });
-              cellWrap.appendChild(select);
+          if (col.readOnly || table.readOnly) {
+            const span = document.createElement("span");
+            span.className = "flat-readonly";
+            span.textContent = String(rawValue ?? "");
+            if (evidenceBtn) {
+              const cellWrap = document.createElement("div");
+              cellWrap.className = "cell-input-wrap";
+              cellWrap.appendChild(span);
+              cellWrap.appendChild(evidenceBtn);
+              td.appendChild(cellWrap);
             } else {
-              const input = document.createElement("input");
-              input.className = "flat-input";
-              input.type = inputType === "number" ? "number" : "text";
-              input.value = rawValue ?? "";
-              input.classList.toggle("cell-modified", isFlatCellModified(table, row, rowIndex, col.key, baseRowMap));
-              input.addEventListener("input", () => {
-                row[col.key] = input.value;
-                editedDirty = true;
-                input.classList.toggle(
-                  "cell-modified",
-                  isFlatCellModified(table, row, rowIndex, col.key, baseRowMap)
-                );
-                updateEditedPayload();
-              });
-              cellWrap.appendChild(input);
+              td.appendChild(span);
             }
+            tr.appendChild(td);
+            return;
+          }
 
-            const feedbackPath = computeFieldFeedbackPath(table, row, rowIndex, col);
-            if (feedbackPath) {
+          const cellWrap = document.createElement("div");
+          cellWrap.className = "cell-input-wrap";
+
+          const isYesNo =
+            Array.isArray(options) &&
+            options.length === YES_NO_OPTIONS.length &&
+            options.every((o, idx) => o.value === YES_NO_OPTIONS[idx].value);
+
+          const needsToggle = meta.valueType === "boolean" || (inputType === "select" && isYesNo);
+
+          if (needsToggle) {
+            const toggle = document.createElement("div");
+            toggle.className = "bool-toggle";
+
+            const buttons = [
+              { value: "", label: "—", title: "Unset" },
+              { value: "Yes", label: "✅", title: "Yes" },
+              { value: "No", label: "❌", title: "No" },
+            ];
+
+            const setActive = (val) => {
+              Array.from(toggle.querySelectorAll("button")).forEach((btn) => {
+                btn.classList.toggle("active", btn.dataset.value === String(val ?? ""));
+              });
+            };
+
+            buttons.forEach((b) => {
               const btn = document.createElement("button");
               btn.type = "button";
-              btn.className = "feedback-btn";
-              btn.textContent = "🚩";
-              btn.dataset.feedbackPath = feedbackPath;
-              btn.title = "Flag this field for review";
-              if (fieldFeedbackStore.has(feedbackPath)) btn.classList.add("flagged");
+              btn.className = "bool-toggle-btn";
+              btn.textContent = b.label;
+              btn.title = b.title;
+              btn.dataset.value = b.value;
               btn.addEventListener("click", () => {
-                showFieldFeedbackModal({
-                  path: feedbackPath,
-                  tableId: table.id,
-                  columnKey: col.key,
-                  label: row?.field || row?.procedure || col.label || col.key,
-                  currentValue: row?.[col.key] ?? "",
-                });
+                row[col.key] = b.value;
+                editedDirty = true;
+                setActive(b.value);
+                if (table.id === "ebus_node_events") syncEbusNodeEventRowToStationDetail(row, col.key);
+                if (
+                  table.id === "linear_ebus_stations_detail" &&
+                  ["needle_gauge", "number_of_passes", "lymphocytes_present", "rose_result"].includes(col.key)
+                ) {
+                  syncEbusStationDetailRowToNodeEvents(rowIndex, col.key);
+                }
+                toggle.classList.toggle(
+                  "cell-modified",
+                  isFlatCellModified(table, row, rowIndex, col.key, baseRowMap),
+                );
+                updateEditedPayload();
               });
-              cellWrap.appendChild(btn);
-            }
+              toggle.appendChild(btn);
+            });
 
-            td.appendChild(cellWrap);
-            tr.appendChild(td);
-          });
-
-          if (table.allowDelete) {
-            const td = document.createElement("td");
-            const btn = document.createElement("button");
-            btn.type = "button";
-            btn.className = "secondary row-action-btn";
-            btn.textContent = "Remove";
-            btn.addEventListener("click", () => {
-              table.rows.splice(rowIndex, 1);
+            setActive(rawValue ?? "");
+            toggle.classList.toggle("cell-modified", isFlatCellModified(table, row, rowIndex, col.key, baseRowMap));
+            cellWrap.appendChild(toggle);
+          } else if (inputType === "select") {
+            const select = document.createElement("select");
+            select.className = "flat-select";
+            (Array.isArray(options) ? options : []).forEach((opt) => {
+              const option = document.createElement("option");
+              option.value = opt.value;
+              option.textContent = opt.label ?? opt.value;
+              select.appendChild(option);
+            });
+            select.value = rawValue ?? "";
+            select.classList.toggle("cell-modified", isFlatCellModified(table, row, rowIndex, col.key, baseRowMap));
+            select.addEventListener("change", () => {
+              row[col.key] = select.value;
               editedDirty = true;
-              renderFlatTablesFromState();
+              if (table.id === "ebus_node_events") syncEbusNodeEventRowToStationDetail(row, col.key);
+              if (
+                table.id === "linear_ebus_stations_detail" &&
+                ["needle_gauge", "number_of_passes", "lymphocytes_present", "rose_result"].includes(col.key)
+              ) {
+                syncEbusStationDetailRowToNodeEvents(rowIndex, col.key);
+              }
+              select.classList.toggle(
+                "cell-modified",
+                isFlatCellModified(table, row, rowIndex, col.key, baseRowMap),
+              );
               updateEditedPayload();
             });
-            td.appendChild(btn);
-            tr.appendChild(td);
+            cellWrap.appendChild(select);
+          } else {
+            const input = document.createElement("input");
+            input.className = "flat-input";
+            input.type = inputType === "number" ? "number" : "text";
+            input.value = rawValue ?? "";
+            const placeholder = String(col?.placeholder || meta?.placeholder || "").trim();
+            if (placeholder && String(rawValue ?? "").trim() === "") {
+              input.placeholder = placeholder;
+            }
+            input.classList.toggle("cell-modified", isFlatCellModified(table, row, rowIndex, col.key, baseRowMap));
+            input.addEventListener("input", () => {
+              row[col.key] = input.value;
+              editedDirty = true;
+              if (table.id === "ebus_node_events") syncEbusNodeEventRowToStationDetail(row, col.key);
+              if (
+                table.id === "linear_ebus_stations_detail" &&
+                ["needle_gauge", "number_of_passes", "lymphocytes_present", "rose_result"].includes(col.key)
+              ) {
+                syncEbusStationDetailRowToNodeEvents(rowIndex, col.key);
+              }
+              input.classList.toggle(
+                "cell-modified",
+                isFlatCellModified(table, row, rowIndex, col.key, baseRowMap),
+              );
+              updateEditedPayload();
+            });
+            cellWrap.appendChild(input);
           }
-          tbody.appendChild(tr);
+
+          if (evidenceBtn) {
+            cellWrap.appendChild(evidenceBtn);
+          }
+
+          if (feedbackPath) {
+            const btn = document.createElement("button");
+            btn.type = "button";
+            btn.className = "feedback-btn";
+            btn.textContent = "🚩";
+            btn.dataset.feedbackPath = feedbackPath;
+            btn.title = "Flag this field for review";
+            if (fieldFeedbackStore.has(feedbackPath)) btn.classList.add("flagged");
+            btn.addEventListener("click", () => {
+              showFieldFeedbackModal({
+                path: feedbackPath,
+                tableId: table.id,
+                columnKey: col.key,
+                label: row?.field || row?.procedure || col.label || col.key,
+                currentValue: row?.[col.key] ?? "",
+              });
+            });
+            cellWrap.appendChild(btn);
+          }
+
+          td.appendChild(cellWrap);
+          tr.appendChild(td);
         });
-      }
 
-      tableEl.appendChild(tbody);
-      tableScroll.appendChild(tableEl);
-      section.appendChild(tableScroll);
+        if (table.allowDelete) {
+          const td = document.createElement("td");
+          const btn = document.createElement("button");
+          btn.type = "button";
+          btn.className = "secondary row-action-btn";
+          btn.textContent = "Remove";
+          btn.addEventListener("click", () => {
+            table.rows.splice(rowIndex, 1);
+            editedDirty = true;
+            renderFlatTablesFromState();
+            updateEditedPayload();
+          });
+          td.appendChild(btn);
+          tr.appendChild(td);
+        }
+        tbody.appendChild(tr);
+      });
+    }
 
-      if (table.note) {
-        const note = document.createElement("div");
-        note.className = "flat-table-note";
-        note.textContent = table.note;
-        section.appendChild(note);
-      }
+    tableEl.appendChild(tbody);
+    tableScroll.appendChild(tableEl);
+    section.appendChild(tableScroll);
 
-      groupBody.appendChild(section);
+    if (table.note) {
+      const note = document.createElement("div");
+      note.className = "flat-table-note";
+      note.textContent = table.note;
+      section.appendChild(note);
+    }
+
+    return section;
+  };
+
+  groups.forEach((group, index) => {
+    const tabId = `flat-tab-${group.id}`;
+    const panelId = `flat-panel-${group.id}`;
+
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "flat-tab";
+    button.id = tabId;
+    button.setAttribute("role", "tab");
+    button.setAttribute("aria-controls", panelId);
+    button.setAttribute("aria-selected", "false");
+    button.tabIndex = -1;
+    button.textContent = group.title;
+    button.addEventListener("click", () => activateTab(group.id));
+    button.addEventListener("keydown", (event) => {
+      if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+      event.preventDefault();
+      let nextIdx = index;
+      if (event.key === "ArrowLeft") nextIdx = (index - 1 + groups.length) % groups.length;
+      if (event.key === "ArrowRight") nextIdx = (index + 1) % groups.length;
+      if (event.key === "Home") nextIdx = 0;
+      if (event.key === "End") nextIdx = groups.length - 1;
+      activateTab(groups[nextIdx].id, { focus: true });
+    });
+    tabButtons.push({ id: group.id, button });
+    tablist.appendChild(button);
+
+    const panel = document.createElement("div");
+    panel.id = panelId;
+    panel.className = "flat-tab-panel";
+    panel.setAttribute("role", "tabpanel");
+    panel.setAttribute("aria-labelledby", tabId);
+    panel.hidden = true;
+
+    group.tables.forEach((table) => {
+      panel.appendChild(renderTableSection(table));
     });
 
-    groupEl.appendChild(groupBody);
-    flattenedTablesHost.appendChild(groupEl);
+    tabPanels.push({ id: group.id, panel });
+    panelsWrap.appendChild(panel);
   });
+
+  tabsWrap.appendChild(tablist);
+  tabsWrap.appendChild(panelsWrap);
+  flattenedTablesHost.appendChild(tabsWrap);
+  activateTab(flatTablesActiveTabId);
 }
 
 function exportableRows(table) {
   return table.rows.map((row) => {
     const obj = {};
-    table.columns.forEach((col) => {
+    (Array.isArray(table?.columns) ? table.columns : []).filter((col) => !col?.hidden).forEach((col) => {
       obj[col.key] = row[col.key] ?? "";
     });
     return obj;
@@ -6513,7 +10121,7 @@ function getTablesForExport() {
   return tables.map((table) => ({
     id: table.id,
     title: table.title,
-    columns: table.columns,
+    columns: (Array.isArray(table?.columns) ? table.columns : []).filter((col) => !col?.hidden),
     rows: exportableRows(table),
   }));
 }
@@ -6777,6 +10385,51 @@ function applyEditsToPayload(payload, tables) {
     setByPath(payload, meta.path, value);
   });
 
+  const pathologySummaryRows = tableMap.get("pathology_results_summary")?.rows || [];
+  pathologySummaryRows.forEach((row) => {
+    const meta = row.__meta || {};
+    if (!meta.path) return;
+    let value = row.value;
+    if (meta.valueType === "boolean") value = parseYesNo(value);
+    if (meta.valueType === "number") value = parseNumber(value);
+    if (meta.valueType === "list") value = parseList(value);
+    if (meta.valueType === "text") {
+      const trimmed = String(value || "").trim();
+      value = trimmed ? trimmed : null;
+    }
+    setByPath(payload, meta.path, value);
+  });
+
+  const imagingSummaryRows = tableMap.get("imaging_summary")?.rows || [];
+  imagingSummaryRows.forEach((row) => {
+    const meta = row.__meta || {};
+    if (!meta.path) return;
+    let value = row.value;
+    if (meta.valueType === "boolean") value = parseYesNo(value);
+    if (meta.valueType === "number") value = parseNumber(value);
+    if (meta.valueType === "list") value = parseList(value);
+    if (meta.valueType === "text") {
+      const trimmed = String(value || "").trim();
+      value = trimmed ? trimmed : null;
+    }
+    setByPath(payload, meta.path, value);
+  });
+
+  const clinicalFollowupRows = tableMap.get("clinical_followup_summary")?.rows || [];
+  clinicalFollowupRows.forEach((row) => {
+    const meta = row.__meta || {};
+    if (!meta.path) return;
+    let value = row.value;
+    if (meta.valueType === "boolean") value = parseYesNo(value);
+    if (meta.valueType === "number") value = parseNumber(value);
+    if (meta.valueType === "list") value = parseList(value);
+    if (meta.valueType === "text") {
+      const trimmed = String(value || "").trim();
+      value = trimmed ? trimmed : null;
+    }
+    setByPath(payload, meta.path, value);
+  });
+
   const navAggRows = tableMap.get("navigation_bronchoscopy_details")?.rows || [];
   navAggRows.forEach((row) => {
     const meta = row.__meta || {};
@@ -6859,10 +10512,28 @@ function applyEditsToPayload(payload, tables) {
         station: row?.station || null,
         action: row?.action || null,
         passes: parseNumber(row?.passes),
+        rose_result: String(row?.rose_result || "").trim() || null,
         elastography_pattern: row?.elastography_pattern || null,
+        path_result: String(row?.path_result || "").trim() || null,
+        path_diagnosis_text: String(row?.path_diagnosis_text || "").trim() || null,
+        path_source_event_id: String(row?.path_source_event_id || "").trim() || null,
+        path_relative_day_offset: parseNumber(row?.path_relative_day_offset),
         evidence_quote: row?.evidence_quote || null,
       }))
-      .filter((row) => row.station || row.action || row.passes || row.elastography_pattern || row.evidence_quote);
+      .filter(
+        (row) =>
+          row.station ||
+          row.action ||
+          row.passes ||
+          row.rose_result ||
+          row.elastography_pattern ||
+          row.path_result ||
+          row.path_diagnosis_text ||
+          row.path_source_event_id ||
+          row.path_relative_day_offset === 0 ||
+          row.path_relative_day_offset ||
+          row.evidence_quote,
+      );
   }
 
   const navRows = tableMap.get("navigation_targets")?.rows || [];
@@ -6940,7 +10611,8 @@ function applyEditsToPayload(payload, tables) {
   const existingStations = Array.isArray(payload?.registry?.granular_data?.linear_ebus_stations_detail)
     ? payload.registry.granular_data.linear_ebus_stations_detail
     : [];
-  if (stationRows.length > 0) {
+  const stationTableModified = isFlatTableModified("linear_ebus_stations_detail");
+  if (stationRows.length > 0 && stationTableModified) {
     ensurePath(payload, "registry.granular_data");
     payload.registry.granular_data.linear_ebus_stations_detail = stationRows.map((row, idx) => {
       const base = existingStations[idx] && typeof existingStations[idx] === "object" ? existingStations[idx] : {};
@@ -6993,6 +10665,70 @@ function applyEditsToPayload(payload, tables) {
 
       return out;
     });
+  }
+
+  const specimenRows = tableMap.get("specimens_collected")?.rows || [];
+  const existingSpecimens = Array.isArray(payload?.registry?.granular_data?.specimens_collected)
+    ? payload.registry.granular_data.specimens_collected
+    : [];
+  const specimenTableModified = isFlatTableModified("specimens_collected");
+  if (specimenRows.length > 0 && specimenTableModified) {
+    ensurePath(payload, "registry.granular_data");
+    payload.registry.granular_data.specimens_collected = specimenRows
+      .map((row, idx) => {
+        const base = existingSpecimens[idx] && typeof existingSpecimens[idx] === "object" ? existingSpecimens[idx] : {};
+        const out = { ...base };
+
+        const specimenNumber = parseNumber(row?.specimen_number);
+        out.specimen_number = specimenNumber === null ? null : Math.trunc(specimenNumber);
+
+        const proc = String(row?.source_procedure || "").trim();
+        out.source_procedure = proc ? proc : null;
+
+        const locRaw = String(row?.source_location || "").trim();
+        let loc = locRaw;
+        if (proc === "EBUS-TBNA") loc = normalizeEbusStationToken(loc);
+        else if (L?.normalizeWhitespaceCase) loc = L.normalizeWhitespaceCase(loc);
+        out.source_location = loc ? loc : null;
+
+        const specimenCount = parseNumber(row?.specimen_count);
+        out.specimen_count = specimenCount === null ? null : Math.trunc(specimenCount);
+
+        const adequacy = String(row?.specimen_adequacy || "").trim();
+        out.specimen_adequacy = adequacy ? adequacy : null;
+
+        const destinations = parseList(row?.destinations);
+        out.destinations = destinations.length ? destinations : null;
+
+        const rosePerformed = parseYesNo(row?.rose_performed);
+        out.rose_performed = rosePerformed;
+
+        const roseResult = String(row?.rose_result || "").trim();
+        out.rose_result = roseResult ? roseResult : null;
+
+        const finalDx = String(row?.final_pathology_diagnosis || "").trim();
+        out.final_pathology_diagnosis = finalDx ? finalDx : null;
+
+        const notes = String(row?.notes || "").trim();
+        out.notes = notes ? notes : null;
+
+        return out;
+      })
+      .filter(
+        (row) =>
+          row &&
+          typeof row === "object" &&
+          (row.specimen_number !== null ||
+            row.source_procedure ||
+            row.source_location ||
+            row.specimen_count !== null ||
+            row.specimen_adequacy ||
+            (Array.isArray(row.destinations) && row.destinations.length > 0) ||
+            row.rose_performed !== null ||
+            row.rose_result ||
+            row.final_pathology_diagnosis ||
+            row.notes),
+      );
   }
 
   const caoRows = tableMap.get("cao_interventions_detail")?.rows || [];
@@ -7261,6 +10997,8 @@ function renderRegistrySummary(data) {
   tbody.innerHTML = "";
 
   const registry = data.registry || {};
+  const entities = buildEntityIndex(registry);
+  const sed = entities?.sedation || {};
 
   // 1. Clinical Context (Top Priority)
   if (registry.clinical_context) {
@@ -7272,7 +11010,7 @@ function renderRegistrySummary(data) {
 
   // 2. Anesthesia/Sedation
   if (registry.sedation) {
-    const sedationStr = `${registry.sedation.type || "Not specified"} (${registry.sedation.anesthesia_provider || "Provider unknown"})`;
+    const sedationStr = `${sed?.type || "Not specified"} (${sed?.anesthesia_provider || "Provider unknown"})`;
     addRegistryRow(tbody, "Sedation", sedationStr);
   }
 
@@ -7353,15 +11091,18 @@ async function renderResults(data, options = {}) {
   if (!container) return;
 
   const rawData = options?.rawData ?? data;
-  const registryUuid = String(
-    options?.registryUuid || data?.registry_uuid || data?.registryUuid || lastSubmittedRegistryUuid || "",
-  ).trim();
+  const hasRegistryUuidOverride = Object.prototype.hasOwnProperty.call(options || {}, "registryUuid");
+  const registryUuidRaw = hasRegistryUuidOverride
+    ? options?.registryUuid
+    : data?.registry_uuid || data?.registryUuid || lastSubmittedRegistryUuid || "";
+  const registryUuid = String(registryUuidRaw || "").trim();
+  const skipRemoteCaseLookup = Boolean(options?.skipRemoteCaseLookup);
   let remoteCaseData =
     options?.remoteCaseData || (registryUuid ? registryCaseSnapshotByUuid.get(registryUuid) || null : null);
-  if (!remoteCaseData && registryUuid) {
+  if (!skipRemoteCaseLookup && !remoteCaseData && registryUuid) {
     remoteCaseData = await fetchRegistryCaseSnapshot(registryUuid, { silent: true });
   }
-  if (remoteCaseData && registryUuid) {
+  if (!skipRemoteCaseLookup && remoteCaseData && registryUuid) {
     registryCaseSnapshotByUuid.set(registryUuid, remoteCaseData);
   }
   const vaultLocalData = registryUuid ? vaultPatientMap.get(registryUuid) || null : null;
@@ -7375,14 +11116,18 @@ async function renderResults(data, options = {}) {
   const preferGrid = isReactRegistryGridEnabled() && Boolean(registryGridRootEl && registryLegacyRightRootEl);
 
   // Always render the legacy dashboard (CPT + RVU tables stay on the left).
-  renderDashboard(data);
+  renderDashboard(data, { registryUuid, remoteCaseData });
   renderFlattenedTables(data);
+  renderClinicianReviewShell(data);
+  setWorkflowStep("review");
 
   if (preferGrid) {
-    await maybeRenderRegistryGrid(data, {
+    registryGridRenderToken += 1;
+    void maybeRenderRegistryGrid(data, {
       registryUuid: registryUuid || null,
       vaultLocalData,
       remoteCaseData,
+      renderToken: registryGridRenderToken,
     });
   } else {
     unmountRegistryGrid();
@@ -7392,11 +11137,21 @@ async function renderResults(data, options = {}) {
   if (serverResponseEl) {
     serverResponseEl.textContent = JSON.stringify(rawData, null, 2);
   }
+
+  const skipSnapshotPersist = Boolean(options?.skipSnapshotPersist);
+  if (!skipSnapshotPersist && isVaultReady() && registryUuid) {
+    void persistCaseSnapshot(vaultVmk, vaultUserId, registryUuid, data).catch(() => {
+      // Snapshot persistence is best-effort; ignore quota/crypto failures.
+    });
+  }
 }
 
 function clearResultsUi() {
   const container = document.getElementById("resultsContainer");
   if (container) container.classList.add("hidden");
+  if (caseSummaryStripEl) clearEl(caseSummaryStripEl);
+  if (reviewSectionsHostEl) clearEl(reviewSectionsHostEl);
+  closeReviewDrawer({ restoreFocus: false });
   unmountRegistryGrid();
   showRegistryLegacyUi();
   if (registryGridRootEl) registryGridRootEl.innerHTML = "";
@@ -7405,8 +11160,10 @@ function clearResultsUi() {
     bundleSummaryHostEl.innerHTML = "";
   }
   lastServerResponse = null;
+  activeCaseEventReviewId = null;
   lastCompletenessPrompts = [];
   if (completenessPromptsCardEl) completenessPromptsCardEl.classList.add("hidden");
+  if (needsAttentionHostEl) needsAttentionHostEl.classList.add("hidden");
   if (completenessToggleBtn) completenessToggleBtn.disabled = true;
   if (completenessPromptsBodyEl) clearEl(completenessPromptsBodyEl);
   if (completenessApplyInlineBtn) completenessApplyInlineBtn.disabled = true;
@@ -7423,6 +11180,7 @@ function clearResultsUi() {
   if (exportPatchBtn) exportPatchBtn.disabled = true;
   if (newNoteBtn) newNoteBtn.disabled = true;
   resetEditedState();
+  setWorkflowStep("input");
 }
 
 function renderStatusBanner(data, container) {
@@ -7668,6 +11426,7 @@ function renderRVUSummary(billingLines, totalRVU, totalPay) {
 function renderClinicalContext(registry, data) {
   const section = createSection('Clinical Context', '🩺');
   const ev = getEvidenceMap(data);
+  const sed = buildEntityIndex(registry || {}).sedation;
 
   const rows = [];
 
@@ -7681,17 +11440,17 @@ function renderClinicalContext(registry, data) {
   if (registry.clinical_context?.bronchus_sign) {
     rows.push(["Bronchus Sign", registry.clinical_context.bronchus_sign, "—"]);
   }
-  if (registry.sedation?.type) {
+  if (sed?.type) {
     rows.push([
       "Sedation Type",
-      registry.sedation.type,
+      sed.type,
       renderEvidenceChips(ev["sedation.type"] || []),
     ]);
   }
-  if (registry.procedure_setting?.airway_type) {
+  if (sed?.airway_type) {
     rows.push([
       "Airway Type",
-      registry.procedure_setting.airway_type,
+      sed.airway_type,
       renderEvidenceChips(ev["procedure_setting.airway_type"] || []),
     ]);
   }
@@ -9213,6 +12972,7 @@ async function main() {
     extractingCamera = true;
     setCameraStatus("Running local OCR...");
     setCameraProgress("Preparing OCR worker...");
+    setWorkflowStep("processing", { processing: true });
     updateCameraControls();
     updateZkControls();
 
@@ -9271,6 +13031,7 @@ async function main() {
       setCameraScanSummary(summary, "success");
       setStatus("Camera OCR text loaded into editor. Run Detection to use existing PHI redaction workflow.");
       setProgress("");
+      setWorkflowStep("input");
 
       extractingCamera = false;
       closeCameraModal();
@@ -9288,19 +13049,21 @@ async function main() {
       setCameraProgress("");
       updateCameraControls();
       updateZkControls();
+      if (!running) setWorkflowStep("input");
     }
   }
 
   async function extractSelectedPdfIntoEditor(file) {
-    if (!file) return;
-    if (running || bundleBusy || extractingPdf || extractingCamera || correctingCameraOcr) return;
+    if (!file) return false;
+    if (running || bundleBusy || extractingPdf || extractingCamera || correctingCameraOcr) return false;
 
     const looksLikePdf = /\.pdf$/i.test(file.name) || file.type === "application/pdf";
     if (!looksLikePdf) {
       setStatus("Please choose a PDF file.");
-      return;
+      return false;
     }
 
+    let succeeded = false;
     extractingPdf = true;
     publishPdfExtractionMetricsReport({
       generatedAt: new Date().toISOString(),
@@ -9316,6 +13079,7 @@ async function main() {
     setStatus(`Extracting text from ${file.name} with layout-aware local parser...`);
     setProgress("Starting PDF worker...");
     setPdfExtractSummary("Analyzing PDF layout and contamination risk locally...", "neutral");
+    setWorkflowStep("processing", { processing: true });
 
     try {
       const rawPages = [];
@@ -9375,7 +13139,7 @@ async function main() {
         setStatus("No text could be extracted from that PDF.");
         setPdfExtractSummary("No extractable text was found in this PDF.", "warning");
         setProgress("");
-        return;
+        return false;
       }
 
       if (!docModel) {
@@ -9419,7 +13183,7 @@ async function main() {
           ocrMaskMode,
           status: "blocked",
         }));
-        return;
+        return false;
       }
 
       const normalizedText = docModel.fullText.startsWith("\n")
@@ -9460,11 +13224,13 @@ async function main() {
       }));
 
       setStatus("PDF text loaded into editor. Run Detection to use the existing PHI redaction workflow.");
+      setWorkflowStep("input");
       if (totalPages > 0) {
         setProgress(`PDF extraction complete: ${completedPages}/${totalPages} pages`);
       } else {
         setProgress("");
       }
+      succeeded = true;
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
       setStatus(`PDF extraction failed: ${msg}`);
@@ -9476,6 +13242,7 @@ async function main() {
         fileName: file?.name || "",
         error: msg,
       });
+      return false;
     } finally {
       extractingPdf = false;
       if (runBtn) runBtn.disabled = extractingPdf || extractingCamera || correctingCameraOcr || !workerReady;
@@ -9486,8 +13253,86 @@ async function main() {
           !scrubbedConfirmed || running || bundleBusy || extractingPdf || extractingCamera || correctingCameraOcr;
       }
       updateZkControls();
+      if (!running) setWorkflowStep("input");
     }
+    return succeeded;
   }
+
+  function updateAddEventPdfControls() {
+    const busy = running || bundleBusy || extractingPdf || extractingCamera || correctingCameraOcr || vaultBusy;
+    const hasPdfSelected = Boolean(addEventPdfInputEl?.files && addEventPdfInputEl.files.length > 0);
+    if (addEventPdfInputEl) addEventPdfInputEl.disabled = busy;
+    if (addEventPdfMaskSelectEl) addEventPdfMaskSelectEl.disabled = busy;
+    if (addEventPdfExtractBtn) addEventPdfExtractBtn.disabled = busy || !hasPdfSelected;
+  }
+
+  if (addEventNoteInputEl) {
+    addEventNoteInputEl.addEventListener("input", () => {
+      addEventDraftSourceType = "manual_entry";
+      if (!String(addEventNoteInputEl.value || "").trim()) {
+        setAddEventNoteStatus(
+          "Optional: paste a scrubbed event note or extract local PDF text into this box.",
+          "neutral",
+        );
+      }
+    });
+  }
+
+  if (addEventPdfInputEl) {
+    addEventPdfInputEl.addEventListener("change", () => {
+      const file = addEventPdfInputEl.files && addEventPdfInputEl.files[0];
+      if (!file) {
+        setAddEventNoteStatus(
+          "Optional: paste a scrubbed event note or extract local PDF text into this box.",
+          "neutral",
+        );
+        updateAddEventPdfControls();
+        return;
+      }
+      const looksLikePdf = /\.pdf$/i.test(file.name) || file.type === "application/pdf";
+      if (!looksLikePdf) {
+        setAddEventNoteStatus(`Selected file is not a PDF: ${file.name}`, "error");
+      } else {
+        setAddEventNoteStatus(
+          `Selected PDF: ${file.name} (${formatFileSize(file.size)}). Click "Extract PDF Into Event Note".`,
+          "neutral",
+        );
+      }
+      updateAddEventPdfControls();
+    });
+  }
+
+  if (addEventPdfExtractBtn) {
+    addEventPdfExtractBtn.addEventListener("click", async () => {
+      const file = addEventPdfInputEl?.files?.[0];
+      if (!file) {
+        setAddEventNoteStatus("Choose a PDF first.", "warning");
+        return;
+      }
+
+      const prevMask = String(pdfOcrMaskSelectEl?.value || "auto");
+      if (pdfOcrMaskSelectEl && addEventPdfMaskSelectEl) {
+        pdfOcrMaskSelectEl.value = String(addEventPdfMaskSelectEl.value || "auto");
+      }
+
+      setAddEventNoteStatus("Extracting PDF locally into event note draft…", "neutral");
+      const ok = await extractSelectedPdfIntoEditor(file);
+      if (pdfOcrMaskSelectEl) pdfOcrMaskSelectEl.value = prevMask;
+      updateAddEventPdfControls();
+      if (!ok) {
+        setAddEventNoteStatus("PDF extraction failed. See status panel for details.", "error");
+        return;
+      }
+
+      if (addEventNoteInputEl) {
+        addEventNoteInputEl.value = String(model.getValue() || "");
+      }
+      addEventDraftSourceType = "pdf_local";
+      setAddEventNoteStatus("PDF text loaded into event note draft and main editor.", "success");
+    });
+  }
+
+  updateAddEventPdfControls();
 
   if (completenessApplyInlineBtn) {
     updateCompletenessApplyButtonState();
@@ -9870,11 +13715,17 @@ async function main() {
     if (pdfUploadInputEl) pdfUploadInputEl.disabled = busy;
     if (pdfOcrMaskSelectEl) pdfOcrMaskSelectEl.disabled = busy;
     if (pdfExtractBtn) pdfExtractBtn.disabled = busy || !hasPdfSelected;
+    updateAddEventPdfControls();
     if (cameraScanBtn) cameraScanBtn.disabled = busy || !cameraSupport.ok;
-    if (vaultUnlockBtn) vaultUnlockBtn.disabled = vaultBusy;
-    if (vaultLockBtn) vaultLockBtn.disabled = !isVaultReady() || vaultBusy;
-    if (vaultSyncBtn) vaultSyncBtn.disabled = !isVaultReady() || vaultBusy;
-    if (clearAppendTargetBtn) clearAppendTargetBtn.disabled = !appendTargetRegistryUuid || vaultBusy;
+    const vaultActionsDisabled = IS_CLASSIC || vaultBusy;
+    if (vaultUnlockBtn) vaultUnlockBtn.disabled = vaultActionsDisabled;
+    if (vaultLockBtn) vaultLockBtn.disabled = vaultActionsDisabled || !isVaultReady();
+    if (vaultSyncBtn) vaultSyncBtn.disabled = vaultActionsDisabled || !isVaultReady();
+    if (vaultCreateCaseBtn) vaultCreateCaseBtn.disabled = vaultActionsDisabled || !isVaultReady();
+    if (vaultSaveCaseBtn)
+      vaultSaveCaseBtn.disabled = vaultActionsDisabled || !isVaultReady() || !activeCaseRegistryUuid;
+    if (vaultClearActiveCaseBtn) vaultClearActiveCaseBtn.disabled = vaultActionsDisabled || !activeCaseRegistryUuid;
+    if (clearAppendTargetBtn) clearAppendTargetBtn.disabled = vaultActionsDisabled || !appendEventConfig;
     updateCameraControls();
     updateOcrCorrectionButton();
   }
@@ -9898,6 +13749,21 @@ async function main() {
     clearResultsUi();
     updateZkControls();
   }
+
+  loadAppendEventDraftIntoEditor = ({ noteText, sourceType } = {}) => {
+    const draft = String(noteText || "");
+    if (!draft.trim()) return false;
+
+    setEditorText(draft);
+    originalText = draft;
+    hasRunDetection = false;
+    ocrCorrectionApplied = false;
+    setNoteSourceType(sourceType || "manual_entry");
+    setScrubbedConfirmed(false);
+    clearDetections();
+    resetFeedbackDraft();
+    return true;
+  };
 
   function updateDecorations() {
     if (usingPlainEditor || !editor) return;
@@ -10012,6 +13878,7 @@ async function main() {
       ocrCorrectionApplied = false;
       setScrubbedConfirmed(false);
       revertBtn.disabled = running || originalText === model.getValue();
+      if (!running) setWorkflowStep("input");
     });
   } else if (fallbackTextarea) {
     fallbackTextarea.addEventListener("input", () => {
@@ -10019,6 +13886,7 @@ async function main() {
       ocrCorrectionApplied = false;
       setScrubbedConfirmed(false);
       revertBtn.disabled = running || originalText === model.getValue();
+      if (!running) setWorkflowStep("input");
     });
   }
 
@@ -10220,6 +14088,7 @@ async function main() {
         }
         setProgress("");
         renderDetections();
+        setWorkflowStep("input");
         return;
       }
 
@@ -10232,6 +14101,7 @@ async function main() {
         updateZkControls();
         setStatus(`Error: ${msg.message || "unknown"}`);
         setProgress("");
+        setWorkflowStep("input");
         return;
       }
     };
@@ -10272,6 +14142,7 @@ async function main() {
 
     setStatus("Detecting… (client-side)");
     setProgress("");
+    setWorkflowStep("processing", { processing: true });
 
         worker.postMessage({
           type: "start",
@@ -10947,6 +14818,9 @@ async function main() {
 
   submitBtn.addEventListener("click", async () => {
     const structuredAppendReady = isStructuredOnlyAppendConfigured();
+    const preSubmitRegistrySnapshot = isPlainObject(lastServerResponse?.registry)
+      ? deepClone(lastServerResponse.registry)
+      : null;
     if (!scrubbedConfirmed && !structuredAppendReady) {
       console.warn("Submit blocked: redactions not confirmed. Click 'Apply redactions' first.");
       setStatus("Error: Apply redactions before submitting");
@@ -10965,34 +14839,56 @@ async function main() {
     }
     setStatus(structuredAppendReady ? "Submitting structured append event…" : "Submitting scrubbed note…");
     serverResponseEl.textContent = "(submitting...)";
+    setWorkflowStep("processing", { processing: true });
 
     try {
       noteVaultActivity();
       const submitterName = getSubmitterName();
       const noteText = model.getValue();
-      const isAppendFlow = Boolean(appendTargetRegistryUuid);
+      const activeAppendConfig =
+        appendEventConfig && String(appendEventConfig.registry_uuid || "").trim() ? appendEventConfig : null;
+      const isAppendFlow = Boolean(activeAppendConfig);
+      const activeCaseUuid = String(activeCaseRegistryUuid || "").trim();
       const registryUuid = isAppendFlow
-        ? String(appendTargetRegistryUuid)
-        : (globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`);
+        ? String(activeAppendConfig.registry_uuid)
+        : (activeCaseUuid || (globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`));
       lastSubmittedRegistryUuid = registryUuid;
-      const resolvedAppendConfig = isAppendFlow
-        ? appendEventConfig && appendEventConfig.registry_uuid === registryUuid
-          ? appendEventConfig
-          : {
-              registry_uuid: registryUuid,
-              event_type: "pathology",
-              mode: "note",
-              relative_day_offset: 0,
-              structured_data: null,
-              event_date: toLocalDateYmd(),
-            }
-        : null;
+      activeCaseRegistryUuid = registryUuid;
+      const resolvedAppendConfig = activeAppendConfig;
       const appendEventType = normalizeEventType(resolvedAppendConfig?.event_type || "pathology");
       const appendMode = resolvedAppendConfig?.mode === "structured" ? "structured" : "note";
       const isStructuredOnlyAppend = Boolean(isAppendFlow && appendMode === "structured");
+      const isContextualAppendOnly = Boolean(
+        isAppendFlow && appendMode === "note" && isContextualAppendEventType(appendEventType),
+      );
+      const configuredDraftNote = String(resolvedAppendConfig?.note_draft_text || "").trim();
+      const appendNoteSourceType = String(
+        resolvedAppendConfig?.note_source_type || noteSourceType || "manual_entry",
+      ).trim() || "manual_entry";
       const normalizedOffset = Number.isFinite(Number(resolvedAppendConfig?.relative_day_offset))
         ? Math.trunc(Number(resolvedAppendConfig.relative_day_offset))
         : 0;
+      if (isAppendFlow && appendMode === "note" && configuredDraftNote) {
+        const editorNote = String(noteText || "").trim();
+        if (!editorNote) {
+          const loaded = typeof loadAppendEventDraftIntoEditor === "function"
+            ? loadAppendEventDraftIntoEditor({
+                noteText: configuredDraftNote,
+                sourceType: appendNoteSourceType,
+              })
+            : false;
+          if (loaded) {
+            setStatus(
+              `${formatEventTypeLabel(appendEventType)} event note loaded into editor. Run Detection, Apply Redactions, then Submit.`,
+            );
+          } else {
+            setStatus(
+              `${formatEventTypeLabel(appendEventType)} event note not loaded into editor. Run Detection, Apply Redactions, then Submit.`,
+            );
+          }
+          return;
+        }
+      }
       if (!isStructuredOnlyAppend && !String(noteText || "").trim()) {
         setStatus("Submit blocked: note text is required for note-based extraction.");
         return;
@@ -11002,13 +14898,13 @@ async function main() {
         return;
       }
 
-	      const processBody = {
-	        note: noteText,
+		      const processBody = {
+		        note: noteText,
           registry_uuid: registryUuid,
-	        already_scrubbed: true,
-          source_type: noteSourceType,
+		        already_scrubbed: true,
+          source_type: appendNoteSourceType,
           ocr_correction_applied: Boolean(ocrCorrectionApplied),
-	      };
+		      };
 	      // Force backend to return evidence spans
 	      processBody.explain = true;
         assertNoLocalPayloadFields(processBody, "process");
@@ -11027,16 +14923,35 @@ async function main() {
 
       let appendData = null;
       if (isAppendFlow) {
+        if (isContextualAppendOnly) {
+          const preflightCase = await fetchRegistryCaseSnapshot(registryUuid, { silent: true, forceRemote: true });
+          const hasBaselineSourceRun = Boolean(String(preflightCase?.source_run_id || "").trim());
+          if (!hasBaselineSourceRun) {
+            setStatus(
+              `Cannot append ${formatEventTypeLabel(appendEventType)} yet: this case has no persisted index procedure run. Submit the baseline procedure first (with persistence enabled), then append events.`,
+            );
+            return;
+          }
+        }
         setStatus(`Adding ${formatEventTypeLabel(appendEventType)} event to case ${registryUuid}…`);
         const appendPayload = {
           note: isStructuredOnlyAppend ? null : noteText,
           already_scrubbed: true,
-          source_type: noteSourceType,
+          source_type: appendNoteSourceType,
           ocr_correction_applied: Boolean(ocrCorrectionApplied),
           event_type: appendEventType,
           document_kind: appendEventType,
           relative_day_offset: normalizedOffset,
         };
+        if (resolvedAppendConfig?.event_title) {
+          appendPayload.event_title = String(resolvedAppendConfig.event_title);
+        }
+        if (resolvedAppendConfig?.source_modality) {
+          appendPayload.source_modality = String(resolvedAppendConfig.source_modality);
+        }
+        if (resolvedAppendConfig?.event_subtype) {
+          appendPayload.event_subtype = String(resolvedAppendConfig.event_subtype);
+        }
         if (resolvedAppendConfig?.structured_data) {
           appendPayload.structured_data = resolvedAppendConfig.structured_data;
         }
@@ -11060,40 +14975,179 @@ async function main() {
             null,
             2
           );
-          setStatus(`Append failed (${appendRes.status})`);
+          const detail = parsedAppendData?.detail;
+          const detailMsg =
+            typeof detail === "string"
+              ? detail
+              : typeof detail?.message === "string"
+                ? detail.message
+                : "";
+          const detailLower = String(detailMsg || "").toLowerCase();
+          if (appendRes.status === 400 && detailLower.includes("absolute date-like")) {
+            setStatus(
+              "Append rejected: absolute dates detected. Run Detection + Apply Redactions to remove dates/identifiers before append.",
+            );
+          } else if (appendRes.status === 400 && detailLower.includes("allow_absolute_dates")) {
+            setStatus(
+              "Append rejected: allow_absolute_dates override is blocked. Remove absolute dates or enable PROCSUITE_ALLOW_ABSOLUTE_DATES=1 for an audited override.",
+            );
+          } else if (appendRes.status === 400 && detailLower.includes("phi risk")) {
+            setStatus(
+              "Append rejected: PHI risk detected. Run Detection + Apply Redactions to remove identifiers before append.",
+            );
+          } else {
+            setStatus(`Append failed (${appendRes.status})`);
+          }
           return;
         }
         appendData = parsedAppendData;
       }
 
-      if (isStructuredOnlyAppend) {
-        const remoteCaseData = await fetchRegistryCaseSnapshot(registryUuid, { silent: true });
-        serverResponseEl.textContent = JSON.stringify(
-          {
-            mode: "structured_append_only",
-            append: appendData,
-            remote_case: remoteCaseData
-              ? {
-                  registry_uuid: remoteCaseData.registry_uuid,
-                  version: remoteCaseData.version,
-                  updated_at: remoteCaseData.updated_at,
-                }
-              : null,
-          },
-          null,
-          2,
-        );
-
-        if (lastServerResponse) {
-          await maybeRenderRegistryGrid(lastServerResponse, {
-            registryUuid,
-            vaultLocalData: vaultPatientMap.get(registryUuid) || null,
-            remoteCaseData,
+      if (isStructuredOnlyAppend || isContextualAppendOnly) {
+        const preAppendSnapshot = registryCaseSnapshotByUuid.get(registryUuid) || null;
+        const appendRegistry = isPlainObject(appendData?.registry)
+          ? appendData.registry
+          : isPlainObject(appendData?.registry_json)
+            ? appendData.registry_json
+            : null;
+        let remoteCaseData = null;
+        if (appendRegistry) {
+          remoteCaseData = {
+            registry_uuid: String(appendData?.registry_uuid || registryUuid),
+            version: Number.isFinite(Number(appendData?.version)) ? Number(appendData.version) : null,
+            updated_at: appendData?.updated_at || null,
+            registry: appendRegistry,
+          };
+          registryCaseSnapshotByUuid.set(registryUuid, {
+            registry_uuid: String(appendData?.registry_uuid || registryUuid),
+            schema_version: String(appendData?.schema_version || "v3"),
+            version: Number.isFinite(Number(appendData?.version)) ? Number(appendData.version) : 1,
+            source_run_id: appendData?.source_run_id || null,
+            updated_at: appendData?.updated_at || null,
+            registry: appendRegistry,
+            registry_json: appendRegistry,
+            manual_overrides: isPlainObject(appendData?.manual_overrides) ? appendData.manual_overrides : {},
+            events: Array.isArray(appendData?.events) ? appendData.events : [],
+            recent_events: Array.isArray(appendData?.recent_events) ? appendData.recent_events : [],
           });
+        } else {
+          remoteCaseData = await fetchRegistryCaseSnapshot(registryUuid, { silent: true });
         }
-        setStatus(
-          `${formatEventTypeLabel(appendEventType)} structured event saved (append-only; extraction pipeline bypassed).`,
+
+        let effectiveRegistry = isPlainObject(remoteCaseData?.registry) ? deepClone(remoteCaseData.registry) : {};
+        let preservedProcedureContext = false;
+        const cachedRegistry = isPlainObject(preAppendSnapshot?.registry)
+          ? preAppendSnapshot.registry
+          : null;
+        const baselineRegistry = cachedRegistry || preSubmitRegistrySnapshot;
+        if (isContextualAppendOnly && baselineRegistry) {
+          effectiveRegistry = mergeRegistriesPreferOverlay(baselineRegistry, effectiveRegistry);
+          preservedProcedureContext = true;
+        }
+        let remoteCaseForRender = remoteCaseData
+          ? { ...remoteCaseData, registry: effectiveRegistry }
+          : {
+              registry_uuid: registryUuid,
+              version: null,
+              updated_at: null,
+              registry: effectiveRegistry,
+            };
+        if (isContextualAppendOnly && baselineRegistry && remoteCaseData) {
+          const remoteRegistryBaseline = isPlainObject(remoteCaseData.registry) ? remoteCaseData.registry : {};
+          const shouldReconcileServerCase = !jsonStructuresEqual(remoteRegistryBaseline, effectiveRegistry);
+          if (shouldReconcileServerCase) {
+            try {
+              const patchPayload = { registry_patch: effectiveRegistry };
+              const expectedVersion = Number(remoteCaseForRender.version);
+              if (Number.isInteger(expectedVersion) && expectedVersion > 0) {
+                patchPayload.expected_version = expectedVersion;
+              }
+              const reconcileRes = await fetch(`/api/v1/registry/${encodeURIComponent(registryUuid)}`, {
+                method: "PATCH",
+                headers: getVaultAuthHeaders(),
+                body: JSON.stringify(patchPayload),
+              });
+              const reconcileData = await parseJsonResponseSafe(reconcileRes);
+              if (reconcileRes.ok && isPlainObject(reconcileData)) {
+                const patchedRegistry = isPlainObject(reconcileData.registry)
+                  ? reconcileData.registry
+                  : effectiveRegistry;
+                effectiveRegistry = deepClone(patchedRegistry);
+                remoteCaseForRender = {
+                  registry_uuid: String(reconcileData.registry_uuid || remoteCaseForRender.registry_uuid || registryUuid),
+                  version: Number.isFinite(Number(reconcileData.version))
+                    ? Number(reconcileData.version)
+                    : remoteCaseForRender.version,
+                  updated_at: reconcileData.updated_at || remoteCaseForRender.updated_at || null,
+                  registry: patchedRegistry,
+                };
+              } else {
+                const detail = typeof reconcileData?.detail === "string"
+                  ? reconcileData.detail
+                  : reconcileData?.detail?.message || reconcileRes.statusText || `status ${reconcileRes.status}`;
+                console.warn(`Contextual append reconciliation patch failed (${detail}).`);
+              }
+            } catch (patchErr) {
+              console.warn("Contextual append reconciliation patch error:", patchErr);
+            }
+          }
+        }
+        registryCaseSnapshotByUuid.set(registryUuid, {
+          registry_uuid: String(remoteCaseForRender?.registry_uuid || registryUuid),
+          schema_version: String(appendData?.schema_version || preAppendSnapshot?.schema_version || "v3"),
+          version: Number.isFinite(Number(remoteCaseForRender?.version)) ? Number(remoteCaseForRender.version) : 1,
+          source_run_id: appendData?.source_run_id || preAppendSnapshot?.source_run_id || null,
+          updated_at:
+            remoteCaseForRender?.updated_at || appendData?.updated_at || preAppendSnapshot?.updated_at || null,
+          registry: effectiveRegistry,
+          registry_json: effectiveRegistry,
+          manual_overrides: isPlainObject(appendData?.manual_overrides)
+            ? appendData.manual_overrides
+            : isPlainObject(preAppendSnapshot?.manual_overrides)
+              ? preAppendSnapshot.manual_overrides
+              : {},
+          events: Array.isArray(appendData?.events)
+            ? appendData.events
+            : Array.isArray(preAppendSnapshot?.events)
+              ? preAppendSnapshot.events
+              : [],
+          recent_events: Array.isArray(appendData?.recent_events)
+            ? appendData.recent_events
+            : Array.isArray(preAppendSnapshot?.recent_events)
+              ? preAppendSnapshot.recent_events
+              : [],
+        });
+
+        const mode = isStructuredOnlyAppend ? "structured_append_only" : "contextual_append_only";
+        const appendOnlyData = buildAppendOnlyDashboardResponse(registryUuid, remoteCaseForRender, mode);
+        const rawAppendPayload = {
+          ...appendOnlyData,
+          event_type: appendEventType,
+          append: appendData,
+        };
+        await renderResults(appendOnlyData, {
+          rawData: rawAppendPayload,
+          registryUuid,
+          remoteCaseData: remoteCaseForRender,
+        });
+        renderCaseEvents(registryCaseSnapshotByUuid.get(registryUuid) || remoteCaseForRender || null);
+        setRunId(null);
+        setFeedbackStatus(
+          isStructuredOnlyAppend
+            ? "Structured append saved. Extraction pipeline bypassed."
+            : `${formatEventTypeLabel(appendEventType)} append saved in event context (procedure extraction skipped).`,
         );
+        if (isStructuredOnlyAppend) {
+          setStatus(
+            `${formatEventTypeLabel(appendEventType)} structured event saved (append-only; extraction pipeline bypassed).`,
+          );
+        } else {
+          setStatus(
+            preservedProcedureContext
+              ? `${formatEventTypeLabel(appendEventType)} event saved (contextual append-only mode; preserved existing procedure context).`
+              : `${formatEventTypeLabel(appendEventType)} event saved (contextual append-only mode).`,
+          );
+        }
         noteVaultActivity();
         renderVaultPatients();
         return;
@@ -11143,15 +15197,18 @@ async function main() {
           setFeedbackStatus("Run persisted. You can submit feedback and save corrections.");
           const remoteCaseData = await fetchRegistryCaseSnapshot(registryUuid, { silent: true });
           await renderResults(result, { registryUuid, remoteCaseData });
+          renderCaseEvents(remoteCaseData);
           if (!isAppendFlow) {
             if (isVaultReady()) {
               await saveLocalPatientIdentity(registryUuid);
-              setStatus("Submitted + persisted (new case saved to local vault)");
+              setStatus(`Submitted + persisted and saved to local vault for case ${registryUuid}.`);
             } else {
               setStatus("Submitted + persisted");
             }
           } else {
-            setStatus(`${formatEventTypeLabel(appendEventType)} event appended + submitted + persisted`);
+            setStatus(
+              `${formatEventTypeLabel(appendEventType)} event appended + submitted + persisted (case ${registryUuid}).`,
+            );
           }
           noteVaultActivity();
           renderVaultPatients();
@@ -11183,6 +15240,19 @@ async function main() {
             2
           );
           setStatus(`Submit failed (${persistRes.status})`);
+          return;
+        }
+
+        if (isVaultReady()) {
+          const workflowLabel = isAppendFlow
+            ? `${formatEventTypeLabel(appendEventType)} append`
+            : "baseline case submit";
+          setFeedbackStatus(
+            "Registry persistence is disabled. Local Vault workflows require /api/v1/registry/runs persistence.",
+          );
+          setStatus(
+            `${workflowLabel} blocked: REGISTRY_RUNS_PERSIST_ENABLED is off. Enable persistence and resubmit to keep index events visible in Case Events.`,
+          );
           return;
         }
 
@@ -11236,15 +15306,20 @@ async function main() {
 	      });
         const remoteCaseData = await fetchRegistryCaseSnapshot(registryUuid, { silent: true });
 	      await renderResults(data, { registryUuid, remoteCaseData });
+        renderCaseEvents(remoteCaseData);
         if (!isAppendFlow) {
           if (isVaultReady()) {
             await saveLocalPatientIdentity(registryUuid);
-            setStatus("Submitted (not persisted) and saved to local vault");
+            setStatus(
+              `Submitted (not persisted) for case ${registryUuid}. Local metadata saved, but this note will not appear in Case Events until persistence is enabled.`,
+            );
           } else {
             setStatus("Submitted (not persisted)");
           }
         } else {
-          setStatus(`${formatEventTypeLabel(appendEventType)} event appended + submitted (not persisted)`);
+          setStatus(
+            `${formatEventTypeLabel(appendEventType)} event appended + submitted (not persisted) (case ${registryUuid}).`,
+          );
         }
         noteVaultActivity();
         renderVaultPatients();
@@ -11260,6 +15335,8 @@ async function main() {
       submitBtn.disabled = false;
       if (newNoteBtn) newNoteBtn.disabled = running;
       updateZkControls();
+      const hasVisibleResults = !document.getElementById("resultsContainer")?.classList.contains("hidden");
+      if (!hasVisibleResults) setWorkflowStep("input");
     }
   });
 

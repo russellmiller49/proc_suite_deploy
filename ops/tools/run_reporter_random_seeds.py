@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-"""Sample prompts from reporter-training JSONL files and run reporter pipeline."""
+"""Run reporter batch tests from JSONL or markdown prompt sources."""
 
 from __future__ import annotations
 
 import argparse
 import json
 import random
+import re
 import sys
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -23,7 +24,7 @@ from app.reporting.inference import InferenceEngine
 from app.reporting.validation import ValidationEngine
 
 
-DEFAULT_INPUT_DIR = Path("/home/rjm/projects/proc_suite_notes/reporter_training/reporter_training")
+DEFAULT_INPUT_DIR = ROOT / "data" / "ml_training" / "reporter_prompt"
 DEFAULT_OUTPUT = Path("reporter_tests.txt")
 
 
@@ -37,10 +38,27 @@ class SeedPrompt:
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--input-dir", type=Path, default=DEFAULT_INPUT_DIR)
+    parser.add_argument(
+        "--input-dir",
+        type=Path,
+        default=DEFAULT_INPUT_DIR,
+        help="Directory containing JSONL training prompts.",
+    )
+    parser.add_argument(
+        "--input-markdown",
+        type=Path,
+        default=None,
+        help="Markdown file containing numbered prompts (e.g., 1. ..., 2. ...).",
+    )
     parser.add_argument("--count", type=int, default=20, help="How many prompts to sample.")
     parser.add_argument("--seed", type=int, default=42, help="Random seed for deterministic sampling.")
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT, help="Output text file path.")
+    parser.add_argument(
+        "--export-prompts-dir",
+        type=Path,
+        default=None,
+        help="Optional directory to export all discovered prompts as prompt_XXX.txt files.",
+    )
     parser.add_argument(
         "--prompt-field",
         default="prompt",
@@ -68,7 +86,13 @@ def _extract_prompt(row: dict[str, Any], prompt_field: str) -> str:
     return ""
 
 
-def sample_prompts(input_dir: Path, *, count: int, seed: int, prompt_field: str) -> tuple[list[SeedPrompt], int]:
+def sample_prompts_from_jsonl(
+    input_dir: Path,
+    *,
+    count: int,
+    seed: int,
+    prompt_field: str,
+) -> tuple[list[SeedPrompt], int]:
     if not input_dir.exists() or not input_dir.is_dir():
         raise FileNotFoundError(f"Input directory not found: {input_dir}")
 
@@ -119,6 +143,84 @@ def sample_prompts(input_dir: Path, *, count: int, seed: int, prompt_field: str)
     return reservoir, seen
 
 
+def load_prompts_from_markdown(markdown_path: Path) -> list[SeedPrompt]:
+    if not markdown_path.exists() or not markdown_path.is_file():
+        raise FileNotFoundError(f"Markdown file not found: {markdown_path}")
+
+    text = markdown_path.read_text(encoding="utf-8")
+    lines = text.splitlines()
+    pattern = re.compile(r"^\s*(\d+)\.\s+(.*\S)\s*$")
+
+    prompts: list[SeedPrompt] = []
+    current_number: int | None = None
+    current_line_number: int = 0
+    current_parts: list[str] = []
+
+    def _flush() -> None:
+        nonlocal current_number, current_line_number, current_parts
+        if current_number is None:
+            return
+        prompt_text = " ".join(part.strip() for part in current_parts if part.strip()).strip()
+        if prompt_text:
+            prompts.append(
+                SeedPrompt(
+                    source_file=markdown_path,
+                    line_number=current_line_number,
+                    record_id=f"{markdown_path.stem}:{current_number}",
+                    prompt=prompt_text,
+                )
+            )
+        current_number = None
+        current_line_number = 0
+        current_parts = []
+
+    for line_num, raw_line in enumerate(lines, start=1):
+        match = pattern.match(raw_line)
+        if match:
+            _flush()
+            current_number = int(match.group(1))
+            current_line_number = line_num
+            current_parts = [match.group(2).strip()]
+            continue
+
+        if current_number is None:
+            continue
+
+        stripped = raw_line.strip()
+        if not stripped:
+            _flush()
+            continue
+        if stripped.startswith("#"):
+            _flush()
+            continue
+
+        current_parts.append(stripped)
+
+    _flush()
+    return prompts
+
+
+def sample_prompts_from_rows(rows: list[SeedPrompt], *, count: int, seed: int) -> list[SeedPrompt]:
+    if not rows:
+        raise RuntimeError("No prompts found to sample.")
+    sample_count = min(int(count), len(rows))
+    rng = random.Random(seed)
+    sampled = rng.sample(rows, sample_count)
+    rng.shuffle(sampled)
+    return sampled
+
+
+def export_prompts_to_txt(rows: list[SeedPrompt], output_dir: Path) -> None:
+    output_dir.mkdir(parents=True, exist_ok=True)
+    for idx, row in enumerate(rows, start=1):
+        file_path = output_dir / f"prompt_{idx:03d}.txt"
+        header = (
+            f"# source: {row.source_file}:{row.line_number}\n"
+            f"# id: {row.record_id}\n\n"
+        )
+        file_path.write_text(header + row.prompt.rstrip() + "\n", encoding="utf-8")
+
+
 def build_reporter_strategy() -> tuple[ReportingStrategy, RegistryService]:
     templates = default_template_registry()
     schemas = default_schema_registry()
@@ -158,6 +260,9 @@ def write_results(
     *,
     strategy: ReportingStrategy,
     registry_engine: RegistryService,
+    input_source: str,
+    seed: int,
+    total_candidates: int,
 ) -> tuple[int, int, list[dict[str, Any]]]:
     output_path.parent.mkdir(parents=True, exist_ok=True)
     success_count = 0
@@ -166,7 +271,10 @@ def write_results(
 
     with output_path.open("w", encoding="utf-8") as handle:
         handle.write(f"Reporter random seed run\n")
-        handle.write(f"Cases: {len(rows)}\n\n")
+        handle.write(f"Input source: {input_source}\n")
+        handle.write(f"Total candidates: {total_candidates}\n")
+        handle.write(f"Sampled cases: {len(rows)}\n")
+        handle.write(f"Random seed: {seed}\n\n")
 
         for idx, row in enumerate(rows, start=1):
             handle.write("=" * 100 + "\n")
@@ -221,7 +329,7 @@ def write_results(
 def write_metadata_json(
     metadata_path: Path,
     *,
-    input_dir: Path,
+    input_source: str,
     output_txt_path: Path,
     prompt_field: str,
     sample_count: int,
@@ -234,7 +342,7 @@ def write_metadata_json(
     metadata_path.parent.mkdir(parents=True, exist_ok=True)
     payload = {
         "created_at_utc": datetime.now(timezone.utc).isoformat(),
-        "input_dir": str(input_dir),
+        "input_source": input_source,
         "output_txt_path": str(output_txt_path),
         "prompt_field": prompt_field,
         "sample_count": sample_count,
@@ -253,12 +361,28 @@ def main(argv: list[str] | None = None) -> int:
     if args.count <= 0:
         raise ValueError("--count must be > 0")
 
-    sampled_rows, total_candidates = sample_prompts(
-        args.input_dir,
-        count=int(args.count),
-        seed=int(args.seed),
-        prompt_field=str(args.prompt_field),
-    )
+    if args.input_markdown is not None:
+        all_rows = load_prompts_from_markdown(args.input_markdown)
+        total_candidates = len(all_rows)
+        sampled_rows = sample_prompts_from_rows(
+            all_rows,
+            count=int(args.count),
+            seed=int(args.seed),
+        )
+        input_source = str(args.input_markdown)
+    else:
+        sampled_rows, total_candidates = sample_prompts_from_jsonl(
+            args.input_dir,
+            count=int(args.count),
+            seed=int(args.seed),
+            prompt_field=str(args.prompt_field),
+        )
+        all_rows = []
+        input_source = str(args.input_dir)
+
+    if args.export_prompts_dir is not None:
+        rows_to_export = all_rows if args.input_markdown is not None else sampled_rows
+        export_prompts_to_txt(rows_to_export, args.export_prompts_dir)
 
     strategy, registry_engine = build_reporter_strategy()
     success_count, failure_count, case_results = write_results(
@@ -266,6 +390,9 @@ def main(argv: list[str] | None = None) -> int:
         sampled_rows,
         strategy=strategy,
         registry_engine=registry_engine,
+        input_source=input_source,
+        seed=int(args.seed),
+        total_candidates=total_candidates,
     )
 
     metadata_written = None
@@ -273,7 +400,7 @@ def main(argv: list[str] | None = None) -> int:
         metadata_path = args.metadata_output or args.output.with_suffix(".json")
         write_metadata_json(
             metadata_path,
-            input_dir=args.input_dir,
+            input_source=input_source,
             output_txt_path=args.output,
             prompt_field=str(args.prompt_field),
             sample_count=len(sampled_rows),
@@ -286,6 +413,9 @@ def main(argv: list[str] | None = None) -> int:
         metadata_written = metadata_path
 
     print(f"Sampled {len(sampled_rows)} prompts from {total_candidates} candidates.")
+    if args.export_prompts_dir is not None:
+        exported_count = len(all_rows) if args.input_markdown is not None else len(sampled_rows)
+        print(f"Exported {exported_count} prompts to: {args.export_prompts_dir}")
     print(f"Wrote: {args.output}")
     if metadata_written is not None:
         print(f"Wrote metadata: {metadata_written}")

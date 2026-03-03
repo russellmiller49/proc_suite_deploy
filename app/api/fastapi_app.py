@@ -22,7 +22,7 @@ from typing import Any, AsyncIterator, List
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -166,10 +166,45 @@ def _phi_redactor_response(path: Path) -> FileResponse:
     return resp
 
 
+def _ui_variant() -> str:
+    raw = os.getenv("PROCSUITE_UI_VARIANT", "atlas").strip().lower()
+    return "classic" if raw == "classic" else "atlas"
+
+
 def _phi_redactor_static_dir() -> Path:
     import ui
 
-    return Path(ui.__file__).resolve().parent / "static" / "phi_redactor"
+    static_root = Path(ui.__file__).resolve().parent / "static"
+    target = "phi_redactor_classic" if _ui_variant() == "classic" else "phi_redactor"
+    selected = static_root / target
+    if selected.exists():
+        return selected
+    fallback = static_root / "phi_redactor"
+    logging.getLogger(__name__).warning(
+        "UI variant '%s' path missing at %s; falling back to %s",
+        target,
+        selected,
+        fallback,
+    )
+    return fallback
+
+
+def _phi_redactor_index_response(index_path: Path) -> HTMLResponse:
+    variant = _ui_variant()
+    html = index_path.read_text(encoding="utf-8")
+    inject = f'<script>window.__PROCSUITE_UI_VARIANT__ = "{variant}";</script>'
+    if "window.__PROCSUITE_UI_VARIANT__" not in html:
+        if "</head>" in html:
+            html = html.replace("</head>", f"    {inject}\n  </head>", 1)
+        else:
+            html = f"{inject}\n{html}"
+    resp = HTMLResponse(content=html)
+    # Required for SharedArrayBuffer in modern browsers (cross-origin isolation).
+    resp.headers["Cross-Origin-Opener-Policy"] = "same-origin"
+    resp.headers["Cross-Origin-Embedder-Policy"] = "require-corp"
+    # Avoid stale client-side caching during rapid iteration/debugging.
+    resp.headers["Cache-Control"] = "no-store"
+    return resp
 
 
 def _static_files_enabled() -> bool:
@@ -188,19 +223,33 @@ def phi_redactor_redirect() -> RedirectResponse:
 
 
 @app.get("/ui/phi_redactor/")
-def phi_redactor_index() -> FileResponse:
+def phi_redactor_index() -> HTMLResponse:
     if not _static_files_enabled():
         raise HTTPException(status_code=404, detail="Static files disabled")
     index_path = _phi_redactor_static_dir() / "index.html"
-    return _phi_redactor_response(index_path)
+    return _phi_redactor_index_response(index_path)
 
 
 @app.get("/ui/phi_redactor/index.html")
-def phi_redactor_index_html() -> FileResponse:
+def phi_redactor_index_html() -> HTMLResponse:
     if not _static_files_enabled():
         raise HTTPException(status_code=404, detail="Static files disabled")
     index_path = _phi_redactor_static_dir() / "index.html"
-    return _phi_redactor_response(index_path)
+    return _phi_redactor_index_response(index_path)
+
+
+@app.get("/ui/")
+def ui_index() -> HTMLResponse:
+    if not _static_files_enabled():
+        raise HTTPException(status_code=404, detail="Static files disabled")
+    return _phi_redactor_index_response(_phi_redactor_static_dir() / "index.html")
+
+
+@app.get("/ui/index.html")
+def ui_index_html() -> HTMLResponse:
+    if not _static_files_enabled():
+        raise HTTPException(status_code=404, detail="Static files disabled")
+    return _phi_redactor_index_response(_phi_redactor_static_dir() / "index.html")
 
 
 @app.get("/ui/phi_redactor/app.js")

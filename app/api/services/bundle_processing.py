@@ -13,6 +13,10 @@ _US_NUMERIC_DATE_RE = re.compile(
     r"\b(?:0?[1-9]|1[0-2])[-/](?:0?[1-9]|[12]\d|3[01])[-/]"
     r"(?:\d{2}|\d{4})\b"
 )
+_EU_NUMERIC_DATE_RE = re.compile(
+    r"\b(?:0?[1-9]|[12]\d|3[01])[-/](?:0?[1-9]|1[0-2])[-/]"
+    r"(?:\d{2}|\d{4})\b"
+)
 _MONTH_NAME_RE = re.compile(
     r"\b(?:"
     r"Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|"
@@ -43,7 +47,7 @@ def count_date_like_strings(text: str) -> int:
         return 0
 
     count = 0
-    for regex in (_ISO_DATE_RE, _US_NUMERIC_DATE_RE, _MONTH_NAME_RE):
+    for regex in (_ISO_DATE_RE, _US_NUMERIC_DATE_RE, _EU_NUMERIC_DATE_RE, _MONTH_NAME_RE):
         count += len(list(regex.finditer(clean)))
     return count
 

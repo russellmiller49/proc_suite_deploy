@@ -292,9 +292,16 @@ async def create_registry_run(
                 schema_version=_schema_version(),
                 version=1,
                 source_run_id=run.id,
+                manual_overrides={},
                 created_at=_utcnow(),
                 updated_at=_utcnow(),
             )
+        else:
+            case_record.registry_json = registry_json
+            case_record.schema_version = _schema_version()
+            case_record.source_run_id = run.id
+            case_record.version = int(case_record.version or 1) + 1
+            case_record.updated_at = _utcnow()
         db.add(case_record)
 
     db.commit()

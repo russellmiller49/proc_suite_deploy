@@ -78,8 +78,10 @@
           <li>Click <strong>Add Event</strong>.</li>
           <li>Choose Event Date and Event Type.</li>
           <li>Choose input mode: note extraction or structured status.</li>
-          <li>Submit the event. The request includes only <code>relative_day_offset</code> (never absolute dates).</li>
+          <li>In note mode, paste event text (or extract local PDF text) in the Add Event modal note box.</li>
+          <li>Run Detection and Apply Redactions, then submit. The request includes only <code>relative_day_offset</code> (never absolute dates).</li>
           <li>For structured-only events, append persists directly without extraction pipeline calls.</li>
+          <li>Pathology/imaging/clinical-status note events use contextual append aggregation (procedure extraction is skipped).</li>
         </ol>
       </section>
 

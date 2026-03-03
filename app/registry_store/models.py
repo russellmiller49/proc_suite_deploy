@@ -8,7 +8,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, Column, DateTime, Integer, String, Text
+from sqlalchemy import Boolean, Column, DateTime, Index, Integer, String, Text
 
 from app.phi.db import Base, JSONType, UUIDType
 
@@ -58,6 +58,18 @@ class RegistryRun(Base):
 
 class RegistryAppendedDocument(Base):
     __tablename__ = "registry_appended_documents"
+    __table_args__ = (
+        Index(
+            "ix_registry_appended_documents_registry_uuid_created_at",
+            "registry_uuid",
+            "created_at",
+        ),
+        Index(
+            "ix_registry_appended_documents_registry_uuid_event_type",
+            "registry_uuid",
+            "event_type",
+        ),
+    )
 
     id = Column(UUIDType, primary_key=True, default=uuid.uuid4)
     created_at = Column(DateTime(timezone=True), default=_utcnow, nullable=False, index=True)
@@ -72,9 +84,15 @@ class RegistryAppendedDocument(Base):
     event_type = Column(String(64), nullable=False, default="pathology", index=True)
     document_kind = Column(String(64), nullable=False, default="pathology")
     source_type = Column(String(64), nullable=True)
+    source_modality = Column(Text, nullable=True)
+    event_subtype = Column(Text, nullable=True)
+    event_title = Column(Text, nullable=True)
     relative_day_offset = Column(Integer, nullable=True)
     ocr_correction_applied = Column(Boolean, nullable=False, default=False)
     metadata_json = Column("metadata", JSONType, nullable=True, default=dict)
+    extracted_json = Column(JSONType, nullable=True)
+    aggregated_at = Column(DateTime(timezone=True), nullable=True)
+    aggregation_version = Column(Integer, nullable=True)
 
 
 class RegistryCaseRecord(Base):
@@ -84,6 +102,7 @@ class RegistryCaseRecord(Base):
     registry_json = Column(JSONType, nullable=False, default=dict)
     schema_version = Column(String(32), nullable=False, default="v3")
     version = Column(Integer, nullable=False, default=1)
+    manual_overrides = Column(JSONType, nullable=False, default=dict)
     source_run_id = Column(UUIDType, nullable=True, index=True)
     created_at = Column(DateTime(timezone=True), default=_utcnow, nullable=False, index=True)
     updated_at = Column(

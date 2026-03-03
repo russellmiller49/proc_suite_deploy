@@ -199,13 +199,15 @@ def parse_obstruction_pre_post(text: str) -> tuple[int | None, int | None]:
 
     pre = None
     post = None
-    match = re.search(r"(?i)\bpre[-\s]*procedure\b[^\n]{0,80}?(\d{1,3})\s*%\b", text)
+    # NOTE: Don't use `\b` after `%` (percent is a non-word char), or we won't match
+    # common dictations like "... 83% Bronchus intermedius".
+    match = re.search(r"(?i)\bpre[-\s]*procedure\b[^\n]{0,80}?(\d{1,3})\s*%", text)
     if match:
         try:
             pre = int(match.group(1))
         except Exception:
             pre = None
-    match = re.search(r"(?i)\bpost[-\s]*procedure\b[^\n]{0,80}?(\d{1,3})\s*%\b", text)
+    match = re.search(r"(?i)\bpost[-\s]*procedure\b[^\n]{0,80}?(\d{1,3})\s*%", text)
     if match:
         try:
             post = int(match.group(1))

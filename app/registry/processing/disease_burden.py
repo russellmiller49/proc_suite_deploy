@@ -79,6 +79,89 @@ _SUV_RE = re.compile(
 
 _LESION_CONTEXT_RE = re.compile(r"(?i)\b(?:target\s+lesion|lesion|nodule|mass|tumou?r)\b")
 
+# ---------------------------------------------------------------------------
+# Global airway lumen/outcome percent extraction (therapeutic_outcomes)
+# ---------------------------------------------------------------------------
+
+_POST_STENT_LUMEN_PCT_RE = re.compile(
+    r"(?i)\bpost[-\s]?stent\b[^.]{0,120}\blumen\s+size\b[^0-9]{0,40}(?P<pct>\d{1,3})\s*%\s*(?:of\s+normal)?\b"
+)
+_POST_PROCEDURE_LUMEN_PCT_RE = re.compile(
+    r"(?i)\bpost[-\s]?procedure\b[^.]{0,120}\blumen\s+size\b[^0-9]{0,40}(?P<pct>\d{1,3})\s*%\s*(?:of\s+normal)?\b"
+)
+_POST_STENT_REMOVAL_OBSTRUCTION_PCT_AFTER_RE = re.compile(
+    r"(?i)\bpost[-\s]?stent\s+removal\b[^0-9%]{0,80}(?P<pct>\d{1,3})\s*%"
+)
+_POST_STENT_REMOVAL_OBSTRUCTION_PCT_BEFORE_RE = re.compile(
+    r"(?i)\b(?P<pct>\d{1,3})\s*%[^.]{0,120}\bpost[-\s]?stent\s+removal\b"
+)
+
+
+def extract_best_global_post_obstruction_pct(note_text: str) -> ExtractedNumeric | None:
+    """Extract the best-supported global post-intervention obstruction %.
+
+    Prefer explicit post-stent lumen sizing and post-stent-removal obstruction cues over
+    generic per-site CAO percentages, which can be ambiguous in multi-site cases.
+    """
+    text = _maybe_unescape_newlines(note_text or "")
+    if not text.strip():
+        return None
+
+    candidates: list[tuple[int, int, ExtractedNumeric]] = []
+
+    def _push(*, score: int, start: int, end: int, pct: int, snippet: str) -> None:
+        pct_int = max(0, min(100, int(pct)))
+        candidates.append(
+            (
+                score,
+                start,
+                ExtractedNumeric(
+                    value=float(pct_int),
+                    span=Span(text=snippet.strip(), start=start, end=end),
+                ),
+            )
+        )
+
+    for match in _POST_STENT_LUMEN_PCT_RE.finditer(text):
+        pct = int(match.group("pct"))
+        obstruction = 100 - max(0, min(100, pct))
+        _push(
+            score=3,
+            start=match.start(),
+            end=match.end(),
+            pct=obstruction,
+            snippet=match.group(0),
+        )
+
+    for match in _POST_PROCEDURE_LUMEN_PCT_RE.finditer(text):
+        pct = int(match.group("pct"))
+        obstruction = 100 - max(0, min(100, pct))
+        _push(
+            score=2,
+            start=match.start(),
+            end=match.end(),
+            pct=obstruction,
+            snippet=match.group(0),
+        )
+
+    for pattern in (_POST_STENT_REMOVAL_OBSTRUCTION_PCT_AFTER_RE, _POST_STENT_REMOVAL_OBSTRUCTION_PCT_BEFORE_RE):
+        for match in pattern.finditer(text):
+            pct = int(match.group("pct"))
+            _push(
+                score=3,
+                start=match.start(),
+                end=match.end(),
+                pct=pct,
+                snippet=match.group(0),
+            )
+
+    if not candidates:
+        return None
+
+    # Prefer higher score; tie-breaker favors later mentions (usually the final outcome).
+    best = max(candidates, key=lambda item: (item[0], item[1]))[2]
+    return best
+
 _MORPHOLOGY_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("Spiculated", re.compile(r"(?i)\bspiculat(?:ed|ion)\b")),
     ("Ground Glass", re.compile(r"(?i)\b(?:ground[-\s]?glass|ggo)\b")),
@@ -484,6 +567,38 @@ def apply_disease_burden_overrides(
         record_data["evidence"] = evidence
 
     # ----------------------------
+    # Global therapeutic outcomes backstop (e.g., "post-stent lumen size was 90% of normal")
+    # ----------------------------
+    global_post_obstruction: int | None = None
+    global_post = extract_best_global_post_obstruction_pct(note_text)
+    if global_post is not None:
+        procedures = record_data.get("procedures_performed")
+        if procedures is None or not isinstance(procedures, dict):
+            procedures = {}
+        therapeutic = procedures.get("therapeutic_outcomes")
+        if therapeutic is None or not isinstance(therapeutic, dict):
+            therapeutic = {}
+
+        new_post = int(global_post.value)
+        global_post_obstruction = new_post
+        old_raw = therapeutic.get("post_obstruction_pct")
+        old_val = old_raw if isinstance(old_raw, int) else None
+        if old_val is None or old_val != new_post:
+            if old_val is not None:
+                warnings.append(
+                    "OVERRIDE_LLM_NUMERIC: "
+                    f"procedures_performed.therapeutic_outcomes.post_obstruction_pct {old_val} -> {new_post}"
+                )
+            therapeutic["post_obstruction_pct"] = new_post
+            evidence.setdefault(
+                "procedures_performed.therapeutic_outcomes.post_obstruction_pct",
+                [],
+            ).append(global_post.span)
+            procedures["therapeutic_outcomes"] = therapeutic
+            record_data["procedures_performed"] = procedures
+            record_data["evidence"] = evidence
+
+    # ----------------------------
     # CAO detail backstop (obstruction %)
     # ----------------------------
     parsed_cao, cao_candidates = extract_cao_interventions_detail_with_candidates(note_text)
@@ -556,27 +671,28 @@ def apply_disease_burden_overrides(
                 f"procedures_performed.therapeutic_outcomes.pre_obstruction_pct candidates={sorted(pre_union)}"
             )
 
-        if len(post_union) == 1:
-            post_pct = next(iter(post_union))
-            old_raw = therapeutic.get("post_obstruction_pct")
-            old_val = old_raw if isinstance(old_raw, int) else None
-            if old_val is None or old_val != post_pct:
-                if old_val is not None:
-                    warnings.append(
-                        f"OVERRIDE_LLM_NUMERIC: procedures_performed.therapeutic_outcomes.post_obstruction_pct {old_val} -> {post_pct}"
-                    )
-                therapeutic["post_obstruction_pct"] = post_pct
-                span = _find_pct_span(post_pct, allow_open=True)
-                if span is not None:
-                    evidence.setdefault(
-                        "procedures_performed.therapeutic_outcomes.post_obstruction_pct",
-                        [],
-                    ).append(span)
-        elif len(post_union) > 1:
-            warnings.append(
-                "AMBIGUOUS_DISEASE_BURDEN: "
-                f"procedures_performed.therapeutic_outcomes.post_obstruction_pct candidates={sorted(post_union)}"
-            )
+        if global_post_obstruction is None:
+            if len(post_union) == 1:
+                post_pct = next(iter(post_union))
+                old_raw = therapeutic.get("post_obstruction_pct")
+                old_val = old_raw if isinstance(old_raw, int) else None
+                if old_val is None or old_val != post_pct:
+                    if old_val is not None:
+                        warnings.append(
+                            f"OVERRIDE_LLM_NUMERIC: procedures_performed.therapeutic_outcomes.post_obstruction_pct {old_val} -> {post_pct}"
+                        )
+                    therapeutic["post_obstruction_pct"] = post_pct
+                    span = _find_pct_span(post_pct, allow_open=True)
+                    if span is not None:
+                        evidence.setdefault(
+                            "procedures_performed.therapeutic_outcomes.post_obstruction_pct",
+                            [],
+                        ).append(span)
+            elif len(post_union) > 1:
+                warnings.append(
+                    "AMBIGUOUS_DISEASE_BURDEN: "
+                    f"procedures_performed.therapeutic_outcomes.post_obstruction_pct candidates={sorted(post_union)}"
+                )
 
         if therapeutic:
             procedures["therapeutic_outcomes"] = therapeutic

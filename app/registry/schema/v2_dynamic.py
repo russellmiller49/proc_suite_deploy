@@ -8,9 +8,18 @@ from __future__ import annotations
 
 import json
 import re
+from uuid import UUID
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, create_model, field_serializer, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    create_model,
+    field_serializer,
+    field_validator,
+    model_validator,
+)
 
 from config.settings import KnowledgeSettings
 from app.common.spans import Span
@@ -55,6 +64,198 @@ class LinearEBUSProcedure(BaseModel):
         description="Per-station interactions, including inspected-only vs sampled actions.",
     )
 
+
+ThermalAblationModality = Literal[
+    "APC",
+    "Electrocautery",
+    "Laser (Nd:YAG)",
+    "Laser (CO2)",
+    "Laser (Diode)",
+]
+
+
+class ThermalAblationProcedure(BaseModel):
+    """Custom type override for procedures_performed.thermal_ablation.
+
+    The JSON schema currently models a single modality, but real-world cases can
+    include multiple modalities (e.g., APC + electrocautery). This override
+    normalizes incoming values into a list of enum modalities.
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    performed: bool | None = None
+    modality: list[ThermalAblationModality] | None = None
+    location: str | None = None
+    indication: Literal[
+        "Tumor debulking",
+        "Hemostasis",
+        "Granulation tissue",
+        "Web/stenosis",
+        "Other",
+    ] | None = None
+    power_setting_watts: float | None = Field(default=None, ge=0)
+    apc_flow_rate: float | None = Field(default=None, ge=0)
+
+    @field_validator("modality", mode="before")
+    @classmethod
+    def normalize_thermal_ablation_modality(cls, v):
+        if v is None:
+            return None
+
+        def _normalize_one(raw: str) -> ThermalAblationModality | None:
+            s = str(raw or "").strip()
+            if not s:
+                return None
+            lowered = s.lower()
+            if lowered in {"apc", "argon plasma", "argon plasma coagulation"}:
+                return "APC"
+            if "argon plasma" in lowered or lowered == "apc":
+                return "APC"
+            if "electrocaut" in lowered or re.search(r"\bcauter(y|iz)", lowered):
+                return "Electrocautery"
+            if "nd" in lowered and "yag" in lowered or "nd:yag" in lowered:
+                return "Laser (Nd:YAG)"
+            if "co2" in lowered:
+                return "Laser (CO2)"
+            if "diode" in lowered:
+                return "Laser (Diode)"
+            # Allow already-normalized canonical values.
+            canonical = {
+                "apc": "APC",
+                "electrocautery": "Electrocautery",
+                "laser (nd:yag)": "Laser (Nd:YAG)",
+                "laser (co2)": "Laser (CO2)",
+                "laser (diode)": "Laser (Diode)",
+            }.get(lowered)
+            return canonical  # type: ignore[return-value]
+
+        if isinstance(v, str):
+            split_re = re.compile(r"\s*(?:;|,|/|\band\b)\s*", re.IGNORECASE)
+            tokens = [tok for tok in split_re.split(v) if tok and tok.strip()]
+            out: list[ThermalAblationModality] = []
+            for tok in tokens:
+                norm = _normalize_one(tok)
+                if norm and norm not in out:
+                    out.append(norm)
+            return out or None
+
+        if isinstance(v, list):
+            out: list[ThermalAblationModality] = []
+            for item in v:
+                norm = _normalize_one(str(item))
+                if norm and norm not in out:
+                    out.append(norm)
+            return out or None
+
+        # Unsupported type; leave as-is for downstream validation to handle.
+        return v
+
+
+class PeripheralTarget(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    target_key: str
+    laterality: Literal["R", "L"] | None = None
+    lobe: str | None = None
+    segment: str | None = None
+    size_mm_long: int | None = None
+    size_mm_short: int | None = None
+    size_mm_cc: int | None = None
+    density: Literal["Solid", "Part-solid", "GGO", "Cavitary", "Other"] | None = None
+    pet_avid: bool | None = None
+    pet_suvmax: float | None = None
+    pet_delayed_suvmax: float | None = None
+    comparative_change: Literal["Increased", "Decreased", "Stable", "New", "Resolved"] | None = None
+    source_event_id: UUID | None = None
+    source_relative_day_offset: int | None = None
+    path_result: Literal["Positive", "Negative", "Non-diagnostic", "Atypical", "Suspicious"] | None = None
+    path_diagnosis_text: str | None = None
+    path_source_event_id: UUID | None = None
+    path_relative_day_offset: int | None = None
+
+
+class MediastinalTarget(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    station: str | None = None
+    location_text: str | None = None
+    short_axis_mm: int | None = None
+    pet_avid: bool | None = None
+    pet_suvmax: float | None = None
+    pet_delayed_suvmax: float | None = None
+    comparative_change: Literal["Increased", "Decreased", "Stable", "New", "Resolved"] | None = None
+    source_event_id: UUID | None = None
+    source_relative_day_offset: int | None = None
+
+
+class CaseTargets(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    peripheral_targets: list[PeripheralTarget] = Field(default_factory=list)
+    mediastinal_targets: list[MediastinalTarget] = Field(default_factory=list)
+
+
+class ImagingSnapshot(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    relative_day_offset: int
+    modality: Literal["ct", "pet_ct", "cta", "mri", "other"]
+    subtype: Literal["preop", "followup", "restaging", "surveillance"] | None = None
+    event_title: str | None = None
+    response: Literal["Progression", "Stable", "Response", "Mixed", "Indeterminate"] | None = None
+    overall_impression_text: str | None = None
+    qa_flags: list[str] = Field(default_factory=list)
+
+
+class ImagingSummary(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    baseline: ImagingSnapshot | None = None
+    followups: list[ImagingSnapshot] = Field(default_factory=list)
+
+
+class ClinicalUpdate(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    relative_day_offset: int
+    update_type: Literal["clinical_update", "treatment_update", "complication", "tumor_board", "other"]
+    event_title: str | None = None
+    performance_status_text: str | None = None
+    symptom_change: Literal["Better", "Worse", "Stable"] | None = None
+    treatment_change_text: str | None = None
+    complication_text: str | None = None
+    summary_text: str | None = None
+    hospital_admission: bool | None = None
+    icu_admission: bool | None = None
+    deceased: bool | None = None
+    disease_status: Literal["Progression", "Stable", "Response", "Mixed", "Indeterminate"] | None = None
+    source_event_id: UUID | None = None
+    qa_flags: list[str] = Field(default_factory=list)
+
+
+class ClinicalState(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    relative_day_offset: int | None = None
+    performance_status_text: str | None = None
+    symptom_change: Literal["Better", "Worse", "Stable"] | None = None
+    treatment_change_text: str | None = None
+    complication_text: str | None = None
+    summary_text: str | None = None
+    hospital_admission: bool | None = None
+    icu_admission: bool | None = None
+    deceased: bool | None = None
+    disease_status: Literal["Progression", "Stable", "Response", "Mixed", "Indeterminate"] | None = None
+    source_event_id: UUID | None = None
+
+
+class ClinicalCourse(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    updates: list[ClinicalUpdate] = Field(default_factory=list)
+    current_state: ClinicalState | None = None
+
 # Optional overrides for individual fields (identified via dotted paths).
 CUSTOM_FIELD_TYPES: dict[tuple[str, ...], Any] = {}
 CUSTOM_FIELD_TYPES[("RegistryRecord", "pleural_procedures", "ipc")] = IPCProcedure
@@ -64,6 +265,10 @@ CUSTOM_FIELD_TYPES[("RegistryRecord", "procedures_performed", "airway_stent")] =
 CUSTOM_FIELD_TYPES[("RegistryRecord", "procedures_performed", "airway_stent_revision")] = AirwayStentProcedure
 CUSTOM_FIELD_TYPES[("RegistryRecord", "procedures_performed", "linear_ebus")] = LinearEBUSProcedure
 CUSTOM_FIELD_TYPES[("RegistryRecord", "procedures_performed", "linear_ebus", "stations_detail")] = list[dict[str, Any]]
+CUSTOM_FIELD_TYPES[("RegistryRecord", "procedures_performed", "thermal_ablation")] = ThermalAblationProcedure
+CUSTOM_FIELD_TYPES[("RegistryRecord", "targets")] = CaseTargets
+CUSTOM_FIELD_TYPES[("RegistryRecord", "imaging_summary")] = ImagingSummary
+CUSTOM_FIELD_TYPES[("RegistryRecord", "clinical_course")] = ClinicalCourse
 _MODEL_CACHE: dict[tuple[str, ...], type[BaseModel]] = {}
 
 

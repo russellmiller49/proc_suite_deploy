@@ -485,8 +485,3 @@ yarl==1.22.0
     # via aiohttp
 PyJWT[crypto]>=2.8.0,<3
     # via supabase-py
-# The following packages are considered to be unsafe in a requirements file:
-setuptools==81.0.0
-    # via
-    #   spacy
-    #   thinc

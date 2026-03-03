@@ -6246,6 +6246,619 @@
           }
         }
       }
+    },
+    "targets": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "peripheral_targets": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "object",
+            "required": [
+              "target_key"
+            ],
+            "properties": {
+              "target_key": {
+                "type": "string"
+              },
+              "laterality": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "enum": [
+                  "R",
+                  "L",
+                  null
+                ]
+              },
+              "lobe": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "segment": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "size_mm_long": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "size_mm_short": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "size_mm_cc": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "density": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "enum": [
+                  "Solid",
+                  "Part-solid",
+                  "GGO",
+                  "Cavitary",
+                  "Other",
+                  null
+                ]
+              },
+              "pet_avid": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "pet_suvmax": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "pet_delayed_suvmax": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "comparative_change": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "enum": [
+                  "Increased",
+                  "Decreased",
+                  "Stable",
+                  "New",
+                  "Resolved",
+                  null
+                ]
+              },
+              "source_event_id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "source_relative_day_offset": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "path_result": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "enum": [
+                  "Positive",
+                  "Negative",
+                  "Non-diagnostic",
+                  "Atypical",
+                  "Suspicious",
+                  null
+                ]
+              },
+              "path_diagnosis_text": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "maxLength": 240
+              },
+              "path_source_event_id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "path_relative_day_offset": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              }
+            }
+          }
+        },
+        "mediastinal_targets": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "object",
+            "properties": {
+              "station": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "location_text": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "short_axis_mm": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "pet_avid": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "pet_suvmax": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "pet_delayed_suvmax": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "comparative_change": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "enum": [
+                  "Increased",
+                  "Decreased",
+                  "Stable",
+                  "New",
+                  "Resolved",
+                  null
+                ]
+              },
+              "source_event_id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "source_relative_day_offset": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "imaging_summary": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "baseline": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "properties": {
+            "relative_day_offset": {
+              "type": "integer"
+            },
+            "modality": {
+              "type": "string",
+              "enum": [
+                "ct",
+                "pet_ct",
+                "cta",
+                "mri",
+                "other"
+              ]
+            },
+            "subtype": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "enum": [
+                "preop",
+                "followup",
+                "restaging",
+                "surveillance",
+                null
+              ]
+            },
+            "event_title": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "maxLength": 160
+            },
+            "response": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "enum": [
+                "Progression",
+                "Stable",
+                "Response",
+                "Mixed",
+                "Indeterminate",
+                null
+              ]
+            },
+            "overall_impression_text": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "maxLength": 300
+            },
+            "qa_flags": {
+              "type": [
+                "array",
+                "null"
+              ],
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "required": [
+            "relative_day_offset",
+            "modality"
+          ]
+        },
+        "followups": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "object",
+            "properties": {
+              "relative_day_offset": {
+                "type": "integer"
+              },
+              "modality": {
+                "type": "string",
+                "enum": [
+                  "ct",
+                  "pet_ct",
+                  "cta",
+                  "mri",
+                  "other"
+                ]
+              },
+              "subtype": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "enum": [
+                  "preop",
+                  "followup",
+                  "restaging",
+                  "surveillance",
+                  null
+                ]
+              },
+              "event_title": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "maxLength": 160
+              },
+              "response": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "enum": [
+                  "Progression",
+                  "Stable",
+                  "Response",
+                  "Mixed",
+                  "Indeterminate",
+                  null
+                ]
+              },
+              "overall_impression_text": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "maxLength": 300
+              },
+              "qa_flags": {
+                "type": [
+                  "array",
+                  "null"
+                ],
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": [
+              "relative_day_offset",
+              "modality"
+            ]
+          }
+        }
+      }
+    },
+    "clinical_course": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "properties": {
+        "updates": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "object",
+            "required": [
+              "relative_day_offset",
+              "update_type"
+            ],
+            "properties": {
+              "relative_day_offset": {
+                "type": "integer"
+              },
+              "update_type": {
+                "type": "string",
+                "enum": [
+                  "clinical_update",
+                  "treatment_update",
+                  "complication",
+                  "tumor_board",
+                  "other"
+                ]
+              },
+              "event_title": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "maxLength": 160
+              },
+              "performance_status_text": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "maxLength": 120
+              },
+              "symptom_change": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "enum": [
+                  "Better",
+                  "Worse",
+                  "Stable",
+                  null
+                ]
+              },
+              "treatment_change_text": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "maxLength": 180
+              },
+              "complication_text": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "maxLength": 180
+              },
+              "summary_text": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "maxLength": 300
+              },
+              "hospital_admission": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "icu_admission": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "deceased": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "disease_status": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "enum": [
+                  "Progression",
+                  "Stable",
+                  "Response",
+                  "Mixed",
+                  "Indeterminate",
+                  null
+                ]
+              },
+              "source_event_id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "qa_flags": {
+                "type": [
+                  "array",
+                  "null"
+                ],
+                "items": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "current_state": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "properties": {
+            "relative_day_offset": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "performance_status_text": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "maxLength": 120
+            },
+            "symptom_change": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "enum": [
+                "Better",
+                "Worse",
+                "Stable",
+                null
+              ]
+            },
+            "treatment_change_text": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "maxLength": 180
+            },
+            "complication_text": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "maxLength": 180
+            },
+            "summary_text": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "maxLength": 300
+            },
+            "hospital_admission": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "icu_admission": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "deceased": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "disease_status": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "enum": [
+                "Progression",
+                "Stable",
+                "Response",
+                "Mixed",
+                "Indeterminate",
+                null
+              ]
+            },
+            "source_event_id": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        }
+      }
     }
   },
   "allOf": [

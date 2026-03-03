@@ -61,6 +61,19 @@ _USAGE_TOTALS_BY_MODEL: dict[str, _UsageTotals] = {}
 _USAGE_TOTALS_ALL = _UsageTotals()
 _PRICING_CACHE: dict[str, dict[str, float]] | None = None
 _USAGE_ATEXIT_REGISTERED = False
+_DEFAULT_OPENAI_PRICING_PER_1K: dict[str, dict[str, float]] = {
+    # Official token pricing (USD) expressed per 1K tokens.
+    "gpt-5.2": {
+        "input_per_1k": 0.00175,
+        "cached_input_per_1k": 0.000175,
+        "output_per_1k": 0.014,
+    },
+    "gpt-5-mini": {
+        "input_per_1k": 0.00025,
+        "cached_input_per_1k": 0.000025,
+        "output_per_1k": 0.002,
+    },
+}
 
 
 def _load_pricing() -> dict[str, dict[str, float]]:
@@ -68,14 +81,18 @@ def _load_pricing() -> dict[str, dict[str, float]]:
     Optional pricing config for cost estimation.
 
     Supported env vars:
-      - OPENAI_PRICING_JSON: JSON like {"gpt-4o-mini":{"input_per_1k":0.00015,"output_per_1k":0.0006}, ...}
+      - OPENAI_PRICING_JSON: JSON like
+        {"gpt-4o-mini":{"input_per_1k":0.00015,"cached_input_per_1k":0.000015,"output_per_1k":0.0006}, ...}
       - OPENAI_COST_INPUT_PER_1K, OPENAI_COST_OUTPUT_PER_1K: global fallback floats
     """
     global _PRICING_CACHE
     if _PRICING_CACHE is not None:
         return _PRICING_CACHE
 
-    pricing: dict[str, dict[str, float]] = {}
+    # Start with built-in defaults for common models used by this repo.
+    pricing: dict[str, dict[str, float]] = {
+        model: values.copy() for model, values in _DEFAULT_OPENAI_PRICING_PER_1K.items()
+    }
 
     raw = os.getenv("OPENAI_PRICING_JSON", "").strip()
     if raw:
@@ -87,8 +104,15 @@ def _load_pricing() -> dict[str, dict[str, float]]:
                         continue
                     inp = entry.get("input_per_1k")
                     out = entry.get("output_per_1k")
+                    cached_in = entry.get("cached_input_per_1k")
                     if isinstance(inp, (int, float)) and isinstance(out, (int, float)):
-                        pricing[model] = {"input_per_1k": float(inp), "output_per_1k": float(out)}
+                        parsed_entry: dict[str, float] = {
+                            "input_per_1k": float(inp),
+                            "output_per_1k": float(out),
+                        }
+                        if isinstance(cached_in, (int, float)):
+                            parsed_entry["cached_input_per_1k"] = float(cached_in)
+                        pricing[model] = parsed_entry
         except Exception:
             # Ignore malformed JSON; cost estimation will be disabled.
             pricing = {}
@@ -106,15 +130,50 @@ def _load_pricing() -> dict[str, dict[str, float]]:
 
 
 def _estimate_cost_usd(model: str, input_tokens: int, output_tokens: int) -> float | None:
+    return _estimate_cost_usd_with_cached_tokens(
+        model=model,
+        input_tokens=input_tokens,
+        cached_input_tokens=0,
+        output_tokens=output_tokens,
+    )
+
+
+def _pricing_entry_for_model(model: str) -> dict[str, float] | None:
     pricing = _load_pricing()
-    entry = pricing.get(model) or pricing.get("*")
+    if model in pricing:
+        return pricing[model]
+    # Allow versioned suffixes (e.g., "gpt-5-mini-2026-01-01").
+    for prefix, entry in pricing.items():
+        if prefix != "*" and model.startswith(f"{prefix}-"):
+            return entry
+    return pricing.get("*")
+
+
+def _estimate_cost_usd_with_cached_tokens(
+    *,
+    model: str,
+    input_tokens: int,
+    cached_input_tokens: int,
+    output_tokens: int,
+) -> float | None:
+    entry = _pricing_entry_for_model(model)
     if not entry:
         return None
+
     in_per_1k = entry.get("input_per_1k")
+    cached_in_per_1k = entry.get("cached_input_per_1k")
     out_per_1k = entry.get("output_per_1k")
     if not isinstance(in_per_1k, float) or not isinstance(out_per_1k, float):
         return None
-    return (input_tokens / 1000.0) * in_per_1k + (output_tokens / 1000.0) * out_per_1k
+
+    cached_tokens = max(0, int(cached_input_tokens))
+    uncached_tokens = max(0, int(input_tokens) - cached_tokens)
+    cached_rate = float(cached_in_per_1k) if isinstance(cached_in_per_1k, float) else float(in_per_1k)
+    return (
+        (uncached_tokens / 1000.0) * float(in_per_1k)
+        + (cached_tokens / 1000.0) * cached_rate
+        + (max(0, int(output_tokens)) / 1000.0) * float(out_per_1k)
+    )
 
 
 def _record_usage(
@@ -122,6 +181,7 @@ def _record_usage(
     model: str,
     api_style: str,
     input_tokens: int,
+    cached_input_tokens: int,
     output_tokens: int,
     total_tokens: int,
     latency_s: float,
@@ -137,7 +197,12 @@ def _record_usage(
     _USAGE_TOTALS_ALL.output_tokens += int(output_tokens)
     _USAGE_TOTALS_ALL.total_tokens += int(total_tokens)
 
-    cost = _estimate_cost_usd(model, int(input_tokens), int(output_tokens))
+    cost = _estimate_cost_usd_with_cached_tokens(
+        model=model,
+        input_tokens=int(input_tokens),
+        cached_input_tokens=int(cached_input_tokens),
+        output_tokens=int(output_tokens),
+    )
     if cost is not None:
         totals.cost_usd += float(cost)
         _USAGE_TOTALS_ALL.cost_usd += float(cost)
@@ -519,6 +584,7 @@ class OpenAILLM:
         if isinstance(usage, dict):
             try:
                 input_tokens = int(usage.get("input_tokens") or 0)
+                cached_input_tokens = int(usage.get("cached_input_tokens") or 0)
                 output_tokens = int(usage.get("output_tokens") or 0)
                 total_tokens = int(usage.get("total_tokens") or (input_tokens + output_tokens))
                 if input_tokens or output_tokens or total_tokens:
@@ -530,6 +596,7 @@ class OpenAILLM:
                         model=self.model,
                         api_style=str(usage.get("api") or "unknown"),
                         input_tokens=input_tokens,
+                        cached_input_tokens=cached_input_tokens,
                         output_tokens=output_tokens,
                         total_tokens=total_tokens,
                         latency_s=max(0.0, time.monotonic() - started),
@@ -584,6 +651,9 @@ class OpenAILLM:
             usage_raw = resp_json.get("usage") if isinstance(resp_json, dict) else None
             if isinstance(usage_raw, dict):
                 usage["input_tokens"] = int(usage_raw.get("input_tokens") or 0)
+                input_details = usage_raw.get("input_tokens_details")
+                if isinstance(input_details, dict):
+                    usage["cached_input_tokens"] = int(input_details.get("cached_tokens") or 0)
                 usage["output_tokens"] = int(usage_raw.get("output_tokens") or 0)
                 usage["total_tokens"] = int(
                     usage_raw.get("total_tokens") or (usage["input_tokens"] + usage["output_tokens"])

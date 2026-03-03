@@ -1098,6 +1098,7 @@ def _add_compat_flat_fields(raw: dict[str, Any]) -> dict[str, Any]:
         r"\bpasses?\s*(?:executed|performed|obtained|collected)\s*:\s*(\d+)\b",
         r"\b(\d+)\s*needle\s*passes?\b",
         r"\baspiration\s*needle\s*passes?\s*(?:executed|performed|obtained|collected)?\s*:\s*(\d+)\b",
+        r"\b(\d+)\s+(?:peripheral\s+)?needle\s+biops(?:y|ies)\b",
     ):
         tbna_count = _parse_count(counts_text, pattern)
         if tbna_count is not None:
@@ -1729,6 +1730,14 @@ def _add_compat_flat_fields(raw: dict[str, Any]) -> dict[str, Any]:
                     samples_val = int(match.group(1))
                 except Exception:
                     samples_val = None
+        if samples_val is None and source_text:
+            match = re.search(r"(?i)\b(\d+)\s*cryo\s*biops(?:y|ies)\b|\b(\d+)\s*cryobiops(?:y|ies)\b", source_text)
+            if match:
+                raw_val = match.group(1) or match.group(2)
+                try:
+                    samples_val = int(raw_val)
+                except Exception:
+                    samples_val = None
         if samples_val is None and sites:
             samples_val = len(sites)
 
@@ -1744,6 +1753,8 @@ def _add_compat_flat_fields(raw: dict[str, Any]) -> dict[str, Any]:
         cryoprobe_size = None
         if source_text:
             match = re.search(r"(?i)\b(\d+(?:\.\d+)?)\s*mm\s*cryo(?:probe|biop)\b", source_text)
+            if not match:
+                match = re.search(r"(?i)\b(\d+(?:\.\d+)?)\s*mm\s*(?:cryo\s*)?probe\b", source_text)
             if match:
                 try:
                     cryoprobe_size = float(match.group(1))

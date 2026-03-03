@@ -88,6 +88,7 @@ def configure_eval_env() -> dict[str, str]:
 _APPLIED_ENV_DEFAULTS = configure_eval_env()
 
 from app.api.services.qa_pipeline import ReportingStrategy, SimpleReporterStrategy
+from app.common.exceptions import LLMError
 from app.registry.application.registry_service import RegistryService
 from app.reporting.engine import ReporterEngine, _load_procedure_order, default_schema_registry, default_template_registry
 from app.reporting.inference import InferenceEngine
@@ -233,6 +234,86 @@ def _avg(values: list[float]) -> float:
     return float(sum(values) / len(values)) if values else 0.0
 
 
+DROP_REASON_KEYS = (
+    "evidence_substring_fail",
+    "keyword_fail",
+    "anatomy_fail",
+    "action_intent_fail",
+    "procedure_key_not_allowlisted",
+    "other",
+)
+
+
+def _extract_drop_reason_code(warning: str) -> str | None:
+    text = str(warning or "").strip()
+    if not text.startswith("LLM_FINDINGS_DROPPED:"):
+        return None
+    remainder = text.split(":", 1)[1].strip()
+    if not remainder:
+        return "other"
+    return remainder.split()[0].strip() or "other"
+
+
+def _categorize_drop_reason(code: str) -> str:
+    reason = str(code or "").strip()
+    if reason in {"missing_evidence_quote", "evidence_too_short"}:
+        return "evidence_substring_fail"
+    if reason == "keyword_missing":
+        return "keyword_fail"
+    if reason == "anatomy_not_in_evidence":
+        return "anatomy_fail"
+    if reason == "missing_action_intent":
+        return "action_intent_fail"
+    if reason == "invalid_procedure_key":
+        return "procedure_key_not_allowlisted"
+    return "other"
+
+
+def drop_reason_counts(warnings: list[str] | None) -> dict[str, int]:
+    counts = {key: 0 for key in DROP_REASON_KEYS}
+    for warning in warnings or []:
+        reason_code = _extract_drop_reason_code(warning)
+        if not reason_code:
+            continue
+        bucket = _categorize_drop_reason(reason_code)
+        counts[bucket] = int(counts.get(bucket, 0)) + 1
+    return counts
+
+
+LLM_ERROR_CODE_KEYS = (
+    "auth",
+    "model_access",
+    "rate_limit",
+    "timeout",
+    "network",
+    "bad_request",
+    "other",
+)
+
+
+def categorize_llm_error(exc: Exception) -> str | None:
+    """PHI-safe bucketing for LLMError failures (no raw prompt text)."""
+    if not isinstance(exc, LLMError):
+        return None
+    msg = str(exc).strip().lower()
+    if not msg:
+        return "other"
+
+    if any(token in msg for token in ("unauthorized", "invalid api key", "api_key", "authentication", "status=401")):
+        return "auth"
+    if any(token in msg for token in ("model", "not found", "does not exist", "you do not have access")):
+        return "model_access"
+    if any(token in msg for token in ("rate limit", "status=429", "too many requests")):
+        return "rate_limit"
+    if "timeout" in msg:
+        return "timeout"
+    if any(token in msg for token in ("network error", "connection", "dns", "ssl")):
+        return "network"
+    if any(token in msg for token in ("status=400", "bad request", "unsupported", "invalid", "parameter")):
+        return "bad_request"
+    return "other"
+
+
 def evaluate_gates(summary: dict[str, Any]) -> dict[str, Any]:
     checks: dict[str, Any] = {}
     primary_pass = True
@@ -298,6 +379,10 @@ def main(argv: list[str] | None = None) -> int:
     sim_scores: list[float] = []
     cpt_scores: list[float] = []
     f1_scores: list[float] = []
+    accepted_findings: list[int] = []
+    dropped_findings: list[int] = []
+    aggregate_drop_reasons = {key: 0 for key in DROP_REASON_KEYS}
+    llm_error_code_counts = {key: 0 for key in LLM_ERROR_CODE_KEYS}
     full_shell_count = 0
     failures = 0
     critical_extra_cases = 0
@@ -305,6 +390,13 @@ def main(argv: list[str] | None = None) -> int:
     for row in rows:
         try:
             seed = seed_registry_record_from_llm_findings(row.prompt_text)
+            per_case_drop_reasons = drop_reason_counts(seed.warnings)
+            for key, value in per_case_drop_reasons.items():
+                aggregate_drop_reasons[key] = int(aggregate_drop_reasons.get(key, 0)) + int(value)
+
+            accepted_findings.append(int(seed.accepted_findings))
+            dropped_findings.append(int(seed.dropped_findings))
+
             record_payload = build_record_payload_for_reporting(seed)
             rendered = reporter.render(
                 text=seed.masked_prompt_text,
@@ -344,11 +436,18 @@ def main(argv: list[str] | None = None) -> int:
                     "flag_false_positive_count": fp,
                     "flag_false_negative_count": fn,
                     "seed_warnings_count": int(len(seed.warnings or [])),
+                    "accepted_findings": int(seed.accepted_findings),
+                    "dropped_findings": int(seed.dropped_findings),
+                    "drop_reason_counts": per_case_drop_reasons,
                     "error": None,
+                    "error_code": None,
                 }
             )
         except Exception as exc:  # noqa: BLE001
             failures += 1
+            err_code = categorize_llm_error(exc)
+            if err_code:
+                llm_error_code_counts[err_code] = int(llm_error_code_counts.get(err_code, 0)) + 1
             per_case.append(
                 {
                     "id": row.id,
@@ -360,7 +459,11 @@ def main(argv: list[str] | None = None) -> int:
                     "flag_false_positive_count": 0,
                     "flag_false_negative_count": 0,
                     "seed_warnings_count": 0,
+                    "accepted_findings": 0,
+                    "dropped_findings": 0,
+                    "drop_reason_counts": {key: 0 for key in DROP_REASON_KEYS},
                     "error": f"{type(exc).__name__}",
+                    "error_code": err_code,
                 }
             )
 
@@ -376,6 +479,10 @@ def main(argv: list[str] | None = None) -> int:
         "avg_cpt_jaccard": round(_avg(cpt_scores), 4),
         "avg_performed_flag_f1": round(_avg(f1_scores), 4),
         "critical_extra_flag_rate": round((critical_extra_cases / successful) if successful else 0.0, 4),
+        "avg_accepted_findings": round(_avg([float(v) for v in accepted_findings]), 4),
+        "avg_dropped_findings": round(_avg([float(v) for v in dropped_findings]), 4),
+        "drop_reason_counts": aggregate_drop_reasons,
+        "llm_error_code_counts": llm_error_code_counts,
     }
 
     payload = {
@@ -383,6 +490,9 @@ def main(argv: list[str] | None = None) -> int:
         "input_path": str(args.input),
         "prompt_field": prompt_field,
         "row_count": total,
+        "llm_provider": os.getenv("LLM_PROVIDER"),
+        "openai_primary_api": os.getenv("OPENAI_PRIMARY_API"),
+        "openai_model_structurer": os.getenv("OPENAI_MODEL_STRUCTURER"),
         "environment_defaults_applied": _APPLIED_ENV_DEFAULTS,
         "summary": summary,
         "promotion_gate_report": evaluate_gates(summary),

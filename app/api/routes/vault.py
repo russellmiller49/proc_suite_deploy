@@ -139,7 +139,7 @@ def put_vault_record(
 ) -> VaultRecordOut:
     if len(payload.ciphertext_b64) > MAX_RECORD_CIPHERTEXT_B64_LEN:
         raise HTTPException(
-            status_code=status.HTTP_413_CONTENT_TOO_LARGE,
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
             detail=f"ciphertext_b64 exceeds {MAX_RECORD_CIPHERTEXT_B64_LEN} characters",
         )
 

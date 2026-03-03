@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from enum import Enum
+from uuid import UUID
 from typing import Any, List, Optional, Literal
 
 from pydantic import AliasChoices, BaseModel, Field
@@ -324,6 +325,95 @@ class ClinicalContextV3(DiagnosticFocus):
     """Deprecated alias for DiagnosticFocus (backward compatibility)."""
 
 
+class PeripheralTarget(BaseModel):
+    """Canonical peripheral target summary across planning/follow-up events."""
+
+    target_key: str
+    laterality: Literal["R", "L"] | None = None
+    lobe: str | None = None
+    segment: str | None = None
+    size_mm_long: int | None = None
+    size_mm_short: int | None = None
+    size_mm_cc: int | None = None
+    density: Literal["Solid", "Part-solid", "GGO", "Cavitary", "Other"] | None = None
+    pet_avid: bool | None = None
+    pet_suvmax: float | None = None
+    pet_delayed_suvmax: float | None = None
+    comparative_change: Literal["Increased", "Decreased", "Stable", "New", "Resolved"] | None = None
+    source_event_id: UUID | None = None
+    source_relative_day_offset: int | None = None
+    path_result: Literal["Positive", "Negative", "Non-diagnostic", "Atypical", "Suspicious"] | None = None
+    path_diagnosis_text: str | None = None
+    path_source_event_id: UUID | None = None
+    path_relative_day_offset: int | None = None
+
+
+class MediastinalTarget(BaseModel):
+    """Canonical mediastinal/hilar target summary across imaging events."""
+
+    station: str | None = None
+    location_text: str | None = None
+    short_axis_mm: int | None = None
+    pet_avid: bool | None = None
+    pet_suvmax: float | None = None
+    pet_delayed_suvmax: float | None = None
+    comparative_change: Literal["Increased", "Decreased", "Stable", "New", "Resolved"] | None = None
+    source_event_id: UUID | None = None
+    source_relative_day_offset: int | None = None
+
+
+class CaseTargets(BaseModel):
+    """Procedure-class-agnostic target containers."""
+
+    peripheral_targets: List[PeripheralTarget] = Field(default_factory=list)
+    mediastinal_targets: List[MediastinalTarget] = Field(default_factory=list)
+
+
+class ImagingSnapshot(BaseModel):
+    """Canonical imaging event summary."""
+
+    relative_day_offset: int
+    modality: Literal["ct", "pet_ct", "cta", "mri", "other"]
+    subtype: Literal["preop", "followup", "restaging", "surveillance"] | None = None
+    event_title: str | None = None
+    response: Literal["Progression", "Stable", "Response", "Mixed", "Indeterminate"] | None = None
+    overall_impression_text: str | None = None
+    qa_flags: List[str] = Field(default_factory=list)
+
+
+class ImagingSummary(BaseModel):
+    baseline: ImagingSnapshot | None = None
+    followups: List[ImagingSnapshot] = Field(default_factory=list)
+
+
+class ClinicalUpdate(BaseModel):
+    relative_day_offset: int
+    update_type: Literal["clinical_update", "treatment_update", "complication", "tumor_board", "other"]
+    event_title: str | None = None
+    performance_status_text: str | None = None
+    symptom_change: Literal["Better", "Worse", "Stable"] | None = None
+    treatment_change_text: str | None = None
+    complication_text: str | None = None
+    summary_text: str | None = None
+    qa_flags: List[str] = Field(default_factory=list)
+
+
+class ClinicalState(BaseModel):
+    """Optional distilled current state for quick reads."""
+
+    relative_day_offset: int | None = None
+    performance_status_text: str | None = None
+    symptom_change: Literal["Better", "Worse", "Stable"] | None = None
+    treatment_change_text: str | None = None
+    complication_text: str | None = None
+    summary_text: str | None = None
+
+
+class ClinicalCourse(BaseModel):
+    updates: List[ClinicalUpdate] = Field(default_factory=list)
+    current_state: ClinicalState | None = None
+
+
 class IPRegistryV3(BaseModel):
     """IP Registry Schema v3 - next-generation schema.
 
@@ -353,6 +443,9 @@ class IPRegistryV3(BaseModel):
         default_factory=DiagnosticFocus,
         validation_alias=AliasChoices("diagnostic_focus", "clinical_context"),
     )
+    targets: CaseTargets = Field(default_factory=CaseTargets)
+    imaging_summary: ImagingSummary = Field(default_factory=ImagingSummary)
+    clinical_course: ClinicalCourse = Field(default_factory=ClinicalCourse)
 
     established_tracheostomy_route: bool = Field(
         False,

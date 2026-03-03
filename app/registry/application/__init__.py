@@ -7,6 +7,7 @@ from app.registry.application.registry_service import (
     RegistryExtractionResult,
     get_registry_service,
 )
+from app.registry.application.case_aggregator import CaseAggregator, get_case_aggregator
 from app.registry.application.cpt_registry_mapping import (
     CPT_TO_REGISTRY_MAPPING,
     RegistryFieldMapping,
@@ -30,4 +31,6 @@ __all__ = [
     "aggregate_registry_fields",
     "aggregate_registry_fields_flat",
     "aggregate_registry_hints",
+    "CaseAggregator",
+    "get_case_aggregator",
 ]

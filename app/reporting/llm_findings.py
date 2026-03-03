@@ -223,6 +223,7 @@ def _build_findings_prompt(masked_prompt_text: str) -> str:
         "- finding_text MUST include a canonical procedure keyword/abbreviation for the procedure_key.\n"
         "  (Examples: BAL, EBUS, TBNA, TBBx, Cryotherapy, APC, Airway dilation, Stent, Chest ultrasound, Balloon occlusion.)\n"
         "- evidence_quote MUST be a verbatim substring copied from the prompt text below.\n"
+        "- evidence_quote MUST match the prompt text EXACTLY (same characters/whitespace). Copy/paste; do not paraphrase.\n"
         "- evidence_quote MUST be >= 10 characters and include enough local context to uniquely support the finding.\n"
         "- evidence_quote SHOULD include the anatomy tokens (RB4, station 7, Trachea, etc.) that you list in anatomy.\n"
         "- evidence_quote does NOT need to contain the canonical keyword if the prompt uses shorthand.\n"
@@ -233,6 +234,18 @@ def _build_findings_prompt(masked_prompt_text: str) -> str:
         "- Only include procedures that are explicitly documented as performed.\n"
         "- If something is planned/considered/denied/inspection-only, OMIT it.\n"
         "- If uncertain, OMIT it.\n\n"
+        "- IMPORTANT: Output ALL performed procedures you can support with exact evidence quotes.\n"
+        "  It is common to have many findings (e.g., 5-20). Do not stop after the first obvious item.\n"
+        "- If multiple procedures are performed (BAL + biopsy + TBNA + ablation + dilation, etc.), include them all.\n\n"
+        "Coverage checklist (if explicitly performed, include findings):\n"
+        "- BAL/lavage, brushings, TBNA/EBUS, biopsies (TBBx/EBBx/cryobiopsy), cryotherapy, APC/ablation,\n"
+        "  mechanical debulking/foreign body removal, airway dilation/balloon, airway stent placement/removal,\n"
+        "  BLVR/valves, balloon occlusion, pleural procedures (thoracentesis/chest tube/IPC/pleurodesis), chest ultrasound.\n\n"
+        "Procedure-specific anti-hallucination reminders:\n"
+        "- airway_stent: ONLY include if the stent was placed/deployed/removed/exchanged/revised.\n"
+        "  If the note says an existing stent is in good position/patent/intact, OMIT airway_stent.\n"
+        "- therapeutic_aspiration: ONLY include if there is explicit mucus plug / obstructing or thick secretions\n"
+        "  that were suctioned/aspirated/removed (or the phrase 'therapeutic aspiration'). Routine suctioning is NOT enough.\n\n"
         "*** CRITICAL CLINICAL GUARDRAILS (ANTI-HALLUCINATION) ***\n"
         "1. TOOLS DO NOT EQUAL INTENT: The mere mention of a tool (cryoprobe, snare, forceps) does NOT mean a therapeutic intervention was performed.\n"
         "2. ACTION-ON-TISSUE REQUIRED: DO NOT output tags for ablation, debulking, or therapeutic aspiration unless there is explicit 'action-on-tissue' language (e.g., 'tissue was destroyed', 'secretions were aspirated' to clear obstruction).\n"
@@ -278,12 +291,97 @@ def validate_findings_against_text(
     accepted: list[FindingV1] = []
     warnings: list[str] = []
 
+    def _therapeutic_aspiration_has_strong_intent(evidence_quote: str) -> bool:
+        evidence_lower = (evidence_quote or "").lower()
+        if not evidence_lower:
+            return False
+
+        if re.search(r"\b(?:no|without)\s+therapeutic\s+(?:aspiration|suction(?:ing)?)\b", evidence_lower):
+            return False
+
+        if re.search(
+            r"\b(?:no|without)\s+(?:significant\s+)?(?:mucus|mucous|secretions?|mucus\s+plug(?:s|ging)?)\b",
+            evidence_lower,
+        ):
+            return False
+
+        if "therapeutic aspiration" in evidence_lower or "therapeutic suction" in evidence_lower:
+            return True
+
+        # High-precision heuristic: routine bronchoscopy suctioning is common and should not automatically
+        # count as therapeutic aspiration unless there is explicit obstructive/thick/plug language.
+        has_high_signal_target = any(token in evidence_lower for token in ("mucus", "mucous", "plug", "obstruct"))
+        has_thick_secretions = bool(
+            re.search(r"\b(?:thick|tenacious|copious)\s+(?:mucus|mucous|secretions?)\b", evidence_lower)
+        )
+        if not (has_high_signal_target or has_thick_secretions):
+            return False
+
+        has_direct_action = any(
+            token in evidence_lower
+            for token in (
+                "aspirat",
+                "suction",
+                "suctioned",
+                "suctioning",
+                "remove",
+                "removed",
+                "extract",
+                "extracted",
+                "evacuate",
+                "evacuated",
+            )
+        )
+        if has_direct_action:
+            return True
+
+        return False
+
+    def _airway_stent_has_strong_intent(evidence_quote: str) -> bool:
+        evidence_lower = (evidence_quote or "").lower()
+        if not evidence_lower:
+            return False
+
+        # Explicit intervention cues.
+        if any(
+            token in evidence_lower
+            for token in (
+                "placed",
+                "deploy",
+                "deployed",
+                "insert",
+                "inserted",
+                "remove",
+                "removed",
+                "extract",
+                "extracted",
+                "exchange",
+                "exchanged",
+                "replace",
+                "replaced",
+                "revision",
+                "revised",
+            )
+        ):
+            return True
+
+        # Presence/assessment-only phrases should not count as stent intervention.
+        if re.search(r"\bstent\b.*\b(?:in\s+good\s+position|patent|intact)\b", evidence_lower):
+            return False
+        if re.search(r"\b(?:known|existing|prior|previous)\s+.*\bstent\b", evidence_lower):
+            return False
+
+        return False
+
     def _normalize_for_anatomy_match(value: str) -> str:
         """Normalize tokens for permissive substring matching.
 
         Intended to handle minor punctuation/whitespace differences like "Station: 7" vs "Station 7".
         """
         return re.sub(r"[^a-z0-9]+", "", (value or "").lower())
+
+    high_risk_keyword_required = {"peripheral_ablation", "therapeutic_aspiration"}
+    flexible_keys = {"pharmacological_instillation", "complication", "other_intervention"}
 
     for idx, item in enumerate(findings.findings or []):
         proc_key = str(item.procedure_key or "").strip()
@@ -306,38 +404,41 @@ def validate_findings_against_text(
             continue
 
         evidence_lower = evidence.lower()
+
+        keyword_text = f"{finding_text}\n{evidence}".strip()
+        keyword_present = proc_key in flexible_keys or _contains_any_keyword(keyword_text, proc_key)
+
         anatomy_tokens = [str(tok).strip() for tok in (item.anatomy or []) if str(tok).strip()]
         if anatomy_tokens:
             evidence_norm = _normalize_for_anatomy_match(evidence)
-            missing_anatomy: list[str] = []
+            any_anatomy_in_evidence = False
             for tok in anatomy_tokens:
                 tok_norm = _normalize_for_anatomy_match(tok)
                 if not tok_norm:
                     continue
-                if tok_norm not in evidence_norm:
-                    missing_anatomy.append(tok)
-            if missing_anatomy:
-                warnings.append(
-                    "LLM_FINDINGS_DROPPED: anatomy_not_in_evidence "
-                    f"index={idx} key={proc_key!r} tokens={missing_anatomy!r}"
-                )
-                continue
+                if tok_norm in evidence_norm:
+                    any_anatomy_in_evidence = True
+                    break
+            if not any_anatomy_in_evidence:
+                warnings.append(f"LLM_FINDINGS_WEAK_ANATOMY_EVIDENCE: index={idx} key={proc_key!r}")
+
         if proc_key == "peripheral_ablation" and not any(
             token in evidence_lower for token in ("ablat", "destroy", "freez")
         ):
             warnings.append(f"LLM_FINDINGS_DROPPED: missing_action_intent index={idx} key={proc_key!r}")
             continue
-        if proc_key == "therapeutic_aspiration" and not any(
-            token in evidence_lower for token in ("plug", "thick", "obstruct", "clear")
-        ):
+        if proc_key == "therapeutic_aspiration" and not _therapeutic_aspiration_has_strong_intent(evidence):
+            warnings.append(f"LLM_FINDINGS_DROPPED: missing_action_intent index={idx} key={proc_key!r}")
+            continue
+        if proc_key == "airway_stent" and not _airway_stent_has_strong_intent(evidence):
             warnings.append(f"LLM_FINDINGS_DROPPED: missing_action_intent index={idx} key={proc_key!r}")
             continue
 
-        keyword_text = f"{finding_text}\n{evidence}".strip()
-        flexible_keys = {"pharmacological_instillation", "complication", "other_intervention"}
-        if proc_key not in flexible_keys and not _contains_any_keyword(keyword_text, proc_key):
-            warnings.append(f"LLM_FINDINGS_DROPPED: keyword_missing index={idx} key={proc_key!r}")
-            continue
+        if not keyword_present:
+            if proc_key in high_risk_keyword_required:
+                warnings.append(f"LLM_FINDINGS_DROPPED: keyword_missing index={idx} key={proc_key!r}")
+                continue
+            warnings.append(f"LLM_FINDINGS_WEAK_KEYWORD_EVIDENCE: index={idx} key={proc_key!r}")
 
         accepted.append(item)
 
@@ -353,15 +454,7 @@ def _find_evidence_span(text: str, evidence_quote: str) -> tuple[int, int] | Non
     direct = raw.find(needle)
     if direct >= 0:
         return direct, direct + len(needle)
-
-    parts = [p for p in re.split(r"\s+", needle) if p]
-    if not parts:
-        return None
-    pattern = r"\s+".join(re.escape(p) for p in parts)
-    match = re.search(pattern, raw, flags=re.MULTILINE)
-    if not match:
-        return None
-    return match.start(), match.end()
+    return None
 
 
 _STATION_WITH_PREFIX_RE = re.compile(r"(?i)\b(?:station|level)\s*(?P<num>5|6|7|8|9)\b")
@@ -995,9 +1088,12 @@ def seed_registry_record_from_llm_findings(prompt_text: str, *, llm: OpenAILLM |
     masked_prompt_text = mask_prompt_cpt_noise(prompt_text or "")
 
     findings = extract_reporter_findings_v1(masked_prompt_text, llm=llm)
-    accepted, dropped_warnings = validate_findings_against_text(
+    accepted, validation_warnings = validate_findings_against_text(
         findings,
         masked_prompt_text=masked_prompt_text,
+    )
+    dropped_count = sum(
+        1 for warning in (validation_warnings or []) if str(warning).startswith("LLM_FINDINGS_DROPPED:")
     )
 
     ner_result = build_synthetic_ner_result(
@@ -1006,7 +1102,7 @@ def seed_registry_record_from_llm_findings(prompt_text: str, *, llm: OpenAILLM |
     )
 
     warnings: list[str] = []
-    warnings.extend(dropped_warnings)
+    warnings.extend(validation_warnings)
 
     mapping = NERToRegistryMapper().map_entities(ner_result)
     warnings.extend(mapping.warnings or [])
@@ -1042,7 +1138,7 @@ def seed_registry_record_from_llm_findings(prompt_text: str, *, llm: OpenAILLM |
         context=findings.context,
         accepted_items=list(accepted),
         accepted_findings=len(accepted),
-        dropped_findings=len(dropped_warnings),
+        dropped_findings=int(dropped_count),
     )
 
 

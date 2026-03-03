@@ -1,9 +1,12 @@
+import { validateVaultPatient } from "./vaultSchemas.js";
+
 const CRYPTO_VERSION = 1;
 const DEFAULT_PBKDF2_ITERATIONS = 210000;
 const PBKDF2_HASH = "PBKDF2-SHA256";
 
 const WRAP_AAD_SCOPE = "vault-wrap";
 const RECORD_AAD_SCOPE = "vault-record";
+const JSON_AAD_SCOPE = "vault-json";
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -75,6 +78,12 @@ function buildWrapAad(userId, cryptoVersion) {
 function buildRecordAad(userId, registryUuid, cryptoVersion) {
   return asBuffer(
     encoder.encode(`${RECORD_AAD_SCOPE}|v${cryptoVersion}|u:${userId}|r:${String(registryUuid || "").toLowerCase()}`)
+  );
+}
+
+function buildJsonAad(userId, registryUuid, cryptoVersion) {
+  return asBuffer(
+    encoder.encode(`${JSON_AAD_SCOPE}|v${cryptoVersion}|u:${userId}|r:${String(registryUuid || "").toLowerCase()}`)
   );
 }
 
@@ -221,7 +230,50 @@ export async function decryptPatientData(vmk, userId, registryUuid, record) {
     asBuffer(ciphertext)
   );
   const parsed = JSON.parse(decoder.decode(plaintext));
-  return normalizeVaultPatientData(parsed, registryUuid);
+  return validateVaultPatient(normalizeVaultPatientData(parsed, registryUuid));
+}
+
+export async function encryptVaultJson(vmk, userId, registryUuid, jsonObj) {
+  const subtle = getSubtle();
+  const iv = randomBytes(12);
+  const plaintext = encoder.encode(JSON.stringify(jsonObj ?? null));
+  const ciphertext = await subtle.encrypt(
+    {
+      name: "AES-GCM",
+      iv: asBuffer(iv),
+      additionalData: buildJsonAad(userId, registryUuid, CRYPTO_VERSION),
+      tagLength: 128,
+    },
+    vmk,
+    asBuffer(plaintext)
+  );
+
+  return {
+    registry_uuid: registryUuid,
+    ciphertext_b64: bytesToBase64(new Uint8Array(ciphertext)),
+    iv_b64: bytesToBase64(iv),
+    crypto_version: CRYPTO_VERSION,
+  };
+}
+
+export async function decryptVaultJson(vmk, userId, registryUuid, record) {
+  if (!record || Number(record.crypto_version) !== CRYPTO_VERSION) {
+    throw new Error("Unsupported crypto version");
+  }
+  const subtle = getSubtle();
+  const ciphertext = base64ToBytes(record.ciphertext_b64);
+  const iv = base64ToBytes(record.iv_b64);
+  const plaintext = await subtle.decrypt(
+    {
+      name: "AES-GCM",
+      iv: asBuffer(iv),
+      additionalData: buildJsonAad(userId, registryUuid, CRYPTO_VERSION),
+      tagLength: 128,
+    },
+    vmk,
+    asBuffer(ciphertext)
+  );
+  return JSON.parse(decoder.decode(plaintext));
 }
 
 function userHeaders(userId) {

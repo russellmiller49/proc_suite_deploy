@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Procedure Suite - Clinical Dashboard</title>
+    <title>Procedure Suite | ATLAS-IP Clinical Dashboard</title>
     <link rel="stylesheet" href="./styles.css" />
 
     <!-- Monaco Editor (AMD loader) -->
@@ -32,28 +32,53 @@
         if (el) el.textContent = `Monaco failed to load: ${e?.message || e}`;
       });
     </script>
+    <script src="./linking.js"></script>
     <script type="module" src="./app.js"></script>
   </head>
-  <body>
-    <header class="topbar">
-      <div class="title">
-        <div class="h1">Procedure Suite - Clinical Dashboard</div>
-        <div class="subtle">
-          Client-side PHI detection. Scrub notes before submission.
+	  <body>
+	    <header class="topbar">
+		      <div class="title atlas-brand">
+	          <img class="atlas-logo" src="./assets/ATLAS-IP_logo.png" alt="ATLAS-IP" />
+		        <div class="atlas-brand-copy">
+	            <div class="atlas-wordmark">ATLAS-IP</div>
+	            <div class="subtle atlas-subtitle">
+	              Aggregate Thoracic Longitudinal Analysis System &ndash; Interventional Pulmonology
+	            </div>
+	          </div>
+		      </div>
+	      <div class="topbar-links">
+	        <a class="topbar-link" href="./reporter_builder.html">Reporter Builder</a>
+	        <a class="topbar-link" href="./workflow.html">Workflow</a>
+	      </div>
+	      <div class="status">
+	        <span id="statusText">Loading...</span>
+	        <span id="contextualAppendBadge" class="status-context-badge hidden">Contextual append-only mode active</span>
+	        <span id="progressText" class="progress"></span>
+	      </div>
+	    </header>
+      <div id="workflowStepper" class="workflow-stepper" role="status" aria-live="polite">
+        <div id="workflowStepInput" class="workflow-step is-active">
+          <span class="workflow-step-index">1</span>
+          <span class="workflow-step-label">Input &amp; Privacy</span>
+          <span class="workflow-step-spinner" aria-hidden="true"></span>
+        </div>
+        <div id="workflowStepProcessing" class="workflow-step">
+          <span class="workflow-step-index">2</span>
+          <span class="workflow-step-label">Processing</span>
+          <span class="workflow-step-spinner" aria-hidden="true"></span>
+        </div>
+        <div id="workflowStepReview" class="workflow-step">
+          <span class="workflow-step-index">3</span>
+          <span class="workflow-step-label">Clinical Review</span>
+          <span class="workflow-step-spinner" aria-hidden="true"></span>
         </div>
       </div>
-      <div class="topbar-links">
-        <a class="topbar-link" href="./reporter_builder.html">Reporter Builder</a>
-        <a class="topbar-link" href="./workflow.html">Workflow</a>
-      </div>
-      <div class="status">
-        <span id="statusText">Loading...</span>
-        <span id="progressText" class="progress"></span>
-      </div>
-    </header>
+	    <div id="vaultIdentityBanner" class="vault-identity-banner vault-identity-banner--locked">
+	      Vault: Locked. Unlock to enable local encrypted identity + device snapshot cache.
+	    </div>
 
-    <main class="layout">
-      <section class="editorPane">
+	    <main class="layout">
+	      <section class="editorPane">
         <!-- Section 1: De-identify Note -->
         <div class="section-header">
           <div class="section-title">
@@ -113,14 +138,17 @@
         </div>
         <div id="cameraScanSummary" class="subtle pdf-upload-summary camera-upload-summary hidden"></div>
 
-        <div class="warning">
-          <strong>PHI Policy:</strong> This page runs detection locally in your browser.
-          Apply redactions before submitting. The server receives only scrubbed text.
+	        <div class="warning">
+	          <strong>PHI Policy:</strong> This page runs detection locally in your browser.
+	          Apply redactions before submitting. The server receives only scrubbed text.
+	        </div>
+        <div id="classicModeNotice" class="warning classic-mode-note hidden">
+          <strong>Classic mode:</strong> Vault disabled (reduced local protections).
         </div>
 
-        <div class="warning" style="margin: 10px 16px;">
-          <strong>Zero-Knowledge Timeline:</strong> Event chronology is now managed in <strong>Local Vault</strong>.
-          Use <strong>Add Event</strong> from an unlocked case. Absolute dates remain client-side and are converted to
+	        <div class="warning" style="margin: 10px 16px;">
+	          <strong>Zero-Knowledge Timeline:</strong> Event chronology is now managed in <strong>Local Vault</strong>.
+	          Use <strong>Add Event</strong> from an unlocked case. Absolute dates remain client-side and are converted to
           relative day offsets before append.
         </div>
 
@@ -134,16 +162,23 @@
         </div>
 
         <!-- Section 2: Clinical Review -->
-        <div class="result">
-          <div class="resultHeader">
-            <div class="section-title">
-              <span class="section-number">2</span>
-              Clinical Review
-            </div>
-            <div class="result-actions">
-              <div class="layout-actions">
-                <button id="focusClinicalBtn" class="secondary" disabled title="Expand the clinical editor (hide billing tables)">
-                  Clinical
+	        <div class="result">
+	          <div class="resultHeader">
+              <div class="result-title-wrap">
+	              <div class="section-title">
+	                <span class="section-number">2</span>
+	                Clinical Review
+	              </div>
+                <div class="review-mode-toggle" id="reviewModeToggle" role="group" aria-label="Review mode">
+                  <button id="reviewModeClinicianBtn" class="secondary small-btn" type="button" data-mode="clinician">Clinician</button>
+                  <button id="reviewModeCoderBtn" class="secondary small-btn" type="button" data-mode="coder">Coder</button>
+                  <button id="reviewModeQaBtn" class="secondary small-btn" type="button" data-mode="qa">QA</button>
+                </div>
+              </div>
+	            <div class="result-actions">
+	              <div class="layout-actions">
+	                <button id="focusClinicalBtn" class="secondary" disabled title="Expand the clinical editor (hide billing tables)">
+	                  Clinical
                 </button>
                 <button id="focusBillingBtn" class="secondary" disabled title="Expand billing tables (hide clinical editor)">
                   Billing
@@ -159,22 +194,18 @@
 	            </div>
 	          </div>
 
-            <details class="raw-json-toggle" id="vaultPanel" open>
-              <summary>Local Vault (Encrypted)</summary>
-              <div class="vault-panel">
-                <div class="vault-grid">
-                  <div class="feedback-field">
-                    <label for="vaultUserIdInput">Vault User ID</label>
-                    <input id="vaultUserIdInput" type="text" placeholder="Stable ID (not a login)" />
-                  </div>
-                  <div class="feedback-field">
-                    <label for="vaultPasswordInput">Vault Password</label>
-                    <input id="vaultPasswordInput" type="password" placeholder="Required to unlock vault" />
-                  </div>
-                  <div class="feedback-field">
-                    <label for="vaultPatientLabelInput">Patient Label (local encrypted)</label>
-                    <input id="vaultPatientLabelInput" type="text" placeholder="e.g., John Doe or MRN 12345" />
-                  </div>
+		            <details class="raw-json-toggle" id="vaultPanel" open>
+		              <summary>Local Vault (Encrypted)</summary>
+		              <div class="vault-panel">
+		                <div class="vault-grid">
+		                  <div class="feedback-field">
+		                    <label for="vaultUserIdInput">Vault User ID</label>
+		                    <input id="vaultUserIdInput" type="text" placeholder="Stable ID (not a login)" />
+		                  </div>
+		                  <div class="feedback-field">
+		                    <label for="vaultPatientLabelInput">Patient Label (local encrypted)</label>
+		                    <input id="vaultPatientLabelInput" type="text" placeholder="e.g., John Doe or MRN 12345" />
+		                  </div>
                   <div class="feedback-field">
                     <label for="vaultIndexDateInput">Index Procedure Date (local encrypted)</label>
                     <input id="vaultIndexDateInput" type="date" />
@@ -193,7 +224,10 @@
                   <button id="vaultUnlockBtn" class="secondary">Unlock / Initialize Vault</button>
                   <button id="vaultLockBtn" class="secondary" disabled>Lock Vault</button>
                   <button id="vaultSyncBtn" class="secondary" disabled>Sync Patients</button>
-                  <button id="clearAppendTargetBtn" class="secondary" disabled>Clear Append Target</button>
+                  <button id="vaultCreateCaseBtn" class="secondary" disabled>Create Local Case</button>
+                  <button id="vaultSaveCaseBtn" class="secondary" disabled>Save Case Metadata</button>
+                  <button id="vaultClearActiveCaseBtn" class="secondary" disabled>Clear Active Case</button>
+                  <button id="clearAppendTargetBtn" class="secondary" disabled>Clear Event Mode</button>
                   <div class="subtle" id="vaultStatusText">Locked</div>
                 </div>
 
@@ -202,9 +236,19 @@
                   workflows. Extraction does not require this.
                 </div>
 
-                <div class="subtle vault-append-target" id="vaultAppendTargetText">Mode: Create new index case</div>
+                <div class="subtle vault-context-line" id="vaultActiveCaseText">Active case: (none)</div>
+                <div class="subtle vault-context-line" id="vaultEventModeText">Event mode: (none)</div>
                 <div id="vaultPatientsHost" class="vault-patients-host">
                   Unlock vault to view local encrypted patients.
+                </div>
+                <div class="vault-case-events">
+                  <div class="vault-case-events-title">Case Events</div>
+                  <div id="vaultCaseEventsHost" class="vault-case-events-host subtle">
+                    Load a case to view events.
+                  </div>
+                  <div id="vaultCaseEventDetailHost" class="vault-case-event-detail-host subtle">
+                    Select an event to inspect extraction details.
+                  </div>
                 </div>
               </div>
             </details>
@@ -213,6 +257,11 @@
 			            <div id="statusBannerHost"></div>
 			            <div id="statCards" class="stat-card-container">
 			            </div>
+                  <div id="atlasClinicianShell" class="atlas-clinician-shell">
+                    <div id="needsAttentionHost" class="needs-attention-host"></div>
+                    <div id="caseSummaryStrip" class="case-summary-strip"></div>
+                    <div id="reviewSectionsHost" class="review-sections-host"></div>
+                  </div>
 
 		            <div id="registryLegacyRoot">
 		            <div class="dash-grid">
@@ -390,8 +439,8 @@
 		                      </button>
 		                    </div>
 		                  </div>
-		                  <div id="completenessPromptsContent" class="dash-card-body padded">
-		                    <div class="completeness-inline-actions no-print">
+			                  <div id="completenessPromptsContent" class="dash-card-body padded">
+			                    <div class="completeness-inline-actions no-print">
 		                      <button
 		                        id="completenessApplyInlineBtn"
 		                        type="button"
@@ -402,25 +451,25 @@
 		                        Update Table
 		                      </button>
 		                    </div>
-		                    <div id="completenessPromptsBody"></div>
-		                  </div>
-		                </div>
-		                <div id="registryGridRoot" class="hidden"></div>
-		                <div id="registryLegacyRightRoot">
-		                  <div id="proceduresSummaryCard" class="dash-card clinical-hero-card">
-		                    <div class="dash-card-header">
-		                      <div class="section-title">
-		                        <span class="section-number">8</span>
-		                        Procedures Performed
-		                      </div>
-		                    </div>
-		                    <div class="dash-card-body" id="proceduresSummaryHost"></div>
-		                  </div>
+			                    <div id="completenessPromptsBody"></div>
+			                  </div>
+			                </div>
+			                <div id="proceduresSummaryCard" class="dash-card clinical-hero-card">
+			                  <div class="dash-card-header">
+			                    <div class="section-title">
+			                      <span class="section-number">8</span>
+			                      Procedure Summary
+			                    </div>
+			                  </div>
+			                  <div class="dash-card-body" id="proceduresSummaryHost"></div>
+			                </div>
 
-		                  <div id="clinicalContextCard" class="dash-card">
-		                    <div class="dash-card-header">
-		                      <div class="section-title">
-		                        <span class="section-number">9</span>
+			                <div id="registryGridRoot" class="hidden"></div>
+			                <div id="registryLegacyRightRoot">
+			                  <div id="clinicalContextCard" class="dash-card">
+			                    <div class="dash-card-header">
+			                      <div class="section-title">
+			                        <span class="section-number">9</span>
 		                        Patient &amp; Clinical Context
 		                      </div>
 		                    </div>
@@ -453,8 +502,8 @@
 	              <pre id="serverResponse">(none)</pre>
 	            </details>
 
-            <details class="raw-json-toggle">
-              <summary>Flattened Tables (Editable)</summary>
+            <details class="raw-json-toggle" id="advancedAllFields" open>
+              <summary>Data Review (All Fields)</summary>
               <div id="flattenedTablesHost" class="flat-tables-host"></div>
             </details>
 
@@ -526,9 +575,9 @@
       </aside>
     </main>
 
-    <dialog id="phiConfirmModal" class="modal">
-      <form method="dialog" class="modal-content">
-        <h3>Confirm PHI removal before persistence</h3>
+	    <dialog id="phiConfirmModal" class="modal">
+	      <form method="dialog" class="modal-content">
+	        <h3>Confirm PHI removal before persistence</h3>
         <p class="subtle">
           You are about to save this note + results on the server for training/review. The server
           must store <strong>scrubbed-only</strong> text. Confirm you have removed PHI.
@@ -541,11 +590,34 @@
           <button value="confirm" class="primary">Confirm PHI removal</button>
         </div>
       </form>
-    </dialog>
+	    </dialog>
 
-    <dialog id="addEventModal" class="modal">
-      <form method="dialog" class="modal-content">
-        <h3>Add Event (Zero-Knowledge)</h3>
+	    <dialog id="vaultUnlockDialog" class="modal">
+	      <form method="dialog" class="modal-content">
+	        <h3>Unlock Local Vault</h3>
+	        <p class="subtle">
+	          The vault stores small encrypted local-only identity fields and enables device snapshot caching for deterministic reload.
+	          The server never receives these plaintext values.
+	        </p>
+	        <div class="feedback-field">
+	          <label for="vaultUnlockUserIdInput">Vault User ID</label>
+	          <input id="vaultUnlockUserIdInput" type="text" placeholder="Stable ID (not a login)" />
+	        </div>
+	        <div class="feedback-field">
+	          <label for="vaultUnlockPasswordInput">Vault Password</label>
+	          <input id="vaultUnlockPasswordInput" type="password" placeholder="Required to unlock vault" />
+	        </div>
+	        <div class="modal-actions">
+	          <button value="cancel" class="secondary">Cancel</button>
+	          <button id="vaultUnlockDialogSubmitBtn" type="button" class="primary">Unlock</button>
+	        </div>
+	        <div class="subtle" id="vaultUnlockDialogStatus"></div>
+	      </form>
+	    </dialog>
+
+	    <dialog id="addEventModal" class="modal">
+	      <form method="dialog" class="modal-content">
+	        <h3>Add Event (Zero-Knowledge)</h3>
         <p class="subtle" id="addEventRegistryText">Case: —</p>
         <div class="feedback-field">
           <label for="addEventDateInput">Event Date (client-side only)</label>
@@ -568,6 +640,57 @@
           </select>
         </div>
 
+        <div id="addEventNoteFields" class="feedback-field">
+          <label for="addEventTitleInput">Event Title (optional)</label>
+          <input
+            id="addEventTitleInput"
+            type="text"
+            class="form-control"
+            placeholder="Optional short label (e.g., PET-CT follow-up)"
+          />
+
+          <div id="addEventImagingMetaFields" class="hidden" style="margin-top: 8px;">
+            <label>Imaging Metadata</label>
+            <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+              <select id="addEventImagingModalitySelect" class="param-select" title="Imaging modality">
+                <option value="ct" selected>CT</option>
+                <option value="pet_ct">PET-CT</option>
+                <option value="mri">MRI</option>
+                <option value="other">Other</option>
+              </select>
+              <select id="addEventImagingSubtypeSelect" class="param-select" title="Imaging timing/subtype">
+                <option value="followup" selected>Follow-up</option>
+                <option value="preop">Pre-op baseline</option>
+                <option value="restaging">Restaging</option>
+                <option value="surveillance">Surveillance</option>
+              </select>
+            </div>
+          </div>
+
+          <label for="addEventNoteInput">Event Note (scrubbed text)</label>
+          <textarea
+            id="addEventNoteInput"
+            class="form-control"
+            rows="8"
+            placeholder="Paste the event note here (e.g., pathology or imaging report)..."
+          ></textarea>
+          <div class="pdf-upload-group" style="margin-top: 8px;">
+            <label class="manual-label" for="addEventPdfInput">PDF:</label>
+            <input id="addEventPdfInput" type="file" accept="application/pdf,.pdf" />
+            <select id="addEventPdfMaskSelect" class="param-select" title="Mask photo regions before OCR (local-only)">
+              <option value="auto" selected>Mask Auto</option>
+              <option value="on">Mask On</option>
+              <option value="off">Mask Off</option>
+            </select>
+            <button id="addEventPdfExtractBtn" class="secondary" type="button" disabled>
+              Extract PDF Into Event Note
+            </button>
+          </div>
+          <div id="addEventNoteStatus" class="subtle">
+            Optional: paste a scrubbed event note or extract local PDF text into this box.
+          </div>
+        </div>
+
         <div id="addEventStructuredFields" class="feedback-field hidden">
           <label>Structured Status Fields</label>
           <label class="inline-toggle">
@@ -582,6 +705,15 @@
             <input id="addEventDeceasedToggle" type="checkbox" />
             Deceased
           </label>
+          <label for="addEventDiseaseStatusSelect">Disease status (optional)</label>
+          <select id="addEventDiseaseStatusSelect" class="param-select">
+            <option value="" selected>—</option>
+            <option value="Progression">Progression</option>
+            <option value="Stable">Stable</option>
+            <option value="Response">Response</option>
+            <option value="Mixed">Mixed</option>
+            <option value="Indeterminate">Indeterminate</option>
+          </select>
           <label for="addEventStatusCommentInput">Status Comment (optional)</label>
           <input id="addEventStatusCommentInput" type="text" placeholder="Optional structured status note" />
         </div>
@@ -704,6 +836,25 @@
         </div>
       </form>
     </dialog>
+    <div id="reviewDrawerBackdrop" class="review-drawer-backdrop hidden" tabindex="-1"></div>
+    <aside
+      id="reviewDrawer"
+      class="review-drawer hidden"
+      role="dialog"
+      aria-modal="true"
+      aria-hidden="true"
+      aria-labelledby="reviewDrawerTitle"
+      tabindex="-1"
+    >
+      <div class="review-drawer-header">
+        <div class="review-drawer-title-wrap">
+          <div id="reviewDrawerTitle" class="review-drawer-title">Edit Section</div>
+          <div id="reviewDrawerSubtitle" class="subtle"></div>
+        </div>
+        <button id="reviewDrawerCloseBtn" class="secondary" type="button" aria-label="Close editor drawer">Close</button>
+      </div>
+      <div id="reviewDrawerFields" class="review-drawer-fields"></div>
+    </aside>
 
     <div id="privacyShield" class="privacy-shield" aria-hidden="true" tabindex="0">Private - tap to resume</div>
   </body>

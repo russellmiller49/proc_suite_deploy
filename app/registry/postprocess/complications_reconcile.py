@@ -31,9 +31,12 @@ _PNEUMO_INTERVENTIONS: tuple[tuple[str, re.Pattern[str]], ...] = (
 _BLEEDING_WORD_RE = re.compile(r"(?i)\b(?:bleed(?:ing)?|hemorrhag(?:e|ic)|haemorrhag(?:e|ic)|ooz(?:ing)?)\b")
 _NO_BLEEDING_RE = re.compile(r"(?i)\b(?:no|without)\b[^.\n]{0,40}\b(?:bleeding|hemorrhage|haemorrhage|oozing)\b")
 _NASHVILLE_GRADE_RE = re.compile(r"(?i)\bnashville\b[^.\n]{0,40}\bgrade\b\s*(?P<grade>[0-4])\b")
-_COMPLICATIONS_NONE_RE = re.compile(r"(?i)\bcomplications?\s*:\s*none\b|\bno\s+immediate\s+complications\b")
+_COMPLICATIONS_NONE_RE = re.compile(r"(?i)\bcomplications?\s*:?\s*none\b|\bno\s+immediate\s+complications\b")
+_PROCEDURAL_NONE_RE = re.compile(
+    r"(?i)\bcomplications?\s*:?\s*none\s+procedural\b|\bno\s+procedural\s+complications\b"
+)
 _LOW_GRADE_BLEEDING_CUE_RE = re.compile(
-    r"(?i)\b(?:minor|minimal|mild|trace|scant|contact|blood-tinged)\s+(?:bleeding|oozing|hemorrhag(?:e|ic))\b"
+    r"(?i)\b(?:minor|minimal|mild|trace|scant|contact|blood-tinged)\b(?:\s+\w+){0,2}\s+(?:bleeding|oozing|hemorrhag(?:e|ic))\b"
     r"|\bminor\s+oozing\b|\bmild\s+oozing\b|\boo?zing\b|\bminor\s+procedural\s+hemorrhage\b"
 )
 _HIGH_GRADE_BLEEDING_CUE_RE = re.compile(
@@ -271,6 +274,18 @@ def reconcile_complications_from_narrative(record: RegistryRecord, full_text: st
     pneumothorax_match = _PNEUMOTHORAX_RE.search(text)
     hematoma_match = _HEMATOMA_RE.search(text)
     bleeding_grade, bleeding_match = _infer_nashville_bleeding_grade(text)
+    present_on_arrival_hemoptysis = bool(
+        _PROCEDURAL_NONE_RE.search(text)
+        and re.search(r"(?i)\b(?:indication|pre\s*dx|post\s*dx|diagnosis)\b[^.\n]{0,160}\bhemoptysis\b", text)
+        and re.search(r"(?i)\b(?:massive|brisk|active)\s+hemoptysis\b|\bhemoptysis\b", text)
+        and not re.search(
+            r"(?i)\b(?:biops(?:y|ies|ied)|cryobiops(?:y|ies)|tbna|needle\s+aspiration|brushings?|debridement|tumou?r\s+debulking)\b",
+            text,
+        )
+    )
+    if present_on_arrival_hemoptysis and bleeding_grade is not None:
+        bleeding_grade = None
+        bleeding_match = None
 
     if pneumothorax_match:
         prefix = text[max(0, pneumothorax_match.start() - 80) : pneumothorax_match.start()]

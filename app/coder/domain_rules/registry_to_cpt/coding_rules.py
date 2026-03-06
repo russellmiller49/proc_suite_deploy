@@ -1147,6 +1147,10 @@ def derive_all_codes_with_meta(
         record,
         ("procedures_performed.balloon_occlusion", "code_evidence"),
     ).lower()
+    blvr_evidence = _evidence_text_for_prefixes(
+        record,
+        ("procedures_performed.blvr", "granular_data.blvr_chartis_measurements"),
+    ).lower()
     balloon_signal = _performed(balloon_occlusion) or bool(
         re.search(
             r"(?i)\b(?:balloon\s+occlusion|serial\s+occlusion|endobronchial\s+blocker|uniblocker|arndt|ardnt|fogarty)\b",
@@ -1158,10 +1162,6 @@ def derive_all_codes_with_meta(
     else:
         cv = _get(blvr, "collateral_ventilation_assessment")
         cv_text = str(cv).lower() if cv is not None else ""
-        blvr_evidence = _evidence_text_for_prefixes(
-            record,
-            ("procedures_performed.blvr", "granular_data.blvr_chartis_measurements"),
-        ).lower()
         if "chartis" in cv_text or "chartis" in blvr_evidence:
             occlusion_source = "Chartis"
         elif balloon_signal:
@@ -1173,7 +1173,23 @@ def derive_all_codes_with_meta(
             occlusion_source = "Substance occlusion"
 
     if occlusion_source:
-        if not chartis_lobes:
+        balloon_localization_integral_to_valve_work = bool(
+            occlusion_source == "Balloon occlusion"
+            and str(_get(blvr, "procedure_type") or "").strip().lower() == "valve placement"
+            and (
+                _get(balloon_occlusion, "air_leak_result") not in (None, "", [], {})
+                or re.search(
+                    r"(?i)\b(?:localiz(?:e|ed|ing|ation)|localized)\b[^.\n]{0,80}\b(?:air\s+leak|leak)\b"
+                    r"|\b(?:air\s+leak|leak)\b[^.\n]{0,80}\b(?:localiz(?:e|ed|ing|ation)|localized)\b",
+                    balloon_evidence + "\n" + blvr_evidence,
+                )
+            )
+        )
+        if balloon_localization_integral_to_valve_work:
+            warnings.append(
+                "Suppressed 31634: balloon occlusion documented as leak localization integral to valve placement."
+            )
+        elif not chartis_lobes:
             codes.append("31634")
             rationales["31634"] = f"{occlusion_source} documented (target lobe missing)"
             warnings.append(
@@ -1207,12 +1223,38 @@ def derive_all_codes_with_meta(
     # Bronchial thermoplasty: 31660 initial + 31661 additional lobes.
     bt = _proc(record, "bronchial_thermoplasty")
     if _performed(bt):
-        codes.append("31660")
-        rationales["31660"] = "bronchial_thermoplasty.performed=true"
         areas = _get(bt, "areas_treated")
-        if areas and len(areas) >= 2:
+        normalized_areas: set[str] = set()
+        raw_areas: list[str] = []
+        if isinstance(areas, list):
+            raw_areas = [str(area or "").strip() for area in areas if str(area or "").strip()]
+        elif isinstance(areas, str) and areas.strip():
+            raw_areas = [areas.strip()]
+        for area in raw_areas:
+            upper = area.upper()
+            if upper in {"LINGULA", "LING", "LUL", "LEFT UPPER LOBE"}:
+                normalized_areas.add("LUL")
+            elif upper in {"LLL", "LEFT LOWER LOBE"}:
+                normalized_areas.add("LLL")
+            elif upper in {"RUL", "RIGHT UPPER LOBE"}:
+                normalized_areas.add("RUL")
+            elif upper in {"RML", "RIGHT MIDDLE LOBE"}:
+                normalized_areas.add("RML")
+            elif upper in {"RLL", "RIGHT LOWER LOBE"}:
+                normalized_areas.add("RLL")
+            else:
+                normalized_areas.add(area)
+        if len(normalized_areas) >= 2:
             codes.append("31661")
-            rationales["31661"] = f"bronchial_thermoplasty.areas_treated_count={len(areas)} (>=2)"
+            rationales["31661"] = f"bronchial_thermoplasty.unique_lobes={sorted(normalized_areas)} (>=2)"
+        else:
+            codes.append("31660")
+            rationales["31660"] = "bronchial_thermoplasty.performed=true (single treated lobe)"
+
+    wll = _proc(record, "whole_lung_lavage")
+    if _performed(wll):
+        codes.append("32997")
+        rationales["32997"] = "whole_lung_lavage.performed=true"
 
     # Tracheostomy: distinguish established route vs new percutaneous trach.
     all_evidence_text = _evidence_text_for_prefixes(record, ("",))
@@ -1338,6 +1380,16 @@ def derive_all_codes_with_meta(
         else:
             codes.append("32554")
             rationales["32554"] = "thoracentesis.performed=true and guidance!='Ultrasound'"
+
+    pleural_biopsy = _pleural(record, "pleural_biopsy")
+    if _performed(pleural_biopsy):
+        guidance = _get(pleural_biopsy, "guidance")
+        needle_type = _get(pleural_biopsy, "needle_type")
+        if guidance in {"Ultrasound", "CT"} and needle_type in {"Cutting needle", "Tru-cut"}:
+            codes.append("32408")
+            rationales["32408"] = (
+                "pleural_procedures.pleural_biopsy.performed=true with imaging guidance and core/cutting needle"
+            )
 
     chest_tube = _pleural(record, "chest_tube")
     if _performed(chest_tube):

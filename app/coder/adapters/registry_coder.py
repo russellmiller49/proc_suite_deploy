@@ -127,11 +127,15 @@ CPT_CODES = {
     "31641": "Bronchoscopy with destruction of tumor or relief of stenosis",
     "31645": "Bronchoscopy with therapeutic aspiration, initial",
     "31646": "Bronchoscopy with therapeutic aspiration, subsequent",
+    "31660": "Bronchoscopy with bronchial thermoplasty, initial lobe",
+    "+31661": "Bronchoscopy with bronchial thermoplasty, each additional lobe (add-on)",
     # BLVR
     "31647": "Bronchoscopy with balloon occlusion for BLVR assessment",
     "+31651": "Bronchoscopy with endobronchial valve insertion, each (add-on)",
     # Pleural procedures
+    "32408": "Core needle biopsy of lung or mediastinum, percutaneous, with imaging guidance",
     "32550": "Insertion of indwelling tunneled pleural catheter with cuff",
+    "32551": "Tube thoracostomy",
     "32554": "Thoracentesis without imaging guidance",
     "32555": "Thoracentesis with imaging guidance",
     "32556": "Pleural drainage, percutaneous, with insertion of catheter without imaging",
@@ -140,6 +144,7 @@ CPT_CODES = {
     "32601": "Thoracoscopy, diagnostic, lungs/pericardium/mediastinal space",
     "32606": "Thoracoscopy, diagnostic, with biopsy(s) of lung infiltrate(s)",
     "32650": "Thoracoscopy with pleurodesis",
+    "32997": "Total lung lavage",
 }
 
 # Add-on codes and their required primaries
@@ -149,6 +154,7 @@ ADD_ON_CODES = {
     "+31633": ["31629"],
     "+31637": ["31636", "31631"],
     "+31651": ["31647"],
+    "+31661": ["31660"],
     "+31654": ["31652", "31653"],
 }
 

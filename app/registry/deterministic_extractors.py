@@ -849,6 +849,15 @@ def extract_bleeding_intervention_required(note_text: str) -> list[str] | None:
         return None
     if re.search(r"\bno\s+(?:significant\s+)?bleeding\b", lowered):
         return None
+    if (
+        re.search(r"(?i)\b(?:complications?\s*:\s*none\s+procedural|no\s+procedural\s+complications)\b", text)
+        and re.search(r"(?i)\b(?:indication|pre\s*dx|post\s*dx|diagnosis)\b[^.\n]{0,160}\bhemoptysis\b", text)
+        and not re.search(
+            r"(?i)\b(?:biops(?:y|ies|ied)|cryobiops(?:y|ies)|tbna|needle\s+aspiration|brushings?|debridement)\b",
+            text,
+        )
+    ):
+        return None
 
     hits: list[str] = []
     for label, pattern in _BLEEDING_INTERVENTION_PATTERNS:
@@ -1007,6 +1016,8 @@ EUS_B_PATTERNS = [
 CRYOTHERAPY_PATTERNS = [
     r"\bcryotherap(?:y|ies)\b",
     r"\bcryo(?:therapy|debulk(?:ing)?)\b",
+    r"\bcryo\s*spray\b",
+    r"\bcryospray\b",
 ]
 CRYOPROBE_PATTERN = r"\bcryo\s*probe\b"
 CRYOBIOPSY_PATTERN = r"\bcryo\s*biops(?:y|ies)\b|\bcryobiops(?:y|ies)\b"
@@ -1165,6 +1176,7 @@ THERAPEUTIC_ASPIRATION_PATTERNS = [
     r"\bthereapeutic\s+aspiration\b",
     r"\btherapeutic\s+suction(?:ing)?\b",
     r"\bmucus\s+plug\s+(?:removal|aspiration|extracted|suctioned|cleared)\b",
+    r"\b(?:large|tenacious|obstructing)\s+(?:mucus\s+)?plug\b[^.\n]{0,80}\b(?:extract(?:ed|ion)?|remov(?:ed|al)|suction(?:ed|ing)?|clear(?:ed|ing)?)\b",
     r"\b(?:large\s+)?(?:blood\s+)?clot\s+(?:removal|aspiration|extracted|suctioned|cleared)\b",
     r"\b(?:blood\s+)?clot\b[^.\n]{0,60}\b(?:was\s+)?(?:successfully\s+)?(?:removed|evacuated|extracted)\b",
     r"\bairway\s+(?:cleared|cleared\s+of)\s+(?:mucus|secretions|blood|clot)\b",
@@ -1277,6 +1289,17 @@ _NON_PROCEDURAL_HEADINGS: tuple[str, ...] = (
     "ASSESSMENT",
 )
 
+WHOLE_LUNG_LAVAGE_PATTERNS = [
+    r"\bwhole\s+lung\s+lavage\b",
+    r"\bwll\b",
+]
+
+BRONCHIAL_THERMOPLASTY_PATTERNS = [
+    r"\bbronchial\s+thermoplasty\b",
+    r"\bthermoplasty\s+catheter\b",
+    r"\brf\s+activations?\b",
+]
+
 
 def _normalize_heading(value: str) -> str:
     return re.sub(r"\s+", " ", (value or "").strip()).upper()
@@ -1298,6 +1321,9 @@ DIAGNOSTIC_BRONCHOSCOPY_PATTERNS = [
     r"\bbronchoscope\b[^.\n]{0,80}\b(?:introduc|advance|insert)\w*\b",
     r"\b(?:introduc|advance|insert)\w*\b[^.\n]{0,80}\bbronchoscope\b",
     r"\bbronchoscopy\b[^.\n]{0,80}\b(?:perform|completed)\w*\b",
+    r"\bdynamic\s+bronchoscopy\b",
+    r"\bbronchoscopy\b[^.\n]{0,80}\bdynamic\s+assessment\b",
+    r"\bforced\s+expiratory\s+maneuver\b",
 ]
 
 _CHECKBOX_TOKEN_RE = re.compile(
@@ -1553,6 +1579,103 @@ def extract_bal(note_text: str) -> Dict[str, Any]:
     return {}
 
 
+def extract_whole_lung_lavage(note_text: str) -> Dict[str, Any]:
+    """Extract whole-lung lavage and keep it distinct from BAL."""
+    text = _maybe_unescape_newlines(note_text or "")
+    if not text.strip():
+        return {}
+
+    lowered = text.lower()
+    explicit_wll = any(re.search(pattern, lowered, re.IGNORECASE) for pattern in WHOLE_LUNG_LAVAGE_PATTERNS)
+    contextual_wll = bool(
+        "lavage" in lowered
+        and (
+            re.search(r"(?i)\b(?:pap|pulmonary\s+alveolar\s+proteinosis)\b", text)
+            or re.search(r"(?i)\bdouble[-\s]+lumen\s+tube\b", text)
+            or re.search(r"(?i)\blung\s+isolation\b", text)
+            or re.search(r"(?i)\beffluent\b[^.\n]{0,80}\bclear", text)
+        )
+    )
+    if not explicit_wll and not contextual_wll:
+        return {}
+
+    proc: dict[str, Any] = {"performed": True}
+
+    side_match = re.search(
+        r"(?i)\bwhole\s+lung\s+lavage\b[^.\n]{0,80}\((right|left)\s+lung\)"
+        r"|\b(?:right|left)\s+lung\b[^.\n]{0,80}\b(?:was\s+)?lavaged\b",
+        text,
+    )
+    if side_match:
+        side = next((group for group in side_match.groups() if group), None)
+        if side:
+            proc["side"] = side.capitalize()
+
+    volume_match = re.search(
+        r"(?i)\btotal(?:\s+lavage)?\s+volume\b[^0-9]{0,20}(?P<vol>\d+(?:\.\d+)?)\s*l\b",
+        text,
+    )
+    if volume_match:
+        try:
+            proc["total_volume_liters"] = float(volume_match.group("vol"))
+        except Exception:
+            pass
+
+    cycles_match = re.search(r"(?i)\b(?P<count>\d+)\s+(?:lavage\s+)?cycles?\b", text)
+    if cycles_match:
+        try:
+            proc["cycles"] = int(cycles_match.group("count"))
+        except Exception:
+            pass
+
+    if re.search(r"(?i)\b(?:pap|pulmonary\s+alveolar\s+proteinosis)\b", text):
+        proc["indication"] = "PAP"
+
+    return {"whole_lung_lavage": proc}
+
+
+def extract_bronchial_thermoplasty(note_text: str) -> Dict[str, Any]:
+    """Extract bronchial thermoplasty sessions and treated lobes."""
+    text = _maybe_unescape_newlines(note_text or "")
+    if not text.strip():
+        return {}
+
+    lowered = text.lower()
+    explicit_thermoplasty = any(
+        re.search(pattern, lowered, re.IGNORECASE) for pattern in BRONCHIAL_THERMOPLASTY_PATTERNS
+    )
+    rf_context = bool(
+        re.search(r"(?i)\brf\s+activations?\b", text)
+        and re.search(r"(?i)\b(?:segmental|subsegmental|airway|bronch(?:i|us))\b", text)
+    )
+    if not explicit_thermoplasty and not rf_context:
+        return {}
+
+    proc: dict[str, Any] = {"performed": True}
+
+    session_match = re.search(r"(?i)\bsession\s*(?P<num>\d+)\b", text)
+    if session_match:
+        try:
+            proc["session_number"] = int(session_match.group("num"))
+        except Exception:
+            pass
+
+    locations = _extract_lung_locations_from_text(text)
+    if locations:
+        proc["areas_treated"] = locations
+
+    activations_match = re.search(r"(?i)\btotal\s+activations?\s*:\s*(?P<count>\d+)\b", text)
+    if not activations_match:
+        activations_match = re.search(r"(?i)\b(?P<count>\d+)\s+activations?\b", text)
+    if activations_match:
+        try:
+            proc["number_of_activations"] = int(activations_match.group("count"))
+        except Exception:
+            pass
+
+    return {"bronchial_thermoplasty": proc}
+
+
 def is_true_therapeutic_aspiration(
     note_text: str,
     context_spans: list[tuple[int, int]],
@@ -1733,6 +1856,17 @@ def extract_therapeutic_aspiration(note_text: str) -> Dict[str, Any]:
                     locs = re.sub(r"\s+", " ", locs).strip(" ,;:-")
                     if locs:
                         location = locs
+            if not location:
+                extracted_match = re.search(
+                    r"(?i)\b(?:plug|mucus|clot|secretions?)\b[^.\n]{0,140}\b(?:extract(?:ed|ion)?|removed|suctioned|cleared)\b"
+                    r"[^.\n]{0,40}\bfrom\s+(?P<loc>[^.\n]{2,120})",
+                    candidate_text,
+                )
+                if extracted_match:
+                    candidate_loc = (extracted_match.group("loc") or "").strip().strip(" ,;:-")
+                    candidate_loc = re.split(r"(?i)\bwith\b|\busing\b", candidate_loc, maxsplit=1)[0].strip(" ,;:-")
+                    if candidate_loc:
+                        location = candidate_loc
 
             result = {"therapeutic_aspiration": {"performed": True}}
             result["therapeutic_aspiration"]["material"] = material
@@ -1778,6 +1912,14 @@ def extract_intubation(note_text: str) -> Dict[str, Any]:
         )
         or re.search(r"\binto\s+the\s+(?:right|left)\s+main(?:\s*|-)?stem\b", text_lower, re.IGNORECASE)
     )
+    procedural_verb_context = bool(
+        re.search(
+            r"\bintubat(?:ion|ed|ing)\b[^.\n]{0,80}\b(?:perform(?:ed)?|place(?:d)?|insert(?:ed)?|advance(?:d)?)\b"
+            r"|\b(?:perform(?:ed)?|place(?:d)?|insert(?:ed)?|advance(?:d)?)\b[^.\n]{0,80}\bintubat(?:ion|ed|ing)\b",
+            text_lower,
+            re.IGNORECASE,
+        )
+    )
 
     tube_match = re.search(
         r"\b(?P<size>\d{1,2}(?:\.\d+)?)\s*(?:mm\s*)?(?:(?P<mlt>mlt)\s*)?(?:ett|endotracheal\s+tube)\b"
@@ -1801,6 +1943,8 @@ def extract_intubation(note_text: str) -> Dict[str, Any]:
     if not special_context:
         return {}
     if not (intubation_mentioned or endotracheal_intubation or ett_placed):
+        return {}
+    if selective_context and not (fiberoptic or endotracheal_intubation or ett_placed or procedural_verb_context):
         return {}
 
     proc: dict[str, Any] = {"performed": True}
@@ -2802,7 +2946,16 @@ def extract_blvr(note_text: str) -> Dict[str, Any]:
     if not text_lower.strip():
         return {}
 
-    blvr_hit = any(re.search(pattern, text_lower, re.IGNORECASE) for pattern in BLVR_PATTERNS)
+    pal_valve_localization_hit = bool(
+        re.search(r"(?i)\b(?:pal|persistent\s+air\s+leak|air\s+leak|pneumothorax)\b", preferred_text)
+        and re.search(r"(?i)\bbronchoscop\w*\b|\bballoon\s+occlusion\b|\bocclusion\b", preferred_text)
+        and re.search(
+            r"(?i)\b(?:\d{1,2}|one|two|three|four|five|six)\s+valves?\b[^.\n]{0,80}\b(?:deploy(?:ed|ment)?|place(?:d|ment)?|insert(?:ed|ion)?)\b"
+            r"|\b(?:deploy(?:ed|ment)?|place(?:d|ment)?|insert(?:ed|ion)?)\b[^.\n]{0,80}\b(?:\d{1,2}|one|two|three|four|five|six)\s+valves?\b",
+            preferred_text,
+        )
+    )
+    blvr_hit = any(re.search(pattern, text_lower, re.IGNORECASE) for pattern in BLVR_PATTERNS) or pal_valve_localization_hit
     if not blvr_hit:
         return {}
 
@@ -2949,6 +3102,29 @@ def extract_blvr(note_text: str) -> Dict[str, Any]:
         if len(lobes) == 1:
             proc["target_lobe"] = next(iter(lobes))
 
+    if proc.get("procedure_type") == "Valve placement" and not proc.get("number_of_valves"):
+        word_to_int = {
+            "one": 1,
+            "two": 2,
+            "three": 3,
+            "four": 4,
+            "five": 5,
+            "six": 6,
+        }
+        count_match = re.search(
+            r"(?i)\b(?P<count>\d{1,2}|one|two|three|four|five|six)\s+valves?\b[^.\n]{0,40}\b(?:deploy(?:ed|ment)?|place(?:d|ment)?|insert(?:ed|ion)?)\b"
+            r"|\b(?:deploy(?:ed|ment)?|place(?:d|ment)?|insert(?:ed|ion)?)\b[^.\n]{0,40}\b(?P<count2>\d{1,2}|one|two|three|four|five|six)\s+valves?\b",
+            preferred_text,
+        )
+        if count_match:
+            raw_count = (count_match.group("count") or count_match.group("count2") or "").strip().lower()
+            try:
+                proc["number_of_valves"] = int(raw_count)
+            except Exception:
+                parsed = word_to_int.get(raw_count)
+                if parsed is not None:
+                    proc["number_of_valves"] = parsed
+
     if not proc.get("target_lobe"):
         lobes = _extract_lung_locations_from_text(preferred_text)
         if len(lobes) == 1:
@@ -2999,7 +3175,15 @@ def extract_diagnostic_bronchoscopy(note_text: str) -> Dict[str, Any]:
     # strong inspection cue or explicit procedure-header 31622 context.
     strong_inspection_cue = bool(
         re.search(
-            r"(?i)\b(?:the\s+airway\s+was\s+inspected|initial\s+airway\s+inspection\s+findings|tracheobronchial\s+tree\s+was\s+examined)\b",
+            r"(?i)\b(?:"
+            r"the\s+airway\s+was\s+inspected|"
+            r"initial\s+airway\s+inspection\s+findings|"
+            r"tracheobronchial\s+tree\s+was\s+examined|"
+            r"dynamic\s+bronchoscopy|"
+            r"dynamic\s+assessment|"
+            r"forced\s+expiratory\s+maneuver|"
+            r"cpap\s+titration\s+during\s+bronchoscopy"
+            r")\b",
             text_lower,
         )
     )
@@ -3605,6 +3789,10 @@ def extract_tbna_conventional(note_text: str) -> Dict[str, Any]:
         r"\b(?:endobronchial\s+ultrasound|convex\s+probe|ebus[-\s]?tbna|linear\s+ebus)\b",
         re.IGNORECASE,
     )
+    transthoracic_core_context_re = re.compile(
+        r"(?i)\b(?:transthoracic|percutaneous|coaxial|core\s+needle\s+biops(?:y|ies)|pleural[-\s]?based|chest\s+wall)\b"
+    )
+    bronchoscopic_workflow_re = re.compile(r"(?i)\bbronchoscop|bronchoscope|ebus|radial|navigation|robotic\b")
     note_has_nodal_ebus = bool(nodal_ebus_context_re.search(raw_text))
 
     def _local_context(text: str, start: int, end: int, before_lines: int = 4, after_lines: int = 4) -> str:
@@ -3731,6 +3919,8 @@ def extract_tbna_conventional(note_text: str) -> Dict[str, Any]:
         # Avoid nodal EBUS blocks; those are handled under linear_ebus.
         if nodal_ebus_context_re.search(local) or _extract_ln_stations_from_text(local):
             continue
+        if transthoracic_core_context_re.search(local) and not bronchoscopic_workflow_re.search(local):
+            continue
 
         # Require a peripheral workflow signal (radial EBUS, navigation, fluoroscopy, etc).
         if not (
@@ -3740,6 +3930,8 @@ def extract_tbna_conventional(note_text: str) -> Dict[str, Any]:
                 local,
             )
         ):
+            continue
+        if transthoracic_core_context_re.search(local) and not bronchoscopic_workflow_re.search(local):
             continue
 
         peripheral_hit = True
@@ -3896,6 +4088,24 @@ def extract_mechanical_debulking(note_text: str) -> Dict[str, Any]:
     )
     if mucus_only_context:
         return {}
+
+    obstructing_material_context = bool(
+        re.search(
+            r"(?i)\b(?:fungal(?:-appearing)?|fungal\s+ball|necrotic|endobronchial\s+debris|obstructing\s+material|slough|debris)\b",
+            text_lower,
+        )
+        and re.search(r"(?i)\b(?:obstruct(?:ing|ion)|occlud|endobronchial|lesion|airway)\b", text_lower)
+        and re.search(r"(?i)\b(?:forceps|snare|microdebrider|rigid\s+coring)\b", text_lower)
+        and re.search(r"(?i)\b(?:remov(?:ed|al)?|debulk(?:ed|ing)?|excise(?:d|ion)?|resect(?:ed|ion)?)\b", text_lower)
+        and not re.search(r"(?i)\b(?:foreign\s+body|dental\s+fragment|coin|tooth|aspirat(?:ed|ion))\b", text_lower)
+        and not re.search(r"(?i)\b(?:mucous?|secretions?|mucus\s+plug|blood\s+clot)\b", text_lower)
+    )
+    if obstructing_material_context:
+        proc: dict[str, Any] = {"performed": True}
+        locations = _extract_lung_locations_from_text(text)
+        if locations:
+            proc["locations"] = locations
+        return {"mechanical_debulking": proc}
 
     for pattern in MECHANICAL_DEBULKING_PATTERNS:
         for match in re.finditer(pattern, text_lower, re.IGNORECASE):
@@ -4716,6 +4926,75 @@ def extract_thoracentesis(note_text: str) -> Dict[str, Any]:
     return {"thoracentesis": thora}
 
 
+def extract_pleural_biopsy(note_text: str) -> Dict[str, Any]:
+    """Extract percutaneous transthoracic/core pleural-biopsy workflows."""
+    text = _maybe_unescape_newlines(note_text or "")
+    if not text.strip():
+        return {}
+
+    explicit_transthoracic = bool(
+        re.search(
+            r"(?i)\b(?:ultrasound|ct)[-\s]+guided\b[^.\n]{0,120}\btransthoracic\b[^.\n]{0,80}\b(?:core\s+needle\s+)?biops(?:y|ies)\b"
+            r"|\b(?:us|u/s)[-\s]+guided\b[^.\n]{0,120}\btransthoracic\b[^.\n]{0,80}\b(?:core\s+needle\s+)?biops(?:y|ies)\b"
+            r"|\btransthoracic\b[^.\n]{0,80}\bbiops(?:y|ies)\b[^.\n]{0,40}\b(?:core|cores)\b"
+            r"|\btransthoracic\s+biops(?:y|ies)\b[^.\n]{0,120}\b(?:ultrasound|us|u/s|ct)\b"
+            r"|\btransthoracic\b[^.\n]{0,120}\bcore\s+needle\s+biops(?:y|ies)\b"
+            r"|\bcore\s+needle\s+biops(?:y|ies)\b[^.\n]{0,120}\b(?:transthoracic|coaxial)\b",
+            text,
+        )
+    )
+    abrams_or_trucut = bool(re.search(r"(?i)\b(?:abrams|tru[-\s]?cut)\b", text))
+    if not explicit_transthoracic and not abrams_or_trucut:
+        return {}
+
+    proc: dict[str, Any] = {"performed": True}
+    lowered = text.lower()
+    if "ultrasound" in lowered or "u/s" in lowered:
+        proc["guidance"] = "Ultrasound"
+    elif re.search(r"(?i)\bct\b|\bcomputed\s+tomography\b", text):
+        proc["guidance"] = "CT"
+
+    if re.search(r"(?i)\babrams\b", text):
+        proc["needle_type"] = "Abrams needle"
+    elif re.search(r"(?i)\btru[-\s]?cut\b", text):
+        proc["needle_type"] = "Tru-cut"
+    else:
+        proc["needle_type"] = "Cutting needle"
+
+    samples_match = re.search(
+        r"(?i)\bobtain(?:ed)?\s+(?P<count>\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s+(?:core\s+)?samples?\b"
+        r"|\b(?P<count2>\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s+(?:core\s+)?(?:samples?|cores?)\b(?:[^.\n]{0,40}\b(?:were\s+)?obtained\b)?",
+        text,
+    )
+    if samples_match:
+        raw_count = (samples_match.group("count") or samples_match.group("count2") or "").strip().lower()
+        try:
+            proc["number_of_samples"] = int(raw_count)
+        except Exception:
+            word_to_int = {
+                "one": 1,
+                "two": 2,
+                "three": 3,
+                "four": 4,
+                "five": 5,
+                "six": 6,
+                "seven": 7,
+                "eight": 8,
+                "nine": 9,
+                "ten": 10,
+            }
+            parsed = word_to_int.get(raw_count)
+            if parsed is not None:
+                proc["number_of_samples"] = parsed
+
+    if re.search(r"(?i)\b(right|rll|rml|rul)\b", text):
+        proc["side"] = "Right"
+    elif re.search(r"(?i)\b(left|lll|lul)\b", text):
+        proc["side"] = "Left"
+
+    return {"pleural_biopsy": proc}
+
+
 def extract_chest_tube(note_text: str) -> Dict[str, Any]:
     """Extract chest tube / pleural drainage catheter insertion (32556/32557/32551 family)."""
     text = note_text or ""
@@ -5103,6 +5382,10 @@ def run_deterministic_extractors(note_text: str) -> Dict[str, Any]:
     if bal_data:
         seed_data.setdefault("procedures_performed", {}).update(bal_data)
 
+    wll_data = extract_whole_lung_lavage(note_text)
+    if wll_data:
+        seed_data.setdefault("procedures_performed", {}).update(wll_data)
+
     # Therapeutic aspiration
     ta_data = extract_therapeutic_aspiration(note_text)
     if ta_data:
@@ -5200,6 +5483,10 @@ def run_deterministic_extractors(note_text: str) -> Dict[str, Any]:
     if thermal_ablation_data:
         seed_data.setdefault("procedures_performed", {}).update(thermal_ablation_data)
 
+    thermoplasty_data = extract_bronchial_thermoplasty(note_text)
+    if thermoplasty_data:
+        seed_data.setdefault("procedures_performed", {}).update(thermoplasty_data)
+
     bpf_sealant_data = extract_bpf_sealant(note_text)
     if bpf_sealant_data:
         seed_data.setdefault("procedures_performed", {}).update(bpf_sealant_data)
@@ -5227,6 +5514,10 @@ def run_deterministic_extractors(note_text: str) -> Dict[str, Any]:
     thoracentesis_data = extract_thoracentesis(note_text)
     if thoracentesis_data:
         seed_data.setdefault("pleural_procedures", {}).update(thoracentesis_data)
+
+    pleural_biopsy_data = extract_pleural_biopsy(note_text)
+    if pleural_biopsy_data:
+        seed_data.setdefault("pleural_procedures", {}).update(pleural_biopsy_data)
 
     # Backfill thoracentesis guidance when a separately documented chest ultrasound
     # is extracted (common templating: "76604 chest ultrasound" + "thoracentesis").
@@ -5423,6 +5714,8 @@ __all__ = [
     "extract_bleeding_intervention_required",
     "extract_providers",
     "extract_bal",
+    "extract_whole_lung_lavage",
+    "extract_bronchial_thermoplasty",
     "extract_therapeutic_aspiration",
     "is_true_therapeutic_aspiration",
     "extract_therapeutic_injection",
@@ -5448,6 +5741,7 @@ __all__ = [
     "extract_neck_ultrasound",
     "extract_chest_ultrasound",
     "extract_thoracentesis",
+    "extract_pleural_biopsy",
     "extract_chest_tube",
     "extract_chest_tube_removal",
     "extract_ipc",

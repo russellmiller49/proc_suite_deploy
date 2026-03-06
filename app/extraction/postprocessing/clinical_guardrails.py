@@ -596,6 +596,26 @@ class ClinicalGuardrails:
         # Routine anesthesia intubation should not trigger emergency intubation (31500).
         intubation = procedures.get("intubation") if isinstance(procedures, dict) else None
         if isinstance(intubation, dict) and intubation.get("performed") is True:
+            selective_only_context = bool(
+                re.search(
+                    r"\b(?:selective\b[^.\n]{0,80}\bintubat|intubat(?:ion|ed|ing)\b[^.\n]{0,80}\bmain(?:\s*|-)?stem|into\s+the\s+(?:right|left)\s+main(?:\s*|-)?stem)\b",
+                    text_lower,
+                    re.IGNORECASE,
+                )
+            )
+            explicit_tube_or_placement = bool(
+                re.search(
+                    r"\b(?:ett|endotracheal\s+tube|endotracheal\s+intubat(?:ion|ed|ing)|fiberoptic\s+intubat(?:ion|ed|ing)|fiber\s*optic\s+intubat(?:ion|ed|ing))\b",
+                    text_lower,
+                    re.IGNORECASE,
+                )
+                or re.search(
+                    r"\bintubat(?:ion|ed|ing)\b[^.\n]{0,80}\b(?:perform(?:ed)?|place(?:d)?|insert(?:ed)?|advance(?:d)?)\b"
+                    r"|\b(?:perform(?:ed)?|place(?:d)?|insert(?:ed)?|advance(?:d)?)\b[^.\n]{0,80}\bintubat(?:ion|ed|ing)\b",
+                    text_lower,
+                    re.IGNORECASE,
+                )
+            )
             special_intubation_context = bool(
                 re.search(
                     r"\b(?:"
@@ -609,7 +629,13 @@ class ClinicalGuardrails:
                     re.IGNORECASE,
                 )
             )
-            if not special_intubation_context:
+            if selective_only_context and not explicit_tube_or_placement:
+                if self._set_procedure_performed(record_data, "intubation", False):
+                    warnings.append(
+                        "Selective/mainstem isolation language without explicit tube-placement evidence; suppressing emergency intubation flag (31500)."
+                    )
+                    changed = True
+            elif not special_intubation_context:
                 if self._set_procedure_performed(record_data, "intubation", False):
                     warnings.append(
                         "Intubation appears routine/anesthesia-only; suppressing emergency intubation flag (31500)."
@@ -719,12 +745,37 @@ class ClinicalGuardrails:
 
         bal = procedures.get("bal") if isinstance(procedures, dict) else None
         if isinstance(bal, dict) and bal.get("performed") is True:
+            whole_lung_lavage_context = bool(
+                re.search(r"(?i)\bwhole\s+lung\s+lavage\b|\bwll\b", note_text or "")
+                or (
+                    re.search(r"(?i)\blavage\b", note_text or "")
+                    and re.search(r"(?i)\b(?:pap|pulmonary\s+alveolar\s+proteinosis|double[-\s]+lumen|lung\s+isolation)\b", note_text or "")
+                )
+            )
             explicit_bal = bool(
                 re.search(
                     r"(?i)\b(?:broncho[-\s]?alveolar\s+lavage|bronchial\s+alveolar\s+lavage|BAL)\b",
                     note_text or "",
                 )
             )
+            optional_bal_only_context = bool(
+                re.search(
+                    r"(?i)\b(?:broncho[-\s]?alveolar\s+lavage|BAL)\b[^.\n]{0,30}\boptional\b"
+                    r"|\boptional\b[^.\n]{0,30}\b(?:broncho[-\s]?alveolar\s+lavage|BAL)\b",
+                    note_text or "",
+                )
+                and not re.search(
+                    r"(?i)\b(?:broncho[-\s]?alveolar\s+lavage|BAL)\b[^.\n]{0,80}\b(?:performed|obtained|sent|returned|aliquot|micro|path)\b"
+                    r"|\binstill(?:ed)?\s*\d{1,4}\s*(?:ml|cc)\b"
+                    r"|\b\d{1,4}\s*(?:ml|cc)\s+(?:returned|recovered)\b",
+                    note_text or "",
+                )
+            )
+            if whole_lung_lavage_context:
+                if self._set_procedure_performed(record_data, "bal", False):
+                    warnings.append("BAL cleared: note supports whole-lung lavage rather than bronchoalveolar lavage.")
+                    changed = True
+                bal = None
             airway_toilet_lavage = bool(
                 re.search(r"(?i)\b(?:lavage|saline\s+lavage)\b", note_text or "")
                 and re.search(
@@ -746,12 +797,86 @@ class ClinicalGuardrails:
                 re.search(r"(?i)\b(?:bronchial\s+wash(?:ings?)?|washings?)\b", note_text or "")
                 and re.search(r"(?i)\b(?:therapeutic\s+aspiration|secretions?|mucus\s+plug|saline\s+lavage)\b", note_text or "")
             )
+            if optional_bal_only_context:
+                if self._set_procedure_performed(record_data, "bal", False):
+                    warnings.append("BAL cleared: note lists BAL as optional/header-only without performed lavage evidence.")
+                    changed = True
             if not explicit_bal and (washings_only_context or (airway_toilet_lavage and non_bal_specimen_context)):
                 if self._set_procedure_performed(record_data, "bal", False):
                     warnings.append(
                         "BAL cleared: note supports washings/toileting with saline lavage but not bronchoalveolar lavage."
                     )
                     changed = True
+
+        peripheral_tbna = procedures.get("peripheral_tbna") if isinstance(procedures, dict) else None
+        transthoracic_core_context = bool(
+            re.search(
+                r"(?i)\b(?:transthoracic|percutaneous|coaxial|core\s+needle\s+biops(?:y|ies)|pleural[-\s]?based|chest\s+wall)\b",
+                note_text or "",
+            )
+            and re.search(r"(?i)\b(?:ultrasound|u/s|ct|computed\s+tomography)\b", note_text or "")
+            and not re.search(r"(?i)\bbronchoscop|bronchoscope|ebus|radial|navigation|robotic\b", note_text or "")
+        )
+        if isinstance(peripheral_tbna, dict) and peripheral_tbna.get("performed") is True and transthoracic_core_context:
+            if self._set_procedure_performed(record_data, "peripheral_tbna", False):
+                warnings.append(
+                    "Peripheral TBNA cleared: note describes a percutaneous transthoracic/core biopsy rather than bronchoscopic TBNA."
+                )
+                changed = True
+
+            pleural = record_data.get("pleural_procedures")
+            if not isinstance(pleural, dict):
+                pleural = {}
+            pleural_biopsy = pleural.get("pleural_biopsy")
+            if not isinstance(pleural_biopsy, dict):
+                pleural_biopsy = {}
+            if pleural_biopsy.get("performed") is not True:
+                pleural_biopsy["performed"] = True
+                changed = True
+            if "ultrasound" in text_lower and pleural_biopsy.get("guidance") != "Ultrasound":
+                pleural_biopsy["guidance"] = "Ultrasound"
+                changed = True
+            elif re.search(r"(?i)\bct\b|\bcomputed\s+tomography\b", note_text or "") and pleural_biopsy.get("guidance") != "CT":
+                pleural_biopsy["guidance"] = "CT"
+                changed = True
+            if not pleural_biopsy.get("needle_type"):
+                if re.search(r"(?i)\babrams\b", note_text or ""):
+                    pleural_biopsy["needle_type"] = "Abrams needle"
+                elif re.search(r"(?i)\btru[-\s]?cut\b", note_text or ""):
+                    pleural_biopsy["needle_type"] = "Tru-cut"
+                else:
+                    pleural_biopsy["needle_type"] = "Cutting needle"
+                changed = True
+            if pleural_biopsy.get("number_of_samples") in (None, 0):
+                match = re.search(
+                    r"(?i)\bobtain(?:ed)?\s+(?P<count>\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s+(?:core\s+)?samples?\b"
+                    r"|\b(?P<count2>\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s+(?:core\s+)?(?:samples?|cores?)\b(?:[^.\n]{0,40}\b(?:were\s+)?obtained\b)?",
+                    note_text or "",
+                )
+                if match:
+                    raw_count = (match.group("count") or match.group("count2") or "").strip().lower()
+                    try:
+                        pleural_biopsy["number_of_samples"] = int(raw_count)
+                    except Exception:
+                        word_to_int = {
+                            "one": 1,
+                            "two": 2,
+                            "three": 3,
+                            "four": 4,
+                            "five": 5,
+                            "six": 6,
+                            "seven": 7,
+                            "eight": 8,
+                            "nine": 9,
+                            "ten": 10,
+                        }
+                        parsed = word_to_int.get(raw_count)
+                        if parsed is not None:
+                            pleural_biopsy["number_of_samples"] = parsed
+                    if pleural_biopsy.get("number_of_samples") not in (None, 0):
+                        changed = True
+            pleural["pleural_biopsy"] = pleural_biopsy
+            record_data["pleural_procedures"] = pleural
 
         explicit_washings = re.search(
             r"(?i)\b(?:bronchial\s+wash(?:ings?)?|washings?)\b",
@@ -863,11 +988,12 @@ class ClinicalGuardrails:
         complications = record_data.get("complications")
         if isinstance(complications, dict):
             complications_none = bool(
-                re.search(r"(?i)\bcomplications?\s*:\s*none\b|\bno\s+immediate\s+complications\b", note_text or "")
+                re.search(r"(?i)\bcomplications?\s*:?\s*none\b|\bno\s+immediate\s+complications\b", note_text or "")
             )
             low_grade_bleeding_only = bool(
                 re.search(
-                    r"(?i)\b(?:minor|minimal|mild|trace|scant|contact|blood-tinged)\s+(?:bleeding|oozing)\b|\bminor\s+oozing\b|\bmild\s+oozing\b|\boo?zing\b",
+                    r"(?i)\b(?:minor|minimal|mild|trace|scant|contact|blood-tinged)\b(?:\s+\w+){0,2}\s+(?:bleeding|oozing|hemorrhag(?:e|ic))\b"
+                    r"|\bminor\s+oozing\b|\bmild\s+oozing\b|\boo?zing\b",
                     note_text or "",
                 )
             )
@@ -963,6 +1089,28 @@ class ClinicalGuardrails:
             tube_remove = any(self._has_action_near(text_lower, term, _REMOVE_TERMS) for term in _CHEST_TUBE_TERMS)
             if chest_tube_insertion_date_line:
                 tube_insert = False
+            tube_specific_insertion_detail = bool(
+                re.search(
+                    r"(?i)\b(?:\d+\s*fr|intercostal|pleural\s+space|seldinger|thoracostomy|pigtail|wayne|yueh|incision)\b",
+                    note_text or "",
+                )
+            )
+            existing_tube_context = bool(
+                re.search(
+                    r"(?i)\bchest\s+tube\b[^.\n]{0,120}\b(?:in\s+place|to\s+water\s+seal|water\s+seal\s+trial|to\s+suction|connected\s+to\s+suction|bubbling|air\s+leak)\b"
+                    r"|\bcontinue\s+chest\s+tube\b"
+                    r"|\bwith\s+chest\s+tube\s+in\s+place\b",
+                    note_text or "",
+                )
+            )
+            if existing_tube_context and not tube_remove and not tube_specific_insertion_detail:
+                if self._set_pleural_performed(record_data, "chest_tube", False):
+                    warnings.append("Chest tube mention appears historical/ongoing rather than a new insertion; clearing chest_tube.")
+                    changed = True
+                tube_present = False
+                tube_insert = False
+                tube_remove = False
+                has_device_flag = bool(self._pleural_device_flagged(record_data))
 
             # If a pleural procedure is flagged (e.g., fibrinolytic instillation) but there is
             # no explicit device action, avoid inferring a device placement solely from mention

@@ -117,6 +117,10 @@ CPT_TO_REGISTRY_MAPPING: dict[str, RegistryFieldMapping] = {
         hints={"ablation_technique": "thermoplasty"},
         v3_only_fields={"ablation_technique": "thermoplasty"},
     ),
+    "32997": RegistryFieldMapping(
+        fields={},
+        hints={"procedure_type": "whole_lung_lavage"},
+    ),
 
     # Endobronchial valve / BLVR family
     # - 31647: valve insertion (initial lobe)
@@ -157,6 +161,10 @@ CPT_TO_REGISTRY_MAPPING: dict[str, RegistryFieldMapping] = {
     "32557": RegistryFieldMapping(
         fields={},
         hints={"pleural_procedure": "chest_tube_imaging"},
+    ),
+    "32408": RegistryFieldMapping(
+        fields={},
+        hints={"pleural_procedure": "percutaneous_core_biopsy"},
     ),
 
     # Pleuroscopy / VATS
@@ -350,6 +358,9 @@ def aggregate_registry_fields(
     if code_set & {"31660", "31661"}:
         procedures["bronchial_thermoplasty"] = {"performed": True}
 
+    if "32997" in code_set:
+        procedures["whole_lung_lavage"] = {"performed": True}
+
     # Rigid bronchoscopy: 31641
     if "31641" in code_set:
         procedures["rigid_bronchoscopy"] = {"performed": True}
@@ -411,6 +422,12 @@ def aggregate_registry_fields(
     if "32551" in code_set:
         tube = {"performed": True, "action": "Insertion"}
         pleural["chest_tube"] = tube
+
+    if "32408" in code_set:
+        pleural["pleural_biopsy"] = {
+            "performed": True,
+            "needle_type": "Cutting needle",
+        }
 
     # Medical thoracoscopy / pleuroscopy: 32601 (diagnostic) vs biopsy variants.
     if code_set & {"32601", "32604", "32609"}:

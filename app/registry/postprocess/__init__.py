@@ -5144,8 +5144,10 @@ _EUS_B_SAMPLING_NEGATION_RE = re.compile(
 )
 _EUS_B_NEEDLE_GAUGE_RE = re.compile(r"(?i)\b(19|21|22|25)\s*[- ]?(?:g|gauge)\b")
 _EUS_B_PASSES_RE = re.compile(
-    r"\b(?P<count>\d{1,2})\b[^.\n]{0,80}\b(?:needle\s+passes?|passes?|endoscopic\s+ultrasound\s+guided\s+transbronchial\s+biops(?:y|ies))\b",
-    re.IGNORECASE,
+    r"(?i)\b(?:a\s+total\s+of\s+)?(?P<count>\d{1,2})\s+(?:needle\s+)?passes?\b"
+    r"|\bpasses?\s*(?:x|=|:)?\s*(?P<count2>\d{1,2})\b"
+    r"|\b(?:a\s+total\s+of\s+)?(?P<count3>\d{1,2})\s+(?:endoscopic\s+ultrasound\s+guided\s+)?"
+    r"transbronchial\s+(?:needle\s+aspiration\s+)?biops(?:y|ies)\b"
 )
 _EUS_B_ROSE_RE = re.compile(
     r"(?i)\bOverall\s+EUS-?B\b[^.\n]{0,120}\bROSE\b[^.\n]{0,80}:\s*\"?(?P<val>[A-Za-z][^\"]{0,40})\"?"
@@ -5254,7 +5256,8 @@ def enrich_eus_b_sampling_details(record: RegistryRecord, full_text: str) -> lis
         match = _EUS_B_PASSES_RE.search(section)
         if match:
             try:
-                count = int(match.group("count"))
+                raw_count = match.group("count") or match.group("count2") or match.group("count3")
+                count = int(raw_count) if raw_count is not None else None
             except Exception:
                 count = None
             if isinstance(count, int) and 1 <= count <= 30:

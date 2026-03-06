@@ -23,9 +23,9 @@ attrs==25.4.0
     #   referencing
 blis==0.7.11
     # via thinc
-boto3==1.42.60
+boto3==1.42.62
     # via -r requirements.in
-botocore==1.42.60
+botocore==1.42.62
     # via
     #   boto3
     #   s3transfer
@@ -41,7 +41,7 @@ certifi==2026.2.25
     #   requests
 cffi==2.0.0
     # via cryptography
-charset-normalizer==3.4.4
+charset-normalizer==3.4.5
     # via requests
 click==8.3.1
     # via
@@ -63,7 +63,7 @@ cryptography==46.0.5
     #   pyjwt
 cuda-bindings==12.9.4
     # via torch
-cuda-pathfinder==1.4.0
+cuda-pathfinder==1.4.1
     # via cuda-bindings
 cymem==2.0.13
     # via
@@ -105,9 +105,9 @@ google-api-core==2.30.0
     #   google-ai-generativelanguage
     #   google-api-python-client
     #   google-generativeai
-google-api-python-client==2.191.0
+google-api-python-client==2.192.0
     # via google-generativeai
-google-auth==2.48.0
+google-auth==2.49.0
     # via
     #   -r requirements.in
     #   google-ai-generativelanguage
@@ -119,7 +119,7 @@ google-auth-httplib2==0.3.0
     # via google-api-python-client
 google-generativeai==0.8.6
     # via -r requirements.in
-googleapis-common-protos==1.72.0
+googleapis-common-protos==1.73.0
     # via
     #   google-api-core
     #   grpcio-status
@@ -269,7 +269,7 @@ onnx==1.20.1
     # via
     #   -r requirements.in
     #   optimum
-onnxruntime==1.24.2
+onnxruntime==1.24.3
     # via
     #   -r requirements.in
     #   optimum
@@ -531,7 +531,7 @@ wasabi==1.1.3
     #   weasel
 weasel==0.4.3
     # via spacy
-wrapt==2.1.1
+wrapt==2.1.2
     # via smart-open
 xxhash==3.6.0
     # via datasets
@@ -539,7 +539,4 @@ yarl==1.23.0
     # via aiohttp
 
 # The following packages are considered to be unsafe in a requirements file:
-setuptools==82.0.0
-    # via
-    #   spacy
-    #   thinc
+# setuptools

@@ -92,9 +92,7 @@ class SimpleReporterStrategy:
     Falls back to compose_report_from_text when registry data is unavailable.
     """
 
-    def render(
-        self, text: str, procedure_type: str | None = None
-    ) -> dict[str, Any]:
+    def render(self, text: str, procedure_type: str | None = None) -> dict[str, Any]:
         """Generate a simple text-based report.
 
         Args:
@@ -115,9 +113,7 @@ class SimpleReporterStrategy:
 
         return {
             "markdown": markdown,
-            "procedure_core": (
-                proc_core.model_dump() if hasattr(proc_core, "model_dump") else {}
-            ),
+            "procedure_core": (proc_core.model_dump() if hasattr(proc_core, "model_dump") else {}),
             "indication": report.indication,
             "postop": report.postop,
             "fallback_used": True,
@@ -188,9 +184,7 @@ class ReportingStrategy:
                 return self._render_structured(registry_data["record"], source_text=text)
             except Exception as e:
                 if allow_fallback:
-                    logger.warning(
-                        f"Structured reporter failed, falling back to simple: {e}"
-                    )
+                    logger.warning(f"Structured reporter failed, falling back to simple: {e}")
                     fallback = self.simple_strategy.render(text, procedure_type)
                     fallback.update(
                         {
@@ -212,20 +206,14 @@ class ReportingStrategy:
             else:
                 reg_record = reg_result
 
-            reg_dict = (
-                reg_record.model_dump()
-                if hasattr(reg_record, "model_dump")
-                else {}
-            )
+            reg_dict = reg_record.model_dump() if hasattr(reg_record, "model_dump") else {}
 
             if reg_dict:
                 return self._render_structured(reg_dict, source_text=text)
         except Exception as e:
             lightweight_error = str(e)
             if allow_fallback:
-                logger.warning(
-                    f"Lightweight registry extraction failed for reporter: {e}"
-                )
+                logger.warning(f"Lightweight registry extraction failed for reporter: {e}")
             else:
                 raise ReporterException("Lightweight registry extraction failed") from e
 
@@ -400,9 +388,7 @@ class QAPipelineService:
                 ok=True,
                 data={
                     "record": (
-                        record.model_dump()
-                        if hasattr(record, "model_dump")
-                        else dict(record)
+                        record.model_dump() if hasattr(record, "model_dump") else dict(record)
                     ),
                     "evidence": self._serialize_evidence(evidence),
                 },
@@ -439,9 +425,7 @@ class QAPipelineService:
             ModuleOutcome with reporter data or error
         """
         try:
-            data = self.reporting_strategy.render(
-                text, registry_data, procedure_type
-            )
+            data = self.reporting_strategy.render(text, registry_data, procedure_type)
             return ModuleOutcome(ok=True, data=data)
         except Exception as e:
             logger.error(f"Reporter error: {e}")
@@ -451,9 +435,7 @@ class QAPipelineService:
                 error_message=f"Report generation failed: {str(e)}",
             )
 
-    def _run_coder(
-        self, text: str, procedure_type: str | None
-    ) -> ModuleOutcome:
+    def _run_coder(self, text: str, procedure_type: str | None) -> ModuleOutcome:
         """Run coder module.
 
         Args:

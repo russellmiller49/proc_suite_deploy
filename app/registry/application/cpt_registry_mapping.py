@@ -164,6 +164,10 @@ CPT_TO_REGISTRY_MAPPING: dict[str, RegistryFieldMapping] = {
         fields={},
         hints={"pleural_procedure": "pleuroscopy_diagnostic"},
     ),
+    "32604": RegistryFieldMapping(
+        fields={},
+        hints={"pleural_procedure": "pleuroscopy_pleural_biopsy"},
+    ),
     "32609": RegistryFieldMapping(
         fields={},
         hints={"pleural_procedure": "pleuroscopy_pleural_biopsy"},
@@ -408,10 +412,10 @@ def aggregate_registry_fields(
         tube = {"performed": True, "action": "Insertion"}
         pleural["chest_tube"] = tube
 
-    # Medical thoracoscopy / pleuroscopy: 32601 (diagnostic) vs 32609 (pleural biopsy)
-    if code_set & {"32601", "32609"}:
+    # Medical thoracoscopy / pleuroscopy: 32601 (diagnostic) vs biopsy variants.
+    if code_set & {"32601", "32604", "32609"}:
         thor = {"performed": True}
-        if "32609" in code_set:
+        if "32604" in code_set or "32609" in code_set:
             thor["biopsies_taken"] = True
         pleural["medical_thoracoscopy"] = thor
 

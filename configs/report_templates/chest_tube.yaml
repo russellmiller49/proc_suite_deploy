@@ -23,6 +23,16 @@ optional_fields:
   - lung_sliding_post
   - lung_consolidation
   - pleura_description
+  - fibrinolytic_agents
+  - tpa_dose_mg
+  - dnase_dose_mg
+  - fibrinolytic_schedule
+  - fibrinolytic_number_of_doses
+  - fibrinolytic_indication
+  - pleurodesis_performed
+  - pleurodesis_agent
+  - pleurodesis_method
+  - pleurodesis_dose
 proc_types:
   - chest_tube
 critical_fields:

@@ -70,8 +70,7 @@ class SuggestCodesRequest(BaseModel):
     procedure_type: str = Field(
         "unknown",
         description=(
-            "Procedure type classification (e.g., bronch_diagnostic, bronch_ebus, "
-            "pleural, blvr)"
+            "Procedure type classification (e.g., bronch_diagnostic, bronch_ebus, pleural, blvr)"
         ),
     )
 
@@ -149,9 +148,7 @@ class RegistryExportResponse(BaseModel):
     export_id: str
     export_timestamp: datetime
     status: Literal["success", "partial", "failed"]
-    bundle: dict[str, Any] = Field(
-        ..., description="The registry entry as JSON"
-    )
+    bundle: dict[str, Any] = Field(..., description="The registry entry as JSON")
     warnings: list[str] = Field(default_factory=list)
 
 
@@ -162,12 +159,8 @@ class RegistryPreviewResponse(BaseModel):
     registry_id: str
     schema_version: str
     status: Literal["preview"]
-    bundle: dict[str, Any] = Field(
-        ..., description="The draft registry entry as JSON"
-    )
-    completeness_score: float = Field(
-        ..., description="Completeness score (0.0 to 1.0)"
-    )
+    bundle: dict[str, Any] = Field(..., description="The draft registry entry as JSON")
+    completeness_score: float = Field(..., description="Completeness score (0.0 to 1.0)")
     missing_fields: list[str] = Field(default_factory=list)
     suggested_values: dict[str, Any] = Field(default_factory=dict)
     warnings: list[str] = Field(default_factory=list)
@@ -239,9 +232,7 @@ def suggest_codes(
     elif require_review:
         raise HTTPException(
             status_code=400,
-            detail=(
-                "Invalid procedure_id format (PHI review requires UUID procedure IDs)."
-            ),
+            detail=("Invalid procedure_id format (PHI review requires UUID procedure IDs)."),
         )
 
     if proc is not None:
@@ -413,10 +404,7 @@ def review_suggestion(
     if request.action not in ("accept", "reject", "modify"):
         raise HTTPException(
             status_code=400,
-            detail=(
-                f"Invalid action '{request.action}'. Must be 'accept', 'reject', or "
-                "'modify'."
-            ),
+            detail=(f"Invalid action '{request.action}'. Must be 'accept', 'reject', or 'modify'."),
         )
 
     # Find the suggestion
@@ -429,9 +417,7 @@ def review_suggestion(
     if not suggestion:
         raise HTTPException(
             status_code=404,
-            detail=(
-                f"Suggestion '{request.suggestion_id}' not found for procedure '{proc_id}'."
-            ),
+            detail=(f"Suggestion '{request.suggestion_id}' not found for procedure '{proc_id}'."),
         )
 
     # Create the review action
@@ -980,14 +966,11 @@ class UnifiedExtractRequest(BaseModel):
     include_financials: bool = Field(
         False, description="Whether to calculate RVU/payment estimates"
     )
-    explain: bool = Field(
-        False, description="Whether to include evidence spans in response"
-    )
+    explain: bool = Field(False, description="Whether to include evidence spans in response")
     mode: str | None = Field(
         default=None,
         description=(
-            "Optional execution mode. Use 'engine_only' to disable LLM registry "
-            "extraction."
+            "Optional execution mode. Use 'engine_only' to disable LLM registry extraction."
         ),
     )
 
@@ -997,12 +980,8 @@ class UnifiedExtractResponse(BaseModel):
 
     procedure_id: str
     status: str = Field(..., description="Status: 'success', 'partial', or 'failed'")
-    registry: dict[str, Any] = Field(
-        default_factory=dict, description="Extracted registry fields"
-    )
-    cpt_codes: list[str] = Field(
-        default_factory=list, description="Derived CPT codes"
-    )
+    registry: dict[str, Any] = Field(default_factory=dict, description="Extracted registry fields")
+    cpt_codes: list[str] = Field(default_factory=list, description="Derived CPT codes")
     suggestions: list[CodeSuggestion] = Field(
         default_factory=list, description="Code suggestions with rationale"
     )
@@ -1124,6 +1103,7 @@ def run_unified_extraction(
             record = extraction_result.record
             if record is None:
                 from app.registry.schema import RegistryRecord
+
                 record = RegistryRecord.model_validate(extraction_result.mapped_fields)
 
             codes, rationales, derivation_warnings = derive_all_codes_with_meta(record)
@@ -1145,19 +1125,21 @@ def run_unified_extraction(
                 else:
                     review_flag = "optional"
 
-                suggestions.append(CodeSuggestion(
-                    id=f"{proc_id}_{code}",
-                    code=code,
-                    description=description,
-                    source="extraction_first",
-                    confidence=base_confidence,
-                    review_flag=review_flag,
-                    reasoning=ReasoningFields(
-                        rule_paths=["registry_to_cpt"],
+                suggestions.append(
+                    CodeSuggestion(
+                        id=f"{proc_id}_{code}",
+                        code=code,
+                        description=description,
+                        source="extraction_first",
                         confidence=base_confidence,
-                        rationale=rationale,
-                    ),
-                ))
+                        review_flag=review_flag,
+                        reasoning=ReasoningFields(
+                            rule_paths=["registry_to_cpt"],
+                            confidence=base_confidence,
+                            rationale=rationale,
+                        ),
+                    )
+                )
 
             # Step 3: Calculate financials if requested
             total_work_rvu = None
@@ -1238,5 +1220,6 @@ def clear_procedure_stores(proc_id: str | None = None) -> None:
                  If None, clear all data.
     """
     from app.api.dependencies import get_procedure_store
+
     store = get_procedure_store()
     store.clear_all(proc_id)

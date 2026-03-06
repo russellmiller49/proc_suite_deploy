@@ -1,0 +1,20 @@
+id: blvr_chartis_assessment
+label: Chartis Collateral Ventilation Assessment (BLVR)
+category: blvr
+cpt_hints: ["31634"]
+schema_id: blvr_chartis_assessment_v1
+output_section: PROCEDURE_DETAILS
+template_path: blvr_chartis_assessment.j2
+required_fields:
+  - assessments
+optional_fields:
+  - planned_target_lobe
+  - planned_valve_type
+  - procedure_aborted
+  - aborted_reason
+  - notes
+proc_types:
+  - blvr_chartis_assessment
+critical_fields:
+  - assessments[].lobe
+  - assessments[].cv_result

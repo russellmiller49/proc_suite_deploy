@@ -72,9 +72,7 @@ def simplify_billing_cpt_codes(payload: dict[str, Any]) -> None:
     code_dicts: list[dict[str, Any]] = [
         c
         for c in cpt_data
-        if isinstance(c, dict)
-        and isinstance(c.get("code"), str)
-        and c.get("code").strip()
+        if isinstance(c, dict) and isinstance(c.get("code"), str) and c.get("code").strip()
     ]
     if not code_dicts:
         return
@@ -401,9 +399,15 @@ def normalize_registry_payload(raw: Mapping[str, Any]) -> dict[str, Any]:
                 airway_stent["stent_type"] = STENT_TYPE_MAP.get(text, stent_type)
                 # If still not valid, try to infer from keywords
                 valid_stent_types = (
-                    "Silicone - Dumon", "Silicone - Hood", "Silicone - Novatech",
-                    "SEMS - Uncovered", "SEMS - Covered", "SEMS - Partially covered",
-                    "Hybrid", "Y-Stent", "Other"
+                    "Silicone - Dumon",
+                    "Silicone - Hood",
+                    "Silicone - Novatech",
+                    "SEMS - Uncovered",
+                    "SEMS - Covered",
+                    "SEMS - Partially covered",
+                    "Hybrid",
+                    "Y-Stent",
+                    "Other",
                 )
                 if airway_stent["stent_type"] not in valid_stent_types:
                     # Check for Y-stent pattern (most specific first)
@@ -566,15 +570,34 @@ def normalize_registry_payload(raw: Mapping[str, Any]) -> dict[str, Any]:
 
         # Definite airway locations that indicate aspiration, not biopsy
         airway_patterns = {
-            "trachea", "rms", "lms", "bi", "bronchus intermedius",
-            "carina", "mainstem", "rc1", "rc2", "lc1", "lc2",
-            "right mainstem", "left mainstem",
+            "trachea",
+            "rms",
+            "lms",
+            "bi",
+            "bronchus intermedius",
+            "carina",
+            "mainstem",
+            "rc1",
+            "rc2",
+            "lc1",
+            "lc2",
+            "right mainstem",
+            "left mainstem",
         }
 
         # Lobar/segmental patterns indicate parenchymal biopsy
         parenchymal_patterns = {
-            "posterior", "anterior", "lateral", "medial", "basal",
-            "apical", "superior", "inferior", "segment", "lb", "rb",
+            "posterior",
+            "anterior",
+            "lateral",
+            "medial",
+            "basal",
+            "apical",
+            "superior",
+            "inferior",
+            "segment",
+            "lb",
+            "rb",
         }
 
         # Pure lobe names without segment info are ambiguous

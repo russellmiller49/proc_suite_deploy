@@ -49,6 +49,7 @@ class LinearEBUSProcedure(BaseModel):
 
     performed: bool | None = None
     stations_sampled: list[str] | None = None
+    targets_sampled: list[str] | None = None
     stations_planned: list[str] | None = None
     stations_detail: list[dict[str, Any]] | None = None
     passes_per_station: int | None = None

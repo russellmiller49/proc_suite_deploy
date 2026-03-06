@@ -14,4 +14,4 @@ Hemithorax: {{ proc.side|title }}
 {% if proc.lung_sliding_post %}Lung sliding post procedure: {{ proc.lung_sliding_post }}{% endif %}
 {% if proc.lung_consolidation %}Lung consolidation/atelectasis: {{ proc.lung_consolidation }}{% endif %}
 {% if proc.pleura_description %}Pleura: {{ proc.pleura_description }}{% endif %}{% endif %}
-The patient tolerated the procedure well without immediate complications.
+{% if procedure_stopped_reason is defined and procedure_stopped_reason %}The procedure was stopped due to {{ procedure_stopped_reason }}.{% else %}The patient tolerated the procedure well without immediate complications.{% endif %}

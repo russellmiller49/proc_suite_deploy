@@ -15,6 +15,10 @@ Drainage:
 
 {% if proc.fluid_appearance %}Appearance: {{ proc.fluid_appearance | title }}{% endif %}
 
+{% if proc.fibrinolytic_agents or proc.tpa_dose_mg is not none or proc.dnase_dose_mg is not none %}
+Intrapleural fibrinolytic therapy was documented{% if proc.fibrinolytic_agents %} using {{ proc.fibrinolytic_agents | join(' + ') }}{% endif %}{% if proc.tpa_dose_mg is not none %} (tPA {{ proc.tpa_dose_mg }} mg{% if proc.dnase_dose_mg is not none %}, DNase {{ proc.dnase_dose_mg }} mg{% endif %}){% elif proc.dnase_dose_mg is not none %} (DNase {{ proc.dnase_dose_mg }} mg){% endif %}{% if proc.fibrinolytic_schedule %}, schedule {{ proc.fibrinolytic_schedule }}{% endif %}{% if proc.fibrinolytic_number_of_doses is not none %}, planned doses {{ proc.fibrinolytic_number_of_doses }}{% endif %}{% if proc.fibrinolytic_indication %}; indication: {{ proc.fibrinolytic_indication }}{% endif %}.
+{% endif %}
+
 {% if "CATHETER REMOVED" in _hint_upper or ("CATHTER REMOVED" in _hint_upper) or ("REMOVED" in _hint_upper and "CATHETER" in _hint_upper) %}
 Following adequate drainage, the pigtail catheter was removed. The site was dressed with occlusive gauze.
 {% else %}

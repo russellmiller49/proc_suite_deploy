@@ -31,6 +31,15 @@ _PNEUMO_INTERVENTIONS: tuple[tuple[str, re.Pattern[str]], ...] = (
 _BLEEDING_WORD_RE = re.compile(r"(?i)\b(?:bleed(?:ing)?|hemorrhag(?:e|ic)|haemorrhag(?:e|ic)|ooz(?:ing)?)\b")
 _NO_BLEEDING_RE = re.compile(r"(?i)\b(?:no|without)\b[^.\n]{0,40}\b(?:bleeding|hemorrhage|haemorrhage|oozing)\b")
 _NASHVILLE_GRADE_RE = re.compile(r"(?i)\bnashville\b[^.\n]{0,40}\bgrade\b\s*(?P<grade>[0-4])\b")
+_COMPLICATIONS_NONE_RE = re.compile(r"(?i)\bcomplications?\s*:\s*none\b|\bno\s+immediate\s+complications\b")
+_LOW_GRADE_BLEEDING_CUE_RE = re.compile(
+    r"(?i)\b(?:minor|minimal|mild|trace|scant|contact|blood-tinged)\s+(?:bleeding|oozing|hemorrhag(?:e|ic))\b"
+    r"|\bminor\s+oozing\b|\bmild\s+oozing\b|\boo?zing\b|\bminor\s+procedural\s+hemorrhage\b"
+)
+_HIGH_GRADE_BLEEDING_CUE_RE = re.compile(
+    r"(?i)\b(?:moderate|significant|severe|massive|brisk|active)\s+(?:bleeding|hemorrhag(?:e|ic))\b"
+    r"|\bhemorrhag(?:e|ic)\b[^.\n]{0,40}\b(?:moderate|significant|severe|massive|brisk|active)\b"
+)
 
 _SUCTION_RE = re.compile(r"(?i)\bsuction(?:ed|ing)?(?:\s+only|\s+alone)?\b")
 _WEDGE_RE = re.compile(r"(?i)\bwedge(?:d|ing)?\b|\bbronchoscope\s+wedged\b")
@@ -41,6 +50,7 @@ _BLOCKER_RE = re.compile(r"(?i)\b(?:endobronchial\s+blocker|arndt|blocker)\b")
 _TRANSFUSION_RE = re.compile(r"(?i)\b(?:transfus(?:ion|ed)|prbc|packed\s+red\s+blood)\b")
 _EMBOLIZATION_RE = re.compile(r"(?i)\bemboliz(?:ation|ed)\b")
 _SURGERY_RE = re.compile(r"(?i)\bsurger(?:y|ical)\b")
+_DIRECT_PRESSURE_RE = re.compile(r"(?i)\b(?:direct\s+pressure|compression)\b")
 _PROTAMINE_RE = re.compile(r"(?i)\bprotamine\b")
 _ABORT_FOR_BLEEDING_RE = re.compile(
     r"(?i)\b(?:abort(?:ed|ing)|terminate(?:d|ing)|stop(?:ped|ping))\b[^.\n]{0,120}\b(?:bleed(?:ing)?|hemorrhage|haemorrhage)\b"
@@ -128,6 +138,36 @@ def _first_match_with_pneumothorax_context(
     return None
 
 
+def _low_ebl_milliliters(text: str) -> int | None:
+    match = re.search(
+        r"(?i)\b(?:ebl|estimated\s+blood\s+loss|blood\s+loss)\b[^0-9]{0,20}(?P<first>\d{1,3})(?:\s*[-–]\s*(?P<second>\d{1,3}))?\s*(?:ml|cc)\b",
+        text or "",
+    )
+    if not match:
+        return None
+    try:
+        first = int(match.group("first"))
+        second_raw = match.group("second")
+        second = int(second_raw) if second_raw is not None else first
+    except Exception:
+        return None
+    return max(first, second)
+
+
+def _minor_bleeding_with_supportive_transfusion(text: str) -> bool:
+    if not text or not text.strip():
+        return False
+    low_grade = bool(_LOW_GRADE_BLEEDING_CUE_RE.search(text))
+    controlled = bool(_DIRECT_PRESSURE_RE.search(text) or re.search(r"(?i)\bcontrolled\s+with\b", text))
+    low_ebl = _low_ebl_milliliters(text)
+    thrombocytopenia_context = bool(
+        re.search(r"(?i)\b(?:platelets?|plt)\b[^.\n]{0,40}\b(?:low|k\b|thrombocytopenia)\b", text)
+    )
+    return low_grade and controlled and not _HIGH_GRADE_BLEEDING_CUE_RE.search(text) and bool(
+        thrombocytopenia_context or (low_ebl is not None and low_ebl <= 20)
+    )
+
+
 def _infer_nashville_bleeding_grade(text: str) -> tuple[int | None, re.Match[str] | None]:
     """Infer Nashville bleeding grade (0-4) from explicit grade or hemostasis interventions."""
     if not text or not text.strip():
@@ -142,10 +182,22 @@ def _infer_nashville_bleeding_grade(text: str) -> tuple[int | None, re.Match[str
             except Exception:
                 pass
 
+    complications_none = bool(_COMPLICATIONS_NONE_RE.search(text))
+
+    def _suppress_low_grade_intervention(match: re.Match[str]) -> bool:
+        if not complications_none:
+            return False
+        window = text[max(0, match.start() - 220) : min(len(text), match.end() + 220)]
+        if _HIGH_GRADE_BLEEDING_CUE_RE.search(window):
+            return False
+        return bool(_LOW_GRADE_BLEEDING_CUE_RE.search(window))
+
     # Grade 4: escalation (transfusion/embolization/surgery) in bleeding context.
     for pat in (_TRANSFUSION_RE, _EMBOLIZATION_RE, _SURGERY_RE):
         match = _first_match_with_bleeding_context(pat, text)
         if match:
+            if pat is _TRANSFUSION_RE and _minor_bleeding_with_supportive_transfusion(text):
+                return 1, match
             return 4, match
 
     # Grade 3: tamponade/blocker/aborted for bleeding (bleeding context enforced).
@@ -168,6 +220,8 @@ def _infer_nashville_bleeding_grade(text: str) -> tuple[int | None, re.Match[str
     for pat in (_WEDGE_RE, _COLD_SALINE_RE, _EPI_RE):
         match = _first_match_with_bleeding_context(pat, text)
         if match:
+            if _suppress_low_grade_intervention(match):
+                continue
             return 2, match
 
     # Grade 2: anticoagulation reversal (e.g., protamine) in bleeding context.
@@ -185,6 +239,8 @@ def _infer_nashville_bleeding_grade(text: str) -> tuple[int | None, re.Match[str
         if re.search(r"(?i)\bno\s+(?:evidence\s+of\s+)?active\s+bleeding\b", window) and not re.search(
             r"(?i)\bcontrolled\b|\bhemostasis\b", window
         ):
+            suction_match = None
+        elif _suppress_low_grade_intervention(suction_match):
             suction_match = None
         else:
             return 1, suction_match

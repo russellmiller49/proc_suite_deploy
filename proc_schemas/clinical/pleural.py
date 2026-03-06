@@ -83,6 +83,16 @@ class ChestTube(BaseModel):
     lung_sliding_post: str | None = None
     lung_consolidation: str | None = None
     pleura_description: str | None = None
+    fibrinolytic_agents: List[str] | None = None
+    tpa_dose_mg: float | None = None
+    dnase_dose_mg: float | None = None
+    fibrinolytic_schedule: str | None = None
+    fibrinolytic_number_of_doses: int | None = None
+    fibrinolytic_indication: str | None = None
+    pleurodesis_performed: bool | None = None
+    pleurodesis_agent: str | None = None
+    pleurodesis_method: str | None = None
+    pleurodesis_dose: str | None = None
 
 
 class TunneledPleuralCatheterInsert(BaseModel):
@@ -109,6 +119,11 @@ class TunneledPleuralCatheterInsert(BaseModel):
     lung_sliding_post: str | None = None
     lung_consolidation: str | None = None
     pleura_description: str | None = None
+    pleurodesis_performed: bool | None = None
+    pleurodesis_agent: str | None = None
+    pleurodesis_method: str | None = None
+    pleurodesis_dose: str | None = None
+    pleurodesis_indication: str | None = None
 
 
 class TunneledPleuralCatheterRemove(BaseModel):
@@ -134,6 +149,12 @@ class PigtailCatheter(BaseModel):
     fluid_appearance: str | None = None
     specimen_tests: List[str] | None = None
     cxr_ordered: bool | None = None
+    fibrinolytic_agents: List[str] | None = None
+    tpa_dose_mg: float | None = None
+    dnase_dose_mg: float | None = None
+    fibrinolytic_schedule: str | None = None
+    fibrinolytic_number_of_doses: int | None = None
+    fibrinolytic_indication: str | None = None
 
 
 class TransthoracicNeedleBiopsy(BaseModel):

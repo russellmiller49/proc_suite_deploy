@@ -518,6 +518,36 @@ class EBUSStationDetail(BaseModel):
             pass
         return None  # Invalid gauge - let validation handle it
 
+    @field_validator("number_of_passes", mode="before")
+    @classmethod
+    def normalize_number_of_passes(cls, v):
+        """Normalize composite pass strings and clamp out-of-range parser artifacts."""
+        if v is None:
+            return None
+        if isinstance(v, str):
+            s = v.strip()
+            if not s:
+                return None
+            expr_match = re.search(r"(?i)\bx?(?P<a>\d{1,2})\s*\+\s*(?P<b>\d{1,2})\b", s)
+            if expr_match:
+                try:
+                    v = int(expr_match.group("a")) + int(expr_match.group("b"))
+                except Exception:
+                    return None
+            else:
+                digit_match = re.search(r"\d{1,2}", s)
+                if not digit_match:
+                    return None
+                v = int(digit_match.group(0))
+        if isinstance(v, (int, float)):
+            value = int(v)
+            if value < 0:
+                return None
+            if value > 10:
+                return 10
+            return value
+        return None
+
     @field_validator("needle_type", mode="before")
     @classmethod
     def normalize_needle_type(cls, v):

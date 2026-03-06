@@ -7,13 +7,13 @@ and the composite QARunResponse.
 
 from __future__ import annotations
 
-from enum import Enum
+from enum import StrEnum
 from typing import Any, Generic, Literal, TypeVar
 
 from pydantic import BaseModel, ConfigDict, Field
 
 
-class ModuleStatus(str, Enum):
+class ModuleStatus(StrEnum):
     """Status of a module execution."""
 
     SUCCESS = "success"

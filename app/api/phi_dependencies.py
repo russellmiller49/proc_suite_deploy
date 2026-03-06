@@ -29,9 +29,7 @@ logger = logging.getLogger(__name__)
 
 
 def _default_db_url() -> str:
-    return os.getenv("PHI_DATABASE_URL") or os.getenv(
-        "DATABASE_URL", "sqlite:///./phi_demo.db"
-    )
+    return os.getenv("PHI_DATABASE_URL") or os.getenv("DATABASE_URL", "sqlite:///./phi_demo.db")
 
 
 DATABASE_URL = _default_db_url()

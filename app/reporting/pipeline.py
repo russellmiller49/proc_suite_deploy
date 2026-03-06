@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from dataclasses import dataclass, field
+import re
 from typing import Any, TYPE_CHECKING
 
 from pydantic import BaseModel
@@ -93,6 +94,31 @@ def _target_key_from_proc(proc: ProcedureInput) -> str | None:
     if proc_type in {"transbronchial_biopsy", "transbronchial_lung_biopsy", "transbronchial_needle_aspiration"}:
         return _normalize_target_key(data.get("segment") or data.get("lobe") or data.get("lung_segment"))
     return None
+
+
+def _extract_stopped_reason(text: str) -> str | None:
+    if not text:
+        return None
+    match = re.search(
+        r"(?i)\b(?:stopped|terminated|discontinued|aborted)\b[^.\n]{0,60}?\bdue\s+to\s+([^\n.]{1,120})",
+        text,
+    )
+    if not match:
+        return None
+    reason = re.sub(r"\s+", " ", match.group(1).strip()).strip()
+    reason = reason.strip(" .;")
+    return reason or None
+
+
+def _extract_extrinsic_compression(text: str) -> str | None:
+    if not text:
+        return None
+    match = re.search(r"(?i)\bextrinsic\s+compression\b[^.\n]{0,160}", text)
+    if not match:
+        return None
+    finding = re.sub(r"\s+", " ", match.group(0).strip()).strip()
+    finding = finding.strip(" .;")
+    return finding or None
 
 
 class ReportPipeline:
@@ -224,6 +250,12 @@ class ReportPipeline:
         autocode_modifiers = state.autocode_modifiers
         unmatched_autocode = state.unmatched_autocode
         has_til_confirmation = selected.has_til_confirmation
+        note_text = (bundle.free_text_hint or "").strip()
+        stopped_reason = _extract_stopped_reason(note_text)
+        extrinsic_compression = _extract_extrinsic_compression(note_text)
+        has_radial_localization = any(
+            proc.proc_type in ("radial_ebus_survey", "radial_ebus_sampling") for proc in selected.sorted_procs
+        )
 
         def _validated(proc_input: ProcedureInput) -> Any:
             if isinstance(proc_input.data, BaseModel):
@@ -295,7 +327,20 @@ class ReportPipeline:
                     survey_proc = selected.paired_surveys.get(proc.proc_id or proc.schema_id)
                     if survey_proc:
                         extra_context = {"survey": _validated(survey_proc)}
-                    nav_proc = selected.first_by_type.get("robotic_navigation")
+                    nav_proc = None
+                    if survey_proc is not None:
+                        survey_key = _target_key_from_proc(survey_proc)
+                        if survey_key:
+                            nav_proc = next(
+                                (
+                                    candidate
+                                    for candidate in selected.sorted_procs
+                                    if candidate.proc_type == "robotic_navigation" and _target_key_from_proc(candidate) == survey_key
+                                ),
+                                None,
+                            )
+                    if nav_proc is None:
+                        nav_proc = selected.first_by_type.get("robotic_navigation")
                     if nav_proc:
                         extra_context = extra_context or {}
                         extra_context["nav"] = _validated(nav_proc)
@@ -303,12 +348,44 @@ class ReportPipeline:
                     extra_context["til_present"] = has_til_confirmation
                 if proc.proc_type == "robotic_navigation":
                     extra_context = extra_context or {}
-                    survey_proc = selected.first_by_type.get("radial_ebus_survey")
-                    if survey_proc:
-                        extra_context["survey"] = _validated(survey_proc)
-                    sampling_proc = selected.first_by_type.get("radial_ebus_sampling")
-                    if sampling_proc:
-                        extra_context["sampling"] = _validated(sampling_proc)
+                    nav_key = _target_key_from_proc(proc)
+                    survey_match = None
+                    if nav_key:
+                        survey_match = next(
+                            (
+                                candidate
+                                for candidate in selected.sorted_procs
+                                if candidate.proc_type == "radial_ebus_survey" and _target_key_from_proc(candidate) == nav_key
+                            ),
+                            None,
+                        )
+                    if survey_match is None:
+                        survey_match = selected.first_by_type.get("radial_ebus_survey")
+                    if survey_match:
+                        extra_context["survey"] = _validated(survey_match)
+
+                    sampling_match = None
+                    if nav_key:
+                        for sampling in (p for p in selected.sorted_procs if p.proc_type == "radial_ebus_sampling"):
+                            paired = selected.paired_surveys.get(sampling.proc_id or sampling.schema_id)
+                            if paired is None:
+                                continue
+                            if _target_key_from_proc(paired) == nav_key:
+                                sampling_match = sampling
+                                break
+                    if sampling_match is None:
+                        sampling_match = selected.first_by_type.get("radial_ebus_sampling")
+                    if sampling_match:
+                        extra_context["sampling"] = _validated(sampling_match)
+                if proc.proc_type in ("thoracentesis", "thoracentesis_detailed", "thoracentesis_manometry") and stopped_reason:
+                    extra_context = extra_context or {}
+                    extra_context["procedure_stopped_reason"] = stopped_reason
+                if proc.proc_type == "ebus_tbna" and extrinsic_compression:
+                    extra_context = extra_context or {}
+                    extra_context["airway_findings"] = extrinsic_compression
+                if proc.proc_type == "tool_in_lesion_confirmation" and has_radial_localization:
+                    extra_context = extra_context or {}
+                    extra_context["suppress_rebus_pattern"] = True
 
                 rendered = self.engine._render_procedure_template(meta, proc, bundle, extra_context=extra_context)
                 proc_meta.templates_used = _merge_str_lists(proc_meta.templates_used, [meta.id])
@@ -428,6 +505,12 @@ class ReportPipeline:
                         return "Eccentric"
                     return text
 
+                def _lobe_token(value: str) -> str:
+                    if not value:
+                        return ""
+                    match = re.search(r"(?i)\b(RUL|RML|RLL|LUL|LLL)\b", value)
+                    return match.group(1).upper() if match else ""
+
                 lines: list[str] = []
 
                 for tpc_proc in _by_type("tunneled_pleural_catheter_insert"):
@@ -453,8 +536,18 @@ class ReportPipeline:
                             lines.append(intervention.strip())
 
                 nav_procs = _by_type("robotic_navigation")
+                emn_procs = _by_type("emn_bronchoscopy")
+                ebus_procs = _by_type("ebus_tbna")
+                has_peripheral_nav = bool(nav_procs or emn_procs)
+                has_ebus = bool(ebus_procs)
+
+                if has_ebus and has_peripheral_nav:
+                    lines.append("Linear Endobronchial Ultrasound (EBUS) with Transbronchial Needle Aspiration (TBNA)")
+
                 nav_targets: list[str] = []
+                emn_targets: list[str] = []
                 nav_platform = None
+
                 if nav_procs:
                     for nav_proc in nav_procs:
                         data = _proc_data_dict(nav_proc)
@@ -462,7 +555,8 @@ class ReportPipeline:
                             nav_platform = data.get("platform")
                         target = _as_text(data.get("lesion_location") or data.get("target_lung_segment"))
                         if target:
-                            nav_targets.append(target)
+                            target = re.sub(r"(?i)^the\s+", "", target).strip()
+                            nav_targets.append(_lobe_token(target) or target)
                     nav_targets = _dedupe_labels(nav_targets)
                     base = "Robotic navigational bronchoscopy"
                     if nav_platform:
@@ -473,45 +567,46 @@ class ReportPipeline:
                         base += f" to {len(nav_targets)} targets ({', '.join(nav_targets)})"
                     lines.append(base)
 
-                if not nav_procs:
-                    emn_procs = _by_type("emn_bronchoscopy")
-                    if emn_procs:
-                        emn_targets: list[str] = []
-                        emn_platform = None
-                        for emn_proc in emn_procs:
-                            data = _proc_data_dict(emn_proc)
-                            if emn_platform is None:
-                                emn_platform = data.get("navigation_system") or "EMN"
-                            target = _as_text(data.get("target_lung_segment"))
-                            if target:
-                                emn_targets.append(target)
-                        emn_targets = _dedupe_labels(emn_targets)
-                        base = "Electromagnetic Navigation Bronchoscopy"
-                        if emn_platform:
-                            base += f" ({emn_platform})"
-                        if len(emn_targets) == 1:
-                            base += f" to {emn_targets[0]} target"
-                        elif len(emn_targets) > 1:
-                            base += f" to {len(emn_targets)} targets ({', '.join(emn_targets)})"
-                        lines.append(base)
+                if (not nav_procs) and emn_procs:
+                    emn_platform = None
+                    for emn_proc in emn_procs:
+                        data = _proc_data_dict(emn_proc)
+                        if emn_platform is None:
+                            emn_platform = data.get("navigation_system") or "EMN"
+                        target = _as_text(data.get("target_lung_segment"))
+                        if target:
+                            target = re.sub(r"(?i)^the\s+", "", target).strip()
+                            emn_targets.append(_lobe_token(target) or target)
+                    emn_targets = _dedupe_labels(emn_targets)
+                    base = "Electromagnetic Navigation Bronchoscopy"
+                    if emn_platform:
+                        base += f" ({emn_platform})"
+                    if len(emn_targets) == 1:
+                        base += f" to {emn_targets[0]} target"
+                    elif len(emn_targets) > 1:
+                        base += f" to {len(emn_targets)} targets ({', '.join(emn_targets)})"
+                    lines.append(base)
 
                 for til_proc in _by_type("tool_in_lesion_confirmation"):
                     data = _proc_data_dict(til_proc)
                     method = _as_text(data.get("confirmation_method"))
                     if method and "tilt" in method.lower():
                         lines.append("TiLT+ (Tomosynthesis-based Tool-in-Lesion Tomography) with trajectory adjustment")
-                    else:
-                        lines.append("Tool-in-lesion confirmation")
 
+                had_radial_survey = False
                 for radial_survey in _by_type("radial_ebus_survey"):
+                    had_radial_survey = True
                     data = _proc_data_dict(radial_survey)
                     pattern = _normalize_rebus(data.get("rebus_features"))
-                    line = "rEBUS localization"
+                    line = "Radial EBUS localization"
                     if pattern:
-                        line += f" ({pattern})"
-                    target = _as_text(data.get("location"))
-                    if target:
-                        line += f" - {target}"
+                        lowered = pattern.lower()
+                        if "adjacent" in lowered:
+                            line += " (adjacent view)"
+                        elif lowered in {"concentric", "eccentric"}:
+                            line += f" ({lowered} view)"
+                        else:
+                            line += f" ({pattern})"
                     lines.append(line)
 
                 for cryo_proc in _by_type("transbronchial_cryobiopsy"):
@@ -527,44 +622,90 @@ class ReportPipeline:
                     else:
                         lines.append("Prophylactic endobronchial blocker placement")
 
-                for radial_sampling in _by_type("radial_ebus_sampling"):
-                    data = _proc_data_dict(radial_sampling)
-                    view = _normalize_rebus(data.get("ultrasound_pattern"))
-                    line = "Radial EBUS"
-                    if view:
-                        line += f" ({view} view)"
-                    target = _as_text(data.get("target_lung_segment") or data.get("lung_segment"))
-                    if target:
-                        line += f" - {target}"
-                    lines.append(line)
+                if not had_radial_survey:
+                    for radial_sampling in _by_type("radial_ebus_sampling"):
+                        data = _proc_data_dict(radial_sampling)
+                        view = _normalize_rebus(data.get("ultrasound_pattern"))
+                        line = "Radial EBUS localization"
+                        if view:
+                            lowered = view.lower()
+                            if "adjacent" in lowered:
+                                line += " (adjacent view)"
+                            elif lowered in {"concentric", "eccentric"}:
+                                line += f" ({lowered} view)"
+                            else:
+                                line += f" ({view})"
+                        lines.append(line)
 
                 if "CONE BEAM" in note_upper or "CBCT" in note_upper:
-                    lines.append("Cone-beam CT imaging with trajectory adjustment and confirmation")
+                    lines.append("Cone-beam CT imaging with confirmation")
                 elif "FLUORO" in note_upper:
-                    lines.append("Fluoroscopy with trajectory adjustment and confirmation")
+                    lines.append("Fluoroscopy with confirmation")
 
-                primary_nav_target = nav_targets[0] if nav_targets else None
+                primary_nav_target = (nav_targets or emn_targets)[0] if (nav_targets or emn_targets) else None
 
+                def _format_target_label(value: Any) -> str:
+                    text = _as_text(value)
+                    text = re.sub(r"(?i)^the\s+", "", text).strip()
+                    lobes = [m.group(1).upper() for m in re.finditer(r"(?i)\b(RUL|RML|RLL|LUL|LLL)\b", text)]
+                    lobes = _dedupe_labels([l for l in lobes if l])
+                    if len(lobes) == 2:
+                        return f"{lobes[0]} and {lobes[1]}"
+                    if len(lobes) > 2:
+                        return ", ".join(lobes[:-1]) + f", and {lobes[-1]}"
+                    lobe = lobes[0] if lobes else _lobe_token(text)
+                    return f"{lobe} target" if lobe else (text or "target")
+
+                tbna_lines: list[str] = []
                 for tbna_proc in _by_type("transbronchial_needle_aspiration"):
                     data = _proc_data_dict(tbna_proc)
                     passes = data.get("samples_collected")
-                    target = _as_text(data.get("lung_segment") or primary_nav_target)
-                    if passes:
-                        lines.append(f"TBNA of {target or 'target'} ({passes} passes)")
-                    else:
-                        lines.append(f"TBNA of {target}" if target else "TBNA")
+                    target_label = _format_target_label(data.get("lung_segment") or primary_nav_target)
 
+                    needle_gauge = _as_text(data.get("needle_gauge"))
+                    gauge_num = None
+                    if needle_gauge:
+                        match = re.search(r"(\d{1,2})", needle_gauge)
+                        if match:
+                            gauge_num = match.group(1)
+
+                    prefix = "Transbronchial needle aspiration" if (has_ebus and has_peripheral_nav) else "TBNA"
+                    line = f"{prefix} of {target_label}"
+                    if gauge_num and not (has_ebus and has_peripheral_nav):
+                        line += f" with {gauge_num}-gauge needle"
+                    if passes:
+                        line += f" ({passes} passes)"
+                    tbna_lines.append(line)
+
+                bx_lines: list[str] = []
                 for bx_proc in _by_type("transbronchial_biopsy"):
                     data = _proc_data_dict(bx_proc)
                     count = data.get("number_of_biopsies")
-                    target = _as_text(data.get("lobe") or data.get("segment") or primary_nav_target)
+                    target_label = _format_target_label(data.get("lobe") or data.get("segment") or primary_nav_target)
+                    forceps_wording = "FORCEPS" in note_upper
                     if count:
-                        lines.append(f"Transbronchial biopsy of {target or 'target'} ({count} samples)")
+                        suffix = "forceps biopsies" if forceps_wording else "samples"
+                        bx_lines.append(f"Transbronchial biopsy of {target_label} ({count} {suffix})")
                     else:
-                        lines.append(f"Transbronchial biopsy of {target}" if target else "Transbronchial biopsy")
+                        bx_lines.append(f"Transbronchial biopsy of {target_label}")
 
-                for _ in _by_type("bronchial_brushings"):
-                    lines.append("Bronchial Brush")
+                tbna_pos = note_upper.find("TBNA")
+                forceps_pos = note_upper.find("FORCEPS")
+                biopsy_first = forceps_pos != -1 and (tbna_pos == -1 or forceps_pos < tbna_pos)
+                if biopsy_first:
+                    lines.extend(bx_lines)
+                    lines.extend(tbna_lines)
+                else:
+                    lines.extend(tbna_lines)
+                    lines.extend(bx_lines)
+
+                for brush_proc in _by_type("bronchial_brushings"):
+                    data = _proc_data_dict(brush_proc)
+                    count = data.get("samples_collected")
+                    if count:
+                        lines.append(f"Bronchial brushings ({count} samples)")
+                    else:
+                        lines.append("Bronchial brushings")
 
                 for wll_proc in _by_type("whole_lung_lavage"):
                     data = _proc_data_dict(wll_proc)
@@ -591,27 +732,30 @@ class ReportPipeline:
                     data = _proc_data_dict(bal_proc)
                     seg = _as_text(data.get("lung_segment"))
                     if seg:
-                        lines.append(f"Bronchoalveolar Lavage ({seg})")
+                        lines.append(f"Bronchoalveolar lavage (BAL) {seg}")
                     else:
-                        lines.append("Bronchoalveolar Lavage (BAL)")
+                        lines.append("Bronchoalveolar lavage (BAL)")
 
                 for _ in _by_type("fiducial_marker_placement"):
                     lines.append("Fiducial marker placement")
 
-                for ebus_proc in _by_type("ebus_tbna"):
-                    data = _proc_data_dict(ebus_proc)
-                    stations: list[str] = []
-                    for st in data.get("stations") or []:
-                        if isinstance(st, dict) and st.get("station_name"):
-                            stations.append(str(st["station_name"]))
-                    stations = _dedupe_labels([s for s in stations if s])
-                    if stations:
-                        lines.append(
-                            "Endobronchial Ultrasound-Guided Transbronchial Needle Aspiration (EBUS-TBNA) "
-                            f"(Stations {', '.join(stations)})"
-                        )
-                    else:
-                        lines.append("Endobronchial Ultrasound-Guided Transbronchial Needle Aspiration (EBUS-TBNA)")
+                if has_ebus and not has_peripheral_nav:
+                    for ebus_proc in ebus_procs:
+                        data = _proc_data_dict(ebus_proc)
+                        stations: list[str] = []
+                        for st in data.get("stations") or []:
+                            if isinstance(st, dict) and st.get("station_name"):
+                                stations.append(str(st["station_name"]))
+                        stations = _dedupe_labels([s for s in stations if s])
+                        if stations:
+                            lines.append(
+                                "Endobronchial Ultrasound-Guided Transbronchial Needle Aspiration (EBUS-TBNA) "
+                                f"(Stations {', '.join(stations)})"
+                            )
+                        else:
+                            lines.append(
+                                "Endobronchial Ultrasound-Guided Transbronchial Needle Aspiration (EBUS-TBNA)"
+                            )
 
                 for rigid_proc in _by_type("rigid_bronchoscopy"):
                     data = _proc_data_dict(rigid_proc)

@@ -89,6 +89,7 @@ class KnowledgeSnapshot:
     add_on_codes: list[str]
     bundling_rules: list[str]
 
+
 _cache: dict[str, Any] | None = None
 _knowledge_path: Path | None = None
 _mtime: float | None = None
@@ -106,12 +107,7 @@ def get_knowledge(path: str | Path | None = None, *, force_reload: bool = False)
     stat = target.stat()
     global _cache
     with _lock:
-        if (
-            force_reload
-            or _cache is None
-            or _knowledge_path != target
-            or _mtime != stat.st_mtime
-        ):
+        if force_reload or _cache is None or _knowledge_path != target or _mtime != stat.st_mtime:
             _refresh_cache(target, stat.st_mtime)
     if _watch_enabled():
         _maybe_start_watcher()

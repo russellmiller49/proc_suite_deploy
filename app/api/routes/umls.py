@@ -6,7 +6,6 @@ from fastapi import APIRouter, HTTPException, Query
 
 from config.settings import UmlsSettings
 
-
 router = APIRouter(tags=["umls"])
 
 
@@ -18,8 +17,8 @@ def _require_store():
         from app.umls.ip_umls_store import get_ip_umls_store
 
         return get_ip_umls_store()
-    except Exception:
-        raise HTTPException(status_code=503, detail="UMLS map unavailable")
+    except Exception as err:
+        raise HTTPException(status_code=503, detail="UMLS map unavailable") from err
 
 
 @router.get("/v1/umls/suggest")
@@ -44,4 +43,3 @@ def concept(cui: str) -> dict[str, Any]:
 
 
 __all__ = ["router"]
-

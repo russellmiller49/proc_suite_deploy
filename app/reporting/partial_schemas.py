@@ -30,7 +30,10 @@ class TransbronchialNeedleAspirationPartial(BaseModel):
 
     lung_segment: str | None = None
     needle_tools: str | None = None
+    needle_gauge: str | None = None
     samples_collected: int | None = None
+    rose_result: str | None = None
+    notes: str | None = None
     tests: List[str] = Field(default_factory=list)
 
 
@@ -59,6 +62,16 @@ class BronchialWashingPartial(BaseModel):
     instilled_volume_ml: int | None = None
     returned_volume_ml: int | None = None
     tests: List[str] = Field(default_factory=list)
+
+
+class TherapeuticInjectionPartial(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    medication: str | None = None
+    dose: str | None = None
+    number_of_sites: int | None = None
+    sites: List[str] = Field(default_factory=list)
+    notes: str | None = None
 
 
 class TransbronchialCryobiopsyPartial(BaseModel):
@@ -153,3 +166,21 @@ class RigidBronchoscopyPartial(BaseModel):
     pre_obstruction_pct: int | None = None
     post_obstruction_pct: int | None = None
     findings: str | None = None
+
+
+class BLVRChartisLobeAssessmentPartial(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    lobe: str | None = None
+    cv_result: str | None = None
+
+
+class BLVRChartisAssessmentPartial(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    assessments: List[BLVRChartisLobeAssessmentPartial] = Field(default_factory=list)
+    planned_target_lobe: str | None = None
+    planned_valve_type: str | None = None
+    procedure_aborted: bool | None = None
+    aborted_reason: str | None = None
+    notes: str | None = None

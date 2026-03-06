@@ -130,6 +130,32 @@ def parse_bracket_sections(text: str) -> dict[str, str]:
     return sections
 
 
+def extract_pneumothorax_watch_plan(text: str) -> str | None:
+    if not text:
+        return None
+    match = re.search(
+        r"(?i)\b(?:admit(?:ted)?\s+for|admission\s+for)\b[^.\n]{0,160}\bpneumothorax\b[^.\n]{0,120}\b(?:watch|observation|obs)\b[^.\n]{0,80}(?:[.;]|$)",
+        text,
+    )
+    if not match:
+        return None
+    plan = re.sub(r"\s+", " ", match.group(0).strip()).strip()
+    plan = plan.strip(" .;")
+    return plan or None
+
+
+def extract_rebus_transition_note(text: str) -> str | None:
+    if not text:
+        return None
+    match = re.search(r"(?i)\beccentric\b[^.\n]{0,120}\bconcentric\b", text)
+    if not match:
+        return None
+    snippet = match.group(0)
+    if not re.search(r"(?i)\b(?:adjust|adjustment|reposition|after)\b", snippet):
+        return None
+    return "Initial rEBUS view was eccentric; after adjustment, concentric view was obtained."
+
+
 def infer_side(text: str) -> str | None:
     if not text:
         return None
@@ -366,6 +392,50 @@ def enrich_from_text(bundle: ProcedureBundle, source_text: str) -> tuple[Procedu
                     source="text_enricher",
                 )
             )
+
+    if payload.get("impression_plan") in (None, ""):
+        ptx_watch = extract_pneumothorax_watch_plan(source_text)
+        if ptx_watch:
+            payload["impression_plan"] = ptx_watch
+            notes.append(
+                NormalizationNote(
+                    kind="text_enrichment",
+                    path="/impression_plan",
+                    message="Filled impression_plan from pneumothorax watch directive",
+                    source="text_enricher",
+                )
+            )
+
+    transition_note = extract_rebus_transition_note(source_text)
+    if transition_note:
+        procedures = payload.get("procedures") or []
+        if isinstance(procedures, list):
+            inserted = False
+            for preferred_type in ("tool_in_lesion_confirmation", "radial_ebus_sampling", "radial_ebus_survey"):
+                if inserted:
+                    break
+                for idx, proc in enumerate(procedures):
+                    if not isinstance(proc, dict) or proc.get("proc_type") != preferred_type:
+                        continue
+                    data = proc.get("data")
+                    if not isinstance(data, dict):
+                        continue
+                    if data.get("notes") not in (None, ""):
+                        inserted = True
+                        break
+                    data["notes"] = transition_note
+                    proc["data"] = data
+                    notes.append(
+                        NormalizationNote(
+                            kind="text_enrichment",
+                            path=f"/procedures/{idx}/data/notes",
+                            message="Added rEBUS transition note from source_text",
+                            source="text_enricher",
+                        )
+                    )
+                    inserted = True
+                    break
+            payload["procedures"] = procedures
 
     normalized = ProcedureBundle.model_validate(payload)
     return normalized, notes

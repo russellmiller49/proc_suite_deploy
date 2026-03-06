@@ -9,7 +9,6 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 
-
 CRYPTO_VERSION_V1: Literal[1] = 1
 
 
@@ -95,4 +94,3 @@ __all__ = [
     "VaultSettingsOut",
     "VaultSettingsUpsert",
 ]
-

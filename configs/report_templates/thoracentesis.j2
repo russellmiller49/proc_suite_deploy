@@ -7,4 +7,4 @@ a thoracentesis kit was used to access the pleural space at the
 A total of {{ proc.volume_removed_ml }} mL of {{ proc.fluid_appearance }} fluid was removed.
 {% if proc.specimen_tests %}Samples were sent for {{ proc.specimen_tests | join(', ') }}.{% endif %}
 {% if proc.cxr_ordered %}A post-procedure chest x-ray was ordered.{% endif %}
-The patient tolerated the procedure well without immediate complications.
+{% if procedure_stopped_reason is defined and procedure_stopped_reason %}The procedure was stopped due to {{ procedure_stopped_reason }}.{% else %}The patient tolerated the procedure well without immediate complications.{% endif %}

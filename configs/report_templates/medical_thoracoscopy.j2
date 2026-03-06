@@ -5,8 +5,10 @@ Survey: Thoracoscopic survey performed.
 
 {% if proc.findings %}Findings: Initial thoracoscopic survey demonstrates {{ proc.findings }}.{% endif %}
 
-{% for item in proc.interventions or [] -%}
-{% if item %}Intervention: {{ item }}.{% endif %}
+{% for item in proc.interventions or [] %}
+{% if item %}
+Intervention: {{ item }}.
+{% endif %}
 {% endfor %}
 
 {% if proc.interventions and ('Chest tube placement' in proc.interventions) -%}

@@ -2,6 +2,12 @@ After chest ultrasound documentation{% if proc.guidance %} with {{ proc.guidance
 A thoracostomy tube was inserted into the {{ proc.intercostal_space }} intercostal space along the {{ proc.entry_line }} using the Seldinger technique and connected to a drainage system.
 Placement was confirmed and secured.{% if proc.fluid_removed_ml is not none %} Return of {{ proc.fluid_removed_ml }} mL of{% if proc.fluid_appearance %} {{ proc.fluid_appearance|lower }}{% else %} fluid{% endif %}.{% endif %}
 {% if proc.specimen_tests %}Specimens were sent for {{ proc.specimen_tests | join(', ') }}.{% endif %}
+{% if proc.fibrinolytic_agents or proc.tpa_dose_mg is not none or proc.dnase_dose_mg is not none %}
+Intrapleural fibrinolytic therapy was documented{% if proc.fibrinolytic_agents %} using {{ proc.fibrinolytic_agents | join(' + ') }}{% endif %}{% if proc.tpa_dose_mg is not none %} (tPA {{ proc.tpa_dose_mg }} mg{% if proc.dnase_dose_mg is not none %}, DNase {{ proc.dnase_dose_mg }} mg{% endif %}){% elif proc.dnase_dose_mg is not none %} (DNase {{ proc.dnase_dose_mg }} mg){% endif %}{% if proc.fibrinolytic_schedule %}, schedule {{ proc.fibrinolytic_schedule }}{% endif %}{% if proc.fibrinolytic_number_of_doses is not none %}, planned doses {{ proc.fibrinolytic_number_of_doses }}{% endif %}{% if proc.fibrinolytic_indication %}; indication: {{ proc.fibrinolytic_indication }}{% endif %}.
+{% endif %}
+{% if proc.pleurodesis_performed %}
+Chemical pleurodesis was performed{% if proc.pleurodesis_agent %} with {{ proc.pleurodesis_agent }}{% endif %}{% if proc.pleurodesis_dose %} (dose {{ proc.pleurodesis_dose }}){% endif %}{% if proc.pleurodesis_method %} using {{ proc.pleurodesis_method }}{% endif %}.
+{% endif %}
 {% if proc.cxr_ordered %}A post-procedure chest x-ray was ordered.{% endif %}
 {% if proc.effusion_volume or proc.effusion_echogenicity or proc.loculations or proc.diaphragm_motion or proc.lung_sliding_pre or proc.lung_sliding_post or proc.lung_consolidation or proc.pleura_description %}CHEST ULTRASOUND FINDINGS:
 Hemithorax: {{ proc.side|title }}

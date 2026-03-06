@@ -30,7 +30,7 @@ DATE OF PROCEDURE: {{ _date }}{% if _cc %} CC Referred Physician: {{ _cc }}{% en
 {% set _has_pigtail = "pigtail_catheter" in _procedure_types %}
 {% set _has_tunneled_pleural_catheter = "tunneled_pleural_catheter_insert" in _procedure_types %}
 
-{% set _indication = (proc.indication_text or indication_text or ("[indication]" if _use_placeholders else "Not documented")) | trim %}
+{% set _indication = (proc.indication_text or indication_text or "Not documented") | trim %}
 {% set _procedures = (proc.procedures_summary or procedures_summary or "") %}
 {% set _has_ablation = "ablation" in (_procedures | lower) %}
 {% set _has_bronchoscopy = ("bronch" in (_procedures | lower)) %}

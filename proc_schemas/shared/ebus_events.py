@@ -36,7 +36,14 @@ class NodeInteraction(BaseModel):
 
     model_config = ConfigDict(extra="ignore")
 
-    station: str
+    station: str | None = Field(
+        default=None,
+        description="IASLC nodal station when available; null for non-station EBUS targets.",
+    )
+    target_text: str | None = Field(
+        default=None,
+        description="Free-text non-station EBUS target (e.g., 'left pulmonary artery mass').",
+    )
     action: NodeActionType
     outcome: NodeOutcomeType | None = None
     passes: int | None = None

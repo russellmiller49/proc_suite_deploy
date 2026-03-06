@@ -186,16 +186,18 @@ def convert_coding_result_to_coder_output(
                 total_work_rvu += work_rvu
                 total_facility_payment += payment
 
-                per_code_billing.append(PerCodeBilling(
-                    cpt_code=code_decision.cpt,
-                    description=code_decision.description,
-                    modifiers=code_decision.modifiers,
-                    work_rvu=work_rvu,
-                    total_facility_rvu=total_rvu,
-                    facility_payment=payment,
-                    allowed_facility_rvu=total_rvu,
-                    allowed_facility_payment=payment,
-                ))
+                per_code_billing.append(
+                    PerCodeBilling(
+                        cpt_code=code_decision.cpt,
+                        description=code_decision.description,
+                        modifiers=code_decision.modifiers,
+                        work_rvu=work_rvu,
+                        total_facility_rvu=total_rvu,
+                        facility_payment=payment,
+                        allowed_facility_rvu=total_rvu,
+                        allowed_facility_payment=payment,
+                    )
+                )
 
         if per_code_billing:
             financials = FinancialSummary(
@@ -214,11 +216,13 @@ def convert_coding_result_to_coder_output(
             rationale = ""
             if suggestion.reasoning and suggestion.reasoning.rule_paths:
                 rationale = "; ".join(suggestion.reasoning.rule_paths)
-            llm_suggestions.append(LLMCodeSuggestion(
-                cpt=suggestion.code,
-                description=suggestion.description,
-                rationale=rationale,
-            ))
+            llm_suggestions.append(
+                LLMCodeSuggestion(
+                    cpt=suggestion.code,
+                    description=suggestion.description,
+                    rationale=rationale,
+                )
+            )
 
     # Collect all warnings
     warnings = list(result.warnings)

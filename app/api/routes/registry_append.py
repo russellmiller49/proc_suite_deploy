@@ -28,7 +28,6 @@ from app.registry_store.models import RegistryAppendedDocument, RegistryCaseReco
 from app.registry_store.phi_gate import scan_text_for_phi_risk
 from app.vault.models import UserPatientVault
 
-
 router = APIRouter(tags=["registry-append"])
 logger = logging.getLogger(__name__)
 
@@ -156,13 +155,17 @@ class RegistryAppendRequest(BaseModel):
     )
     already_scrubbed: bool = Field(
         True,
-        description="If false, server performs PHI scrubbing before persistence (blocked in strict ZK mode).",
+        description=(
+            "If false, server performs PHI scrubbing before persistence "
+            "(blocked in strict ZK mode)."
+        ),
     )
     event_type: str | None = Field(
         None,
         description=(
             "Canonical event type "
-            "(pathology, imaging, clinical_update, treatment_update, complication, procedure_addendum, other)."
+            "(pathology, imaging, clinical_update, treatment_update, "
+            "complication, procedure_addendum, other)."
         ),
     )
     structured_data: dict[str, Any] | None = Field(
@@ -227,7 +230,9 @@ class RegistryAppendResponse(RegistryCaseResponse):
     created_at: str
 
 
-def _append_rows_for_case(db: Session, *, user_id: str, registry_uuid: uuid.UUID) -> list[RegistryAppendedDocument]:
+def _append_rows_for_case(
+    db: Session, *, user_id: str, registry_uuid: uuid.UUID
+) -> list[RegistryAppendedDocument]:
     stmt: Select[tuple[RegistryAppendedDocument]] = (
         select(RegistryAppendedDocument)
         .where(
@@ -309,7 +314,9 @@ def append_registry_document(
     metadata_payload = dict(payload.metadata or {})
     if payload.structured_data is not None:
         metadata_payload["structured_data"] = payload.structured_data
-    if payload.allow_absolute_dates and (text_date_count or title_date_count or structured_date_count):
+    if payload.allow_absolute_dates and (
+        text_date_count or title_date_count or structured_date_count
+    ):
         metadata_payload["absolute_date_override"] = {
             "enabled": True,
             "text_date_like_count": int(text_date_count),
@@ -368,8 +375,12 @@ def append_registry_document(
     db.refresh(case_record)
 
     append_rows = _append_rows_for_case(db, user_id=current_user.id, registry_uuid=registry_uuid)
-    source_run = db.get(RegistryRun, case_record.source_run_id) if case_record.source_run_id else None
-    case_response = _build_case_response(case_record=case_record, append_rows=append_rows, source_run=source_run)
+    source_run = (
+        db.get(RegistryRun, case_record.source_run_id) if case_record.source_run_id else None
+    )
+    case_response = _build_case_response(
+        case_record=case_record, append_rows=append_rows, source_run=source_run
+    )
 
     response_payload = {
         **case_response.model_dump(),

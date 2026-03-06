@@ -95,6 +95,7 @@ _rule_codes_query = Query(
 # DEPENDENCIES
 # =============================================================================
 
+
 def get_advisor_config() -> dict[str, Any]:
     """
     Dependency that provides advisor configuration.
@@ -116,6 +117,7 @@ AdvisorConfig = Annotated[dict[str, Any], Depends(get_advisor_config)]
 # =============================================================================
 # MOCK IMPLEMENTATIONS (Replace with actual imports in production)
 # =============================================================================
+
 
 def mock_rule_engine(
     report: StructuredProcedureReport | None,
@@ -143,11 +145,13 @@ def mock_rule_engine(
 
     # Detect procedures from text
     if "bronchoscopy" in text_lower or procedure_category == ProcedureCategory.BRONCHOSCOPY:
-        codes.append(CodeWithConfidence(
-            code="31622",
-            confidence=0.95,
-            description="Diagnostic bronchoscopy",
-        ))
+        codes.append(
+            CodeWithConfidence(
+                code="31622",
+                confidence=0.95,
+                description="Diagnostic bronchoscopy",
+            )
+        )
 
     if "ebus" in text_lower or procedure_category == ProcedureCategory.EBUS:
         # Check station count
@@ -156,69 +160,83 @@ def mock_rule_engine(
             station_count = len(report.bronchoscopy.stations_sampled)
 
         if station_count >= 3:
-            codes.append(CodeWithConfidence(
-                code="31653",
-                confidence=0.92,
-                description="EBUS-guided TBNA, 3+ stations",
-            ))
+            codes.append(
+                CodeWithConfidence(
+                    code="31653",
+                    confidence=0.92,
+                    description="EBUS-guided TBNA, 3+ stations",
+                )
+            )
         elif station_count > 0:
-            codes.append(CodeWithConfidence(
-                code="31652",
-                confidence=0.90,
-                description="EBUS-guided TBNA, 1-2 stations",
-            ))
+            codes.append(
+                CodeWithConfidence(
+                    code="31652",
+                    confidence=0.90,
+                    description="EBUS-guided TBNA, 1-2 stations",
+                )
+            )
 
     if "bal" in text_lower or "lavage" in text_lower:
-        codes.append(CodeWithConfidence(
-            code="31625",
-            confidence=0.88,
-            description="Bronchoscopy with BAL",
-        ))
+        codes.append(
+            CodeWithConfidence(
+                code="31625",
+                confidence=0.88,
+                description="Bronchoscopy with BAL",
+            )
+        )
 
     if "thoracentesis" in text_lower or procedure_category == ProcedureCategory.PLEURAL:
         # Check for imaging guidance
         if "ultrasound" in text_lower or (
             report and report.pleural and report.pleural.imaging_guidance
         ):
-            codes.append(CodeWithConfidence(
-                code="32555",
-                confidence=0.95,
-                description="Thoracentesis with imaging guidance",
-            ))
+            codes.append(
+                CodeWithConfidence(
+                    code="32555",
+                    confidence=0.95,
+                    description="Thoracentesis with imaging guidance",
+                )
+            )
         else:
-            codes.append(CodeWithConfidence(
-                code="32554",
-                confidence=0.90,
-                description="Thoracentesis without imaging guidance",
-            ))
+            codes.append(
+                CodeWithConfidence(
+                    code="32554",
+                    confidence=0.90,
+                    description="Thoracentesis without imaging guidance",
+                )
+            )
 
         # Check for bilateral
         if report and report.pleural and report.pleural.laterality == "bilateral":
-            modifiers.append(CodeModifier(
-                modifier="-50",
-                reason="Bilateral procedure",
-            ))
+            modifiers.append(
+                CodeModifier(
+                    modifier="-50",
+                    reason="Bilateral procedure",
+                )
+            )
 
     # Apply MER if multiple bronchoscopy codes
     bronch_codes = [c for c in codes if c.code.startswith("316")]
     if len(bronch_codes) > 1:
         mer_applied = True
-        modifiers.append(CodeModifier(
-            modifier="-51",
-            reason="Multiple endoscopy procedures",
-        ))
+        modifiers.append(
+            CodeModifier(
+                modifier="-51",
+                reason="Multiple endoscopy procedures",
+            )
+        )
 
     # Add NCCI warning if relevant
-    if any(c.code == "31622" for c in codes) and any(
-        c.code in ["31652", "31653"] for c in codes
-    ):
-        warnings.append(NCCIWarning(
-            warning_id="ncci_31622_ebus",
-            codes_involved=["31622", "31652/31653"],
-            message="31622 typically bundled with EBUS codes per NCCI",
-            severity="info",
-            resolution="May be separately billable with modifier -59 for distinct service",
-        ))
+    if any(c.code == "31622" for c in codes) and any(c.code in ["31652", "31653"] for c in codes):
+        warnings.append(
+            NCCIWarning(
+                warning_id="ncci_31622_ebus",
+                codes_involved=["31622", "31652/31653"],
+                message="31622 typically bundled with EBUS codes per NCCI",
+                severity="info",
+                resolution="May be separately billable with modifier -59 for distinct service",
+            )
+        )
 
     return codes, modifiers, warnings, mer_applied
 
@@ -300,8 +318,10 @@ def log_trace(trace: CodingTrace, trace_path: Path) -> bool:
 # RESPONSE MODELS (API-specific)
 # =============================================================================
 
+
 class HealthResponse(BaseModel):
     """Health check response."""
+
     status: str = "ok"
     advisor_enabled: bool
     advisor_backend: str
@@ -312,6 +332,7 @@ class HealthResponse(BaseModel):
 
 class AdvisorStatusResponse(BaseModel):
     """Advisor status response."""
+
     enabled: bool
     backend: str
     available_backends: list[str]
@@ -321,6 +342,7 @@ class AdvisorStatusResponse(BaseModel):
 
 class TraceListResponse(BaseModel):
     """Response containing list of traces."""
+
     traces: list[CodingTrace]
     total: int
     limit: int
@@ -330,6 +352,7 @@ class TraceListResponse(BaseModel):
 # =============================================================================
 # ENDPOINTS
 # =============================================================================
+
 
 @router.get(
     "/ml-advisor/health",
@@ -365,8 +388,7 @@ async def advisor_status(config: AdvisorConfig) -> AdvisorStatusResponse:
     Useful for debugging and admin dashboards.
     """
     gemini_configured = bool(
-        os.getenv("GEMINI_API_KEY") or
-        os.getenv("GEMINI_USE_OAUTH", "").lower() == "true"
+        os.getenv("GEMINI_API_KEY") or os.getenv("GEMINI_USE_OAUTH", "").lower() == "true"
     )
 
     return AdvisorStatusResponse(
@@ -491,9 +513,8 @@ async def code_with_advisor(
                 report_id=(
                     request.structured_report.report_id if request.structured_report else None
                 ),
-                report_text=request.report_text or (
-                    request.structured_report.raw_text if request.structured_report else ""
-                ),
+                report_text=request.report_text
+                or (request.structured_report.raw_text if request.structured_report else ""),
                 structured_report=(
                     request.structured_report.model_dump() if request.structured_report else {}
                 ),
@@ -554,9 +575,7 @@ async def code_with_advisor(
                     advisor_suggestion.disagreements if advisor_suggestion else []
                 ),
                 advisor_model=advisor_suggestion.model_name if advisor_suggestion else None,
-                advisor_latency_ms=(
-                    advisor_suggestion.latency_ms if advisor_suggestion else None
-                ),
+                advisor_latency_ms=(advisor_suggestion.latency_ms if advisor_suggestion else None),
                 source="api.code_with_advisor",
                 pipeline_version=config["pipeline_version"],
             )
@@ -601,12 +620,9 @@ async def advisor_suggest(
         # Prepare advisor input
         advisor_input = MLAdvisorInput(
             trace_id=trace_id,
-            report_id=(
-                request.structured_report.report_id if request.structured_report else None
-            ),
-            report_text=request.report_text or (
-                request.structured_report.raw_text if request.structured_report else ""
-            ),
+            report_id=(request.structured_report.report_id if request.structured_report else None),
+            report_text=request.report_text
+            or (request.structured_report.raw_text if request.structured_report else ""),
             structured_report=(
                 request.structured_report.model_dump() if request.structured_report else {}
             ),
@@ -693,7 +709,7 @@ async def list_traces(
 
         # Paginate
         total = len(all_traces)
-        traces = all_traces[offset:offset + limit]
+        traces = all_traces[offset : offset + limit]
 
         return TraceListResponse(
             traces=traces,

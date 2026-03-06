@@ -59,7 +59,9 @@ def _jwk_client(jwks_url: str) -> jwt.PyJWKClient:
 def _extract_user_id_from_claims(claims: dict) -> str:
     candidate = str(claims.get("sub") or claims.get("user_id") or "").strip()
     if not candidate:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="JWT missing subject claim")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="JWT missing subject claim"
+        )
     if len(candidate) > 255:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid user id")
     return candidate
@@ -138,7 +140,6 @@ def get_current_user(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Missing Bearer token",
     )
-    
 
 
 def build_auth_headers_for_user_id(user_id: str) -> dict[str, str]:

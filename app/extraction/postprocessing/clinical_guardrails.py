@@ -61,18 +61,18 @@ _STENT_NEGATION_PATTERNS = [
 ]
 
 _STENT_PLACEMENT_CONTEXT_RE = re.compile(
-    r"\b(?:stent\b[^.\n]{0,30}\b(place|placed|deploy|deployed|insert|inserted|advance|advanced|seat|seated|expand|expanded|expanding)\b"
-    r"|(place|placed|deploy|deployed|insert|inserted|advance|advanced|seat|seated|expand|expanded|expanding)\b[^.\n]{0,30}\bstent\b)\b",
+    r"\b(?:(?:stent|bonostent)\b[^.\n]{0,30}\b(place|placed|deploy|deployed|insert|inserted|advance|advanced|seat|seated|expand|expanded|expanding)\b"
+    r"|(place|placed|deploy|deployed|insert|inserted|advance|advanced|seat|seated|expand|expanded|expanding)\b[^.\n]{0,30}\b(?:stent|bonostent)\b)\b",
     re.IGNORECASE,
 )
 _STENT_PLACEMENT_ACTION_CONTEXT_RE = re.compile(
-    r"\b(?:stent\b[^.\n]{0,30}\b(place|placed|deploy|deployed|insert|inserted|advance|advanced|expand|expanded|expanding)\b"
-    r"|(place|placed|deploy|deployed|insert|inserted|advance|advanced|expand|expanded|expanding)\b[^.\n]{0,30}\bstent\b)\b",
+    r"\b(?:(?:stent|bonostent)\b[^.\n]{0,30}\b(place|placed|deploy|deployed|insert|inserted|advance|advanced|expand|expanded|expanding)\b"
+    r"|(place|placed|deploy|deployed|insert|inserted|advance|advanced|expand|expanded|expanding)\b[^.\n]{0,30}\b(?:stent|bonostent)\b)\b",
     re.IGNORECASE,
 )
 _STENT_STRONG_PLACEMENT_RE = re.compile(
-    r"\b(?:stent\b[^.\n]{0,30}\b(deploy|deployed|insert|inserted|advance|advanced|seat|seated|expand|expanded|expanding)\b"
-    r"|(deploy|deployed|insert|inserted|advance|advanced|seat|seated|expand|expanded|expanding)\b[^.\n]{0,30}\bstent\b)\b",
+    r"\b(?:(?:stent|bonostent)\b[^.\n]{0,30}\b(deploy|deployed|insert|inserted|advance|advanced|seat|seated|expand|expanded|expanding)\b"
+    r"|(deploy|deployed|insert|inserted|advance|advanced|seat|seated|expand|expanded|expanding)\b[^.\n]{0,30}\b(?:stent|bonostent)\b)\b",
     re.IGNORECASE,
 )
 _STENT_REMOVAL_CONTEXT_RE = re.compile(
@@ -113,6 +113,7 @@ _IPC_TERMS = (
     "tunneling device",
     "indwelling pleural catheter",
     "ipc",
+    "tpc",
 )
 _CHEST_TUBE_TERMS = ("pigtail", "wayne", "pleur-evac", "pleur evac", "tube thoracostomy", "chest tube")
 _INSERT_TERMS = ("insert", "inserted", "placed", "place", "deploy", "deployed", "introduced", "positioned")
@@ -237,6 +238,54 @@ class ClinicalGuardrails:
             if self._set_procedure_performed(record_data, "rigid_bronchoscopy", False):
                 warnings.append("Rigid bronchoscopy header/body conflict; treating as not performed.")
                 changed = True
+
+        sedation = record_data.get("sedation")
+        if not isinstance(sedation, dict):
+            sedation = {}
+        proceduralist_moderate_context = bool(
+            re.search(r"(?i)\bmoderate\s+sedation\b", note_text or "")
+            and (
+                re.search(r"(?i)\bno\s+anesthesiologist\s+present\b|\bwithout\s+anesthesiologist\b", note_text or "")
+                or re.search(
+                    r"(?i)\b(?:attending|proceduralist|operator|physician)\b[^.\n]{0,80}\bperformed\s+(?:own\s+)?sedation\b",
+                    note_text or "",
+                )
+            )
+        )
+        sedation_changed = False
+        if proceduralist_moderate_context:
+            if sedation.get("type") != "Moderate":
+                sedation["type"] = "Moderate"
+                changed = True
+                sedation_changed = True
+            if sedation.get("anesthesia_provider") != "Proceduralist":
+                sedation["anesthesia_provider"] = "Proceduralist"
+                changed = True
+                sedation_changed = True
+            if sedation_changed:
+                record_data["sedation"] = sedation
+                warnings.append(
+                    "Sedation corrected to Moderate/Proceduralist from explicit bedside proceduralist-sedation narrative."
+                )
+        elif sedation.get("anesthesia_provider") == "Anesthesiologist" and re.search(
+            r"(?i)\bno\s+anesthesiologist\s+present\b|\bwithout\s+anesthesiologist\b", note_text or ""
+        ):
+            sedation.pop("anesthesia_provider", None)
+            record_data["sedation"] = sedation
+            warnings.append("Sedation anesthesia_provider cleared: anesthesiologist explicitly negated in note.")
+            changed = True
+
+        if record_data.get("established_tracheostomy_route") is True and re.search(
+            r"(?i)\b(?:immature|early|fresh)\s+tract\b"
+            r"|\bnot\s+yet\s+epithelialized\b"
+            r"|\baccidental\s+decannulat\w*\b"
+            r"|\b(?:day|pod)\s*(?:0?[1-9]|1[0-4])\b[^.\n]{0,80}\btrach(?:eostomy)?\b"
+            r"|\bpartially\s+closed\b[^.\n]{0,60}\btract\b",
+            note_text or "",
+        ):
+            record_data["established_tracheostomy_route"] = False
+            warnings.append("Established tracheostomy route cleared: note supports immature-tract trach reinsertion/change.")
+            changed = True
 
         # Radial vs linear EBUS disambiguation.
         radial_marker_match = _RADIAL_MARKER_PATTERN.search(text_lower)
@@ -578,6 +627,13 @@ class ClinicalGuardrails:
             explicit_endobronchial_biopsy = bool(
                 re.search(r"\bendobronchial\s+biops(?:y|ies)\b|\bebbx\b", text_lower, re.IGNORECASE)
             )
+            explicit_airway_biopsy_context = bool(
+                re.search(
+                    r"(?i)\b(?:trachea|carina|main(?:\s*|-)?stem|bronchus\s+intermedius|airway|endobronch(?:ial)?)\b[^.\n]{0,120}\bbiops(?:y|ies|ied)\b"
+                    r"|\bbiops(?:y|ies|ied)\b[^.\n]{0,120}\b(?:trachea|carina|main(?:\s*|-)?stem|bronchus\s+intermedius|airway|endobronch(?:ial)?)\b",
+                    note_text or "",
+                )
+            )
             peripheral_case = bool(
                 re.search(
                     r"\b(?:"
@@ -597,6 +653,279 @@ class ClinicalGuardrails:
                         "Endobronchial biopsy excluded due to peripheral case + 'no endobronchial lesions' context."
                     )
                     changed = True
+            elif peripheral_case and not explicit_endobronchial_biopsy and not explicit_airway_biopsy_context:
+                if self._set_procedure_performed(record_data, "endobronchial_biopsy", False):
+                    warnings.append(
+                        "Endobronchial biopsy excluded due to peripheral biopsy workflow without airway-biopsy context."
+                    )
+                    changed = True
+
+        diagnostic_bronchoscopy = (
+            procedures.get("diagnostic_bronchoscopy") if isinstance(procedures, dict) else None
+        )
+        if isinstance(diagnostic_bronchoscopy, dict):
+            no_endobronchial_disease = bool(
+                re.search(
+                    r"\bno\s+endobronchial\s+(?:lesions?|tumou?rs?|mass(?:es)?)\b",
+                    note_text or "",
+                    re.IGNORECASE,
+                )
+            )
+            explicit_positive_endobronchial_disease = bool(
+                re.search(
+                    r"(?i)\b(?:there\s+(?:was|were)|found|noted|seen|visualized)\b[^.\n]{0,120}\bendobronchial\b[^.\n]{0,120}\b(?:lesion|tumou?r|mass)\b"
+                    r"|\bendobronchial\b[^.\n]{0,120}\b(?:lesion|tumou?r|mass)\b[^.\n]{0,120}\b(?:was|were)\b",
+                    note_text or "",
+                )
+            )
+            if no_endobronchial_disease and not explicit_positive_endobronchial_disease:
+                abnormalities = diagnostic_bronchoscopy.get("airway_abnormalities")
+                if isinstance(abnormalities, list) and "Endobronchial lesion" in abnormalities:
+                    diagnostic_bronchoscopy["airway_abnormalities"] = [
+                        item for item in abnormalities if item != "Endobronchial lesion"
+                    ]
+                    warnings.append(
+                        "Diagnostic bronchoscopy findings corrected: cleared false endobronchial lesion from negated narrative."
+                    )
+                    changed = True
+
+                findings = diagnostic_bronchoscopy.get("inspection_findings")
+                if isinstance(findings, str) and findings.strip():
+                    parts: list[str] = []
+                    for raw_part in re.split(r"(?i)(?:\.\s+|;\s+|\n+)", findings):
+                        part = (raw_part or "").strip(" .;:-")
+                        if not part:
+                            continue
+                        part_lower = part.lower()
+                        if (
+                            "endobronch" in part_lower
+                            or part_lower in {"lesion", "lesions", "mass", "tumor", "tumour"}
+                            or re.fullmatch(r"(?i)(?:endobronchial\s+)?(?:lesion|mass|tumou?r)s?", part)
+                        ):
+                            continue
+                        parts.append(part)
+                    cleaned_findings = ". ".join(parts).strip()
+                    if cleaned_findings != findings.strip():
+                        if cleaned_findings:
+                            diagnostic_bronchoscopy["inspection_findings"] = cleaned_findings
+                        else:
+                            diagnostic_bronchoscopy.pop("inspection_findings", None)
+                        warnings.append(
+                            "Diagnostic bronchoscopy inspection_findings sanitized for negated endobronchial disease."
+                        )
+                        changed = True
+                procedures["diagnostic_bronchoscopy"] = diagnostic_bronchoscopy
+                record_data["procedures_performed"] = procedures
+
+        bal = procedures.get("bal") if isinstance(procedures, dict) else None
+        if isinstance(bal, dict) and bal.get("performed") is True:
+            explicit_bal = bool(
+                re.search(
+                    r"(?i)\b(?:broncho[-\s]?alveolar\s+lavage|bronchial\s+alveolar\s+lavage|BAL)\b",
+                    note_text or "",
+                )
+            )
+            airway_toilet_lavage = bool(
+                re.search(r"(?i)\b(?:lavage|saline\s+lavage)\b", note_text or "")
+                and re.search(
+                    r"(?i)\b(?:mucus|secretions?|plugging|plug|toilet|toileting|suction|cleared?)\b",
+                    note_text or "",
+                )
+            )
+            non_bal_specimen_context = bool(
+                re.search(
+                    r"(?i)\bspecimens?\b[^.\n]{0,160}\b(?:granulation\s+tissue|tissue\s+only|biopsy|formalin)\b",
+                    note_text or "",
+                )
+                and not re.search(
+                    r"(?i)\bspecimens?\b[^.\n]{0,160}\b(?:broncho[-\s]?alveolar\s+lavage|BAL)\b",
+                    note_text or "",
+                )
+            )
+            washings_only_context = bool(
+                re.search(r"(?i)\b(?:bronchial\s+wash(?:ings?)?|washings?)\b", note_text or "")
+                and re.search(r"(?i)\b(?:therapeutic\s+aspiration|secretions?|mucus\s+plug|saline\s+lavage)\b", note_text or "")
+            )
+            if not explicit_bal and (washings_only_context or (airway_toilet_lavage and non_bal_specimen_context)):
+                if self._set_procedure_performed(record_data, "bal", False):
+                    warnings.append(
+                        "BAL cleared: note supports washings/toileting with saline lavage but not bronchoalveolar lavage."
+                    )
+                    changed = True
+
+        explicit_washings = re.search(
+            r"(?i)\b(?:bronchial\s+wash(?:ings?)?|washings?)\b",
+            note_text or "",
+        )
+        if explicit_washings:
+            procedures = record_data.get("procedures_performed")
+            if not isinstance(procedures, dict):
+                procedures = {}
+            bronchial_wash = procedures.get("bronchial_wash")
+            if not isinstance(bronchial_wash, dict):
+                bronchial_wash = {}
+            if bronchial_wash.get("performed") is not True:
+                bronchial_wash["performed"] = True
+                changed = True
+            if not bronchial_wash.get("location"):
+                try:
+                    from app.registry.deterministic_extractors import _extract_lung_locations_from_text
+                except Exception:  # pragma: no cover
+                    _extract_lung_locations_from_text = None  # type: ignore[assignment]
+                if _extract_lung_locations_from_text is not None:
+                    line_start = (note_text or "").rfind("\n", 0, explicit_washings.start()) + 1
+                    line_end = (note_text or "").find("\n", explicit_washings.end())
+                    if line_end == -1:
+                        line_end = len(note_text or "")
+                    line_text = (note_text or "")[line_start:line_end]
+                    locations = _extract_lung_locations_from_text(line_text)
+                    if not locations:
+                        window = (note_text or "")[
+                            max(0, explicit_washings.start() - 120) : min(len(note_text or ""), explicit_washings.end() + 120)
+                        ]
+                        locations = _extract_lung_locations_from_text(window)
+                    if locations:
+                        bronchial_wash["location"] = locations[0]
+                        changed = True
+            procedures["bronchial_wash"] = bronchial_wash
+            record_data["procedures_performed"] = procedures
+
+        foreign_body = procedures.get("foreign_body_removal") if isinstance(procedures, dict) else None
+        airway_stent = procedures.get("airway_stent") if isinstance(procedures, dict) else None
+        if isinstance(foreign_body, dict) and foreign_body.get("performed") is True:
+            stent_removal_context = bool(
+                re.search(
+                    r"(?i)\bstent\b[^.\n]{0,120}\b(?:remov|retriev|extract|grasp|withdraw|en\s+bloc)\w*\b"
+                    r"|\b(?:remov|retriev|extract|grasp|withdraw)\w*\b[^.\n]{0,120}\bstent\b",
+                    note_text or "",
+                )
+            ) or (
+                isinstance(airway_stent, dict)
+                and airway_stent.get("performed") is True
+                and str(airway_stent.get("action") or "").lower().startswith("remov")
+            )
+            if stent_removal_context:
+                if self._set_procedure_performed(record_data, "foreign_body_removal", False):
+                    warnings.append(
+                        "Foreign-body removal cleared: airway stent removal is tracked under airway_stent, not foreign_body_removal."
+                    )
+                    changed = True
+
+        airway_stent = procedures.get("airway_stent") if isinstance(procedures, dict) else None
+        if isinstance(airway_stent, dict) and airway_stent.get("performed") is True:
+            action_type = str(airway_stent.get("action_type") or "").strip().lower()
+            stent_type = str(airway_stent.get("stent_type") or "").strip()
+            stent_brand = str(airway_stent.get("stent_brand") or "").strip()
+            if stent_type == "Silicone - Dumon" and stent_brand.lower() in {"", "ent", "stent", "airway"}:
+                airway_stent["stent_brand"] = "Dumon"
+                warnings.append("Airway stent brand normalized to Dumon from explicit Dumon stent narrative.")
+                changed = True
+
+            stent_location = str(airway_stent.get("location") or "").strip()
+            if (
+                stent_location == "Carina (Y)"
+                and "y-stent" not in text_lower
+                and re.search(
+                    r"(?i)\btracheal\s+stent\b|\bstent\b[^.\n]{0,80}\b(?:mm|cm)\b[^.\n]{0,40}\bfrom\s+carina\b",
+                    note_text or "",
+                )
+            ):
+                airway_stent["location"] = "Trachea"
+                warnings.append("Airway stent location normalized to Trachea from tracheal-stent/carina-distance narrative.")
+                changed = True
+
+            preexisting_stent_context = bool(
+                re.search(
+                    r"(?i)\b(?:prior|previous|existing)\b[^.\n]{0,120}\bstent\b|\bstent\b[^.\n]{0,120}\bin\s+place\b",
+                    note_text or "",
+                )
+            )
+            strong_placement = bool(
+                re.search(
+                    r"(?i)\b(?:stent|aero(?:stent)?|dumon|silicone\s+stent|metal(?:lic)?\s+stent)\b[^.\n]{0,80}\b(?:deployed?|insert(?:ed|ion)?|advance(?:d|ment)?|implant(?:ed|ation)?|placed|placement)\b"
+                    r"|\b(?:deployed?|insert(?:ed|ion)?|advance(?:d|ment)?|implant(?:ed|ation)?|placed|placement)\b[^.\n]{0,80}\b(?:stent|aero(?:stent)?|dumon|silicone\s+stent|metal(?:lic)?\s+stent)\b",
+                    note_text or "",
+                )
+            )
+            management_only_context = bool(
+                re.search(
+                    r"(?i)\b(?:toilet(?:ing)?|suction(?:ed|ing)?|debrid(?:ed|ement)?|granulation|surveillance|clean(?:ed|ing)?)\b",
+                    note_text or "",
+                )
+            )
+            if action_type == "placement" and preexisting_stent_context and management_only_context and not strong_placement:
+                if self._set_stent_assessment_only(record_data):
+                    warnings.append(
+                        "Existing-stent surveillance/toileting context detected; downgraded false airway stent placement to assessment_only."
+                    )
+                    changed = True
+
+        complications = record_data.get("complications")
+        if isinstance(complications, dict):
+            complications_none = bool(
+                re.search(r"(?i)\bcomplications?\s*:\s*none\b|\bno\s+immediate\s+complications\b", note_text or "")
+            )
+            low_grade_bleeding_only = bool(
+                re.search(
+                    r"(?i)\b(?:minor|minimal|mild|trace|scant|contact|blood-tinged)\s+(?:bleeding|oozing)\b|\bminor\s+oozing\b|\bmild\s+oozing\b|\boo?zing\b",
+                    note_text or "",
+                )
+            )
+            high_grade_bleeding = bool(
+                re.search(
+                    r"(?i)\b(?:moderate|significant|severe|massive|brisk|active)\s+bleeding\b|\bhemorrhag(?:e|ic)\b",
+                    note_text or "",
+                )
+            )
+            if complications_none and low_grade_bleeding_only and not high_grade_bleeding:
+                bleeding = complications.get("bleeding")
+                local_changed = False
+                if isinstance(bleeding, dict):
+                    if bleeding.get("occurred") is not False:
+                        bleeding["occurred"] = False
+                        local_changed = True
+                    if bleeding.get("bleeding_grade_nashville") not in (None, 0):
+                        bleeding["bleeding_grade_nashville"] = 0
+                        local_changed = True
+                    complications["bleeding"] = bleeding
+
+                comp_list = complications.get("complication_list")
+                if isinstance(comp_list, list):
+                    filtered = [item for item in comp_list if "bleeding" not in str(item).lower()]
+                    if filtered != comp_list:
+                        complications["complication_list"] = filtered
+                        local_changed = True
+
+                events = complications.get("events")
+                if isinstance(events, list):
+                    filtered_events = [
+                        event
+                        for event in events
+                        if not (isinstance(event, dict) and str(event.get("type") or "").lower() == "bleeding")
+                    ]
+                    if filtered_events != events:
+                        complications["events"] = filtered_events
+                        local_changed = True
+
+                remaining_complications = bool(complications.get("complication_list"))
+                remaining_events = bool(complications.get("events"))
+                other_flags = False
+                for key in ("pneumothorax", "respiratory"):
+                    value = complications.get(key)
+                    if isinstance(value, dict) and value.get("occurred") is True:
+                        other_flags = True
+                        break
+                if not (remaining_complications or remaining_events or other_flags):
+                    if complications.get("any_complication") is not False:
+                        complications["any_complication"] = False
+                        local_changed = True
+
+                if local_changed:
+                    record_data["complications"] = complications
+                    warnings.append(
+                        "Low-grade bleeding complication cleared: note documents minor/minimal oozing with Complications: None."
+                    )
+                    changed = True
 
         # IPC vs chest tube disambiguation.
         ipc_checkbox = self._checkbox_state(
@@ -611,7 +940,13 @@ class ClinicalGuardrails:
             ),
         )
         ipc_present = self._contains_any(text_lower, _IPC_TERMS)
-        if ipc_checkbox is False:
+        ipc_header_removal = bool(
+            re.search(r"(?i)\b32552\b", note_text or "")
+            or re.search(r"(?i)\bRemoval\s+of\s+indwelling\s+tunneled\s+pleural\s+catheter\b", note_text or "")
+        )
+        if ipc_header_removal:
+            ipc_present = True
+        if ipc_checkbox is False and not ipc_header_removal:
             ipc_present = False
         tube_present = self._contains_any(text_lower, _CHEST_TUBE_TERMS)
         pleural_flagged = self._pleural_procedure_flagged(record_data)
@@ -641,8 +976,20 @@ class ClinicalGuardrails:
                     warnings.append("Chest tube discontinue/removal language; treating as not performed.")
                     removal_only = True
                 if ipc_present and ipc_remove and not ipc_insert and not tube_insert:
-                    changed |= self._set_pleural_performed(record_data, "ipc", False)
-                    warnings.append("IPC discontinue/removal language; treating as not performed.")
+                    pleural_local = record_data.get("pleural_procedures")
+                    ipc_local = pleural_local.get("ipc") if isinstance(pleural_local, dict) else None
+                    if not isinstance(ipc_local, dict):
+                        ipc_local = {}
+                    prior_performed = ipc_local.get("performed")
+                    prior_action = ipc_local.get("action")
+                    ipc_local["performed"] = True
+                    ipc_local["action"] = "Removal"
+                    if isinstance(pleural_local, dict):
+                        pleural_local["ipc"] = ipc_local
+                        record_data["pleural_procedures"] = pleural_local
+                    if prior_performed is not True or prior_action != "Removal":
+                        changed = True
+                    warnings.append("IPC removal language detected; preserving pleural_procedures.ipc as Removal.")
                     removal_only = True
                 if removal_only:
                     pass

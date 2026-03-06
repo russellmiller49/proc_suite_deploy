@@ -30,6 +30,12 @@ class ThoracentesisAdapter(ExtractionAdapter):
         ultrasound_feasible = source.get("pleural_ultrasound_feasible")
         if ultrasound_feasible is None:
             ultrasound_feasible = source.get("ultrasound_feasible")
+        volume_removed = source.get("pleural_volume_drained_ml")
+        if volume_removed in (None, "", [], {}):
+            volume_removed = 0
+        fluid_appearance = source.get("pleural_fluid_appearance")
+        if fluid_appearance in (None, "", [], {}):
+            fluid_appearance = "unspecified"
         return {
             "side": _pleural_side(source) or "unspecified",
             # Do not infer feasibility from guidance presence; only set when explicitly provided.
@@ -38,8 +44,8 @@ class ThoracentesisAdapter(ExtractionAdapter):
             or source.get("pleural_intercostal_space")
             or "unspecified",
             "entry_location": source.get("entry_location", "mid-axillary"),
-            "volume_removed_ml": source.get("pleural_volume_drained_ml"),
-            "fluid_appearance": source.get("pleural_fluid_appearance"),
+            "volume_removed_ml": volume_removed,
+            "fluid_appearance": fluid_appearance,
             "drainage_device": source.get("drainage_device"),
             "suction_cmh2o": source.get("suction"),
             "specimen_tests": source.get("specimen_tests") or source.get("specimens"),
@@ -68,6 +74,9 @@ class ThoracentesisManometryAdapter(ExtractionAdapter):
 
     @classmethod
     def build_payload(cls, source: dict[str, Any]) -> dict[str, Any]:
+        total_removed = source.get("pleural_volume_drained_ml")
+        if total_removed in (None, "", [], {}):
+            total_removed = 0
         return {
             "side": _pleural_side(source) or "unspecified",
             "guidance": source.get("pleural_guidance"),
@@ -89,7 +98,7 @@ class ThoracentesisManometryAdapter(ExtractionAdapter):
             "pressure_readings": source.get("pleural_pressure_readings"),
             "stopping_criteria": source.get("pleural_stopping_criteria"),
             "post_procedure_imaging": source.get("post_procedure_imaging"),
-            "total_removed_ml": source.get("pleural_volume_drained_ml"),
+            "total_removed_ml": total_removed,
         }
 
 
@@ -124,6 +133,16 @@ class ChestTubeAdapter(ExtractionAdapter):
             "lung_sliding_post": source.get("pleural_lung_sliding_post"),
             "lung_consolidation": source.get("pleural_lung_consolidation"),
             "pleura_description": source.get("pleural_description"),
+            "fibrinolytic_agents": source.get("pleural_fibrinolytic_agents"),
+            "tpa_dose_mg": source.get("pleural_tpa_dose_mg"),
+            "dnase_dose_mg": source.get("pleural_dnase_dose_mg"),
+            "fibrinolytic_schedule": source.get("pleural_fibrinolytic_schedule"),
+            "fibrinolytic_number_of_doses": source.get("pleural_fibrinolytic_number_of_doses"),
+            "fibrinolytic_indication": source.get("pleural_fibrinolytic_indication"),
+            "pleurodesis_performed": source.get("pleural_pleurodesis_performed"),
+            "pleurodesis_agent": source.get("pleural_pleurodesis_agent"),
+            "pleurodesis_method": source.get("pleural_pleurodesis_method"),
+            "pleurodesis_dose": source.get("pleural_pleurodesis_dose"),
         }
 
 
@@ -154,6 +173,11 @@ class TunneledPleuralCatheterInsertAdapter(ExtractionAdapter):
             "specimen_tests": source.get("specimen_tests") or source.get("specimens"),
             "cxr_ordered": source.get("cxr_ordered"),
             "pleural_guidance": source.get("pleural_guidance"),
+            "pleurodesis_performed": source.get("pleural_pleurodesis_performed"),
+            "pleurodesis_agent": source.get("pleural_pleurodesis_agent"),
+            "pleurodesis_method": source.get("pleural_pleurodesis_method"),
+            "pleurodesis_dose": source.get("pleural_pleurodesis_dose"),
+            "pleurodesis_indication": source.get("pleural_pleurodesis_indication"),
         }
 
 
@@ -181,6 +205,12 @@ class PigtailCatheterAdapter(ExtractionAdapter):
             "fluid_appearance": source.get("pleural_fluid_appearance"),
             "specimen_tests": source.get("specimen_tests") or source.get("specimens"),
             "cxr_ordered": source.get("cxr_ordered"),
+            "fibrinolytic_agents": source.get("pleural_fibrinolytic_agents"),
+            "tpa_dose_mg": source.get("pleural_tpa_dose_mg"),
+            "dnase_dose_mg": source.get("pleural_dnase_dose_mg"),
+            "fibrinolytic_schedule": source.get("pleural_fibrinolytic_schedule"),
+            "fibrinolytic_number_of_doses": source.get("pleural_fibrinolytic_number_of_doses"),
+            "fibrinolytic_indication": source.get("pleural_fibrinolytic_indication"),
         }
 
 

@@ -1,0 +1,10 @@
+{% set _med = (proc.medication or "") | trim %}
+{% set _dose = (proc.dose or "") | trim %}
+{% set _sites = proc.sites or [] %}
+{% set _n_sites = proc.number_of_sites %}
+{% set _med_lower = _med | lower %}
+
+Therapeutic injection was performed{% if _med %} with {{ _med }}{% endif %}{% if _dose %} (total dose {{ _dose }}){% endif %}.
+{% if _n_sites is not none and ("site" not in _med_lower) %}Injected at {{ _n_sites }} site{% if _n_sites != 1 %}s{% endif %}.{% endif %}
+{% if _sites %}Sites: {{ _sites | join(', ') }}.{% endif %}
+{% if proc.notes %}Notes: {{ proc.notes }}.{% endif %}

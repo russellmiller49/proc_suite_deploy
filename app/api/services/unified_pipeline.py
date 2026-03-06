@@ -56,9 +56,7 @@ def apply_camera_ocr_fuzzy_normalization(note_text: str) -> tuple[str, list[str]
         for item in result.replacements[:3]
     )
     warnings = [
-        "CAMERA_OCR_FUZZY_NORMALIZE: "
-        f"replacements={result.replacement_count}; "
-        f"examples={top}"
+        f"CAMERA_OCR_FUZZY_NORMALIZE: replacements={result.replacement_count}; examples={top}"
     ]
     meta = {
         "replacement_count": result.replacement_count,
@@ -117,7 +115,9 @@ async def run_unified_pipeline_logic(
         and note_text.strip()
     ):
         try:
-            normalized_text, fuzzy_warnings, fuzzy_meta = apply_camera_ocr_fuzzy_normalization(note_text)
+            normalized_text, fuzzy_warnings, fuzzy_meta = apply_camera_ocr_fuzzy_normalization(
+                note_text
+            )
             note_text = normalized_text
             camera_ocr_fuzzy_warnings.extend(fuzzy_warnings or [])
             camera_ocr_fuzzy_meta = fuzzy_meta or None
@@ -194,7 +194,7 @@ async def run_unified_pipeline_logic(
     # Surface header-explicit codes that deterministic derivation missed as low-confidence
     # "review candidates" (avoid silently dropping documented header codes).
     header_missing: set[str] = set()
-    for w in (getattr(result, "audit_warnings", None) or []):
+    for w in getattr(result, "audit_warnings", None) or []:
         text = str(w or "")
         if not text.startswith("HEADER_EXPLICIT:"):
             continue
@@ -346,12 +346,20 @@ async def run_unified_pipeline_logic(
                         if isinstance(segment, str) and segment.strip():
                             match = store.match(segment, category="anatomy")
                             if match:
-                                out[f"/registry/granular_data/navigation_targets/{idx}/target_segment"] = match
+                                out[
+                                    f"/registry/granular_data/navigation_targets/{idx}/target_segment"
+                                ] = match
                         location_text = target.get("target_location_text")
-                        if isinstance(location_text, str) and location_text.strip() and len(location_text) <= 80:
+                        if (
+                            isinstance(location_text, str)
+                            and location_text.strip()
+                            and len(location_text) <= 80
+                        ):
                             match = store.match(location_text, category="anatomy")
                             if match:
-                                out[f"/registry/granular_data/navigation_targets/{idx}/target_location_text"] = match
+                                out[
+                                    f"/registry/granular_data/navigation_targets/{idx}/target_location_text"
+                                ] = match
 
             umls_normalization = out or None
     except Exception:

@@ -52,6 +52,16 @@ def _station_size_mm(source: dict[str, Any]) -> float | None:
     return None
 
 
+def _coerce_nonneg_int(value: Any) -> int | None:
+    if value in (None, "", [], {}):
+        return None
+    try:
+        num = int(float(value))
+    except Exception:
+        return None
+    return num if num >= 0 else None
+
+
 def _has_station_scoped_rose_text(source: dict[str, Any], stations: list[str]) -> bool:
     text = str(source.get("source_text") or source.get("note_text") or "").strip()
     if not text:
@@ -403,18 +413,237 @@ class BLVRValvePlacementAdapter(ExtractionAdapter):
 
     @classmethod
     def matches(cls, source: dict[str, Any]) -> bool:
-        return bool(source.get("blvr_valve_type") or source.get("blvr_number_of_valves"))
+        proc_type_hint = str(source.get("blvr_procedure_type") or "").strip().lower()
+        removed = _coerce_nonneg_int(source.get("blvr_valves_removed")) or 0
+        exchanged = _coerce_nonneg_int(source.get("blvr_valves_exchanged")) or 0
+
+        if "remov" in proc_type_hint or "exchange" in proc_type_hint:
+            return False
+        if removed > 0 or exchanged > 0:
+            return False
+
+        text = str(source.get("source_text") or source.get("note_text") or "")
+        has_text_placement_evidence = bool(
+            re.search(
+                r"(?i)\b(?:valves?\s+(?:placed|deployed|inserted)|placed\s+\d+\s+valves?|deployed\s+\d+\s+valves?)\b",
+                text,
+            )
+            # Segment+size shorthand (e.g., "RB1 5.5", "LB1+2 size 5.5")
+            or re.search(r"(?i)\b[RL]B\d{1,2}(?:\s*\+\s*\d{1,2})?\b[^\n]{0,20}\b(?:size\s*)?\d(?:\.\d+)?\b", text)
+        )
+        future_or_aborted_context = bool(
+            re.search(
+                r"(?i)\b(?:plan(?:s|ned)?\s+to\s+proceed|will\s+proceed|at\s+next\s+procedure|next\s+procedure|schedule(?:d)?\b|planned\s+for\b|aborted|cancel(?:led|ed)?|not\s+performed)\b",
+                text,
+            )
+        )
+        if future_or_aborted_context and not has_text_placement_evidence:
+            # Guardrail: avoid documenting planned/aborted BLVR as performed when the text lacks
+            # explicit deployment/placement evidence.
+            return False
+        if "assess" in proc_type_hint or "evaluat" in proc_type_hint:
+            # Chartis/candidacy assessment alone should not instantiate a valve placement procedure.
+            if not has_text_placement_evidence:
+                return False
+
+        return bool(
+            source.get("blvr_valve_details")
+            or source.get("blvr_segments_treated")
+            or source.get("blvr_valve_sizes")
+            or (source.get("blvr_number_of_valves") and has_text_placement_evidence)
+            or (source.get("blvr_valve_type") and has_text_placement_evidence)
+        )
 
     @classmethod
     def build_payload(cls, source: dict[str, Any]) -> dict[str, Any]:
-        target_lobe = source.get("blvr_target_lobe") or "target lobe"
         valves: list[dict[str, Any]] = []
-        valve_count = source.get("blvr_number_of_valves") or 1
-        for _ in range(max(1, int(valve_count))):
-            valves.append({"valve_type": source.get("blvr_valve_type") or "Valve", "lobe": target_lobe})
+
+        details = source.get("blvr_valve_details")
+        if isinstance(details, list):
+            for item in details:
+                if not isinstance(item, dict):
+                    continue
+                valves.append(
+                    {
+                        "valve_type": item.get("valve_type") or source.get("blvr_valve_type") or "Valve",
+                        "valve_size": item.get("valve_size"),
+                        "lobe": item.get("lobe") or source.get("blvr_target_lobe") or "target lobe",
+                        "segment": item.get("segment"),
+                    }
+                )
+
+        if not valves:
+            valve_type = source.get("blvr_valve_type") or "Valve"
+            target_lobe = source.get("blvr_target_lobe") or "target lobe"
+            segments = [str(seg).strip().upper() for seg in (source.get("blvr_segments_treated") or []) if str(seg).strip()]
+            sizes = [str(sz).strip() for sz in (source.get("blvr_valve_sizes") or []) if str(sz).strip()]
+
+            valve_count = _coerce_nonneg_int(source.get("blvr_number_of_valves"))
+            if valve_count is None:
+                valve_count = len(segments) if segments else (len(sizes) if sizes else 1)
+
+            for idx in range(max(1, valve_count)):
+                segment = segments[idx] if idx < len(segments) else None
+                valve_size = (
+                    sizes[idx]
+                    if idx < len(sizes)
+                    else (sizes[0] if len(sizes) == 1 else None)
+                )
+                valves.append(
+                    {
+                        "valve_type": valve_type,
+                        "valve_size": valve_size,
+                        "lobe": target_lobe,
+                        "segment": segment,
+                    }
+                )
+
+        lobes_treated = [str(v.get("lobe") or "").strip() for v in valves if str(v.get("lobe") or "").strip()]
+        if not lobes_treated:
+            lobes_treated = [str(source.get("blvr_target_lobe") or "target lobe")]
+
+        chartis_used = source.get("blvr_chartis_used")
+        if chartis_used is None:
+            text = str(source.get("source_text") or source.get("note_text") or "")
+            if "chartis" in text.lower():
+                chartis_used = True
+
+        collateral_absent = source.get("blvr_collateral_ventilation_absent")
+
         return {
-            "lobes_treated": [target_lobe],
+            "balloon_occlusion_performed": source.get("blvr_balloon_occlusion_performed"),
+            "chartis_used": chartis_used,
+            "collateral_ventilation_absent": collateral_absent,
+            "lobes_treated": list(dict.fromkeys(lobes_treated)),
             "valves": valves,
+        }
+
+
+class BLVRValveRemovalExchangeAdapter(ExtractionAdapter):
+    proc_type = "blvr_valve_removal_exchange"
+    schema_model = airway_schemas.BLVRValveRemovalExchange
+    schema_id = "blvr_valve_removal_exchange_v1"
+
+    @classmethod
+    def matches(cls, source: dict[str, Any]) -> bool:
+        procedure_hint = str(source.get("blvr_procedure_type") or "").strip().lower()
+        removed = _coerce_nonneg_int(source.get("blvr_valves_removed")) or 0
+        exchanged = _coerce_nonneg_int(source.get("blvr_valves_exchanged")) or 0
+        if removed > 0 or exchanged > 0:
+            return True
+        if "remov" in procedure_hint or "exchange" in procedure_hint:
+            return True
+
+        text = str(source.get("source_text") or source.get("note_text") or "")
+        if not text:
+            return False
+        return bool(
+            re.search(
+                r"(?i)\b(?:valve\s+remov(?:al|ed)|remove(?:d)?\s+\d*\s*valves?|valves?\s+removed|valve\s+exchange(?:d)?)\b",
+                text,
+            )
+        )
+
+    @classmethod
+    def build_payload(cls, source: dict[str, Any]) -> dict[str, Any]:
+        text = str(source.get("source_text") or source.get("note_text") or "")
+        procedure_hint = str(source.get("blvr_procedure_type") or "").strip().lower()
+        replacement_context = bool(re.search(r"(?i)\b(?:replac(?:ed|ement)|new\s+valves?)\b", text))
+
+        indication = str(source.get("blvr_removal_indication") or "").strip()
+        if not indication and text:
+            match = re.search(
+                r"(?i)\b(?:valve\s+remov(?:al|ed)|remove(?:d)?\s+valves?)\s+for\s+([^\.\n]+)",
+                text,
+            )
+            if match:
+                indication = match.group(1).strip().rstrip(".")
+        if not indication:
+            if "exchange" in procedure_hint:
+                indication = "Endobronchial valve exchange"
+            elif replacement_context:
+                indication = "Endobronchial valve removal and replacement"
+            else:
+                indication = "Endobronchial valve removal"
+
+        removed = _coerce_nonneg_int(source.get("blvr_valves_removed"))
+        if removed is None and text:
+            removed = _coerce_nonneg_int(
+                next(
+                    (
+                        m.group(1)
+                        for m in [
+                            re.search(r"(?i)\ball\s*(\d+)\s*valves?\b[^.\n]{0,30}\bremoved\b", text),
+                            re.search(r"(?i)\b(\d+)\s*valves?\b[^.\n]{0,30}\bremoved\b", text),
+                            re.search(r"(?i)\bremoved\b[^.\n]{0,20}\b(\d+)\s*valves?\b", text),
+                        ]
+                        if m
+                    ),
+                    None,
+                )
+            )
+        if removed is None:
+            removed = _coerce_nonneg_int(source.get("blvr_number_of_valves"))
+        if removed is None:
+            removed = 1
+
+        exchanged = _coerce_nonneg_int(source.get("blvr_valves_exchanged"))
+        if exchanged is None and text:
+            exchanged = _coerce_nonneg_int(
+                next(
+                    (
+                        m.group(1)
+                        for m in [
+                            re.search(r"(?i)\bexchange(?:d)?\b[^.\n]{0,25}\b(\d+)\s*valves?\b", text),
+                            re.search(r"(?i)\b(\d+)\s*valves?\b[^.\n]{0,25}\bexchange(?:d)?\b", text),
+                            re.search(r"(?i)\breplaced\b[^.\n]{0,40}\bwith\b[^.\n]{0,15}\b(\d+)\s*(?:new\s+)?valves?\b", text),
+                            re.search(r"(?i)\b(\d+)\s*(?:new\s+)?valves?\b[^.\n]{0,40}\breplaced\b", text),
+                        ]
+                        if m
+                    ),
+                    None,
+                )
+            )
+        if exchanged is None and replacement_context:
+            # If replacement is described but the count isn't explicit, infer from segment/size lists when available.
+            segs = [str(seg).strip() for seg in (source.get("blvr_segments_treated") or []) if str(seg).strip()]
+            sizes = [str(size).strip() for size in (source.get("blvr_valve_sizes") or []) if str(size).strip()]
+            inferred = len(segs) if segs else (len(sizes) if sizes else None)
+            if inferred:
+                exchanged = inferred
+            elif removed:
+                exchanged = removed
+
+        locations: list[str] = []
+        for value in (source.get("blvr_removal_locations") or []):
+            token = str(value).strip()
+            if token:
+                locations.append(token)
+        if not locations:
+            for value in (source.get("blvr_segments_treated") or []):
+                token = str(value).strip()
+                if token:
+                    locations.append(token)
+        target_lobe = str(source.get("blvr_target_lobe") or "").strip()
+        if target_lobe:
+            locations.append(target_lobe)
+        locations = list(dict.fromkeys(locations))
+
+        replacement_sizes = source.get("blvr_replacement_sizes")
+        if replacement_sizes in (None, "", [], {}) and source.get("blvr_valve_sizes") not in (None, "", [], {}):
+            sizes = [str(size).strip() for size in (source.get("blvr_valve_sizes") or []) if str(size).strip()]
+            if sizes:
+                replacement_sizes = ", ".join(sizes)
+
+        return {
+            "indication": indication,
+            "device_brand": source.get("blvr_valve_type"),
+            "locations": locations,
+            "valves_removed": removed,
+            "valves_exchanged": exchanged,
+            "replacement_sizes": replacement_sizes,
+            "mucosa_status": source.get("blvr_mucosa_status"),
+            "tolerance_notes": source.get("blvr_tolerance_notes"),
         }
 
 
@@ -650,6 +879,7 @@ __all__ = [
     "BALAdapter",
     "BALVariantAdapter",
     "BLVRValvePlacementAdapter",
+    "BLVRValveRemovalExchangeAdapter",
     "BPFLocalizationAdapter",
     "BPFSealantApplicationAdapter",
     "BPFValvePlacementAdapter",

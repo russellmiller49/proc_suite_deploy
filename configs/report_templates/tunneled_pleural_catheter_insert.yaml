@@ -29,5 +29,10 @@ optional_fields:
   - lung_sliding_post
   - lung_consolidation
   - pleura_description
+  - pleurodesis_performed
+  - pleurodesis_agent
+  - pleurodesis_method
+  - pleurodesis_dose
+  - pleurodesis_indication
 proc_types:
   - tunneled_pleural_catheter_insert

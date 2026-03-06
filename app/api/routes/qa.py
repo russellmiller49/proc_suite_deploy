@@ -32,14 +32,22 @@ CODER_VERSION = os.getenv("CODER_VERSION", "v0.2.0")
 def _get_git_info() -> tuple[str | None, str | None]:
     """Extract git branch and commit SHA for version tracking."""
     try:
-        branch = subprocess.check_output(
-            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
-            stderr=subprocess.DEVNULL,
-        ).decode().strip()
-        commit = subprocess.check_output(
-            ["git", "rev-parse", "--short", "HEAD"],
-            stderr=subprocess.DEVNULL,
-        ).decode().strip()
+        branch = (
+            subprocess.check_output(
+                ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+                stderr=subprocess.DEVNULL,
+            )
+            .decode()
+            .strip()
+        )
+        commit = (
+            subprocess.check_output(
+                ["git", "rev-parse", "--short", "HEAD"],
+                stderr=subprocess.DEVNULL,
+            )
+            .decode()
+            .strip()
+        )
         return branch, commit
     except Exception:
         return None, None

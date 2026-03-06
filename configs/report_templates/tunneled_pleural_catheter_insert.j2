@@ -15,3 +15,7 @@ PROCEDURE FINDINGS
 {% if proc.fluid_removed_ml is not none %}{% set _liters = (proc.fluid_removed_ml / 1000) %}Fluid Removed: {{ proc.fluid_removed_ml }} mL ({{ "%.1f"|format(_liters) }} L){% endif %}
 
 {% set _appearance_raw = (proc.fluid_appearance or "") | lower %}{% if _appearance_raw %}Appearance: {% if "clear" in _appearance_raw and "yellow" in _appearance_raw %}Clear yellow (Serous){% else %}{{ proc.fluid_appearance | trim | title }}{% endif %}{% endif %}
+
+{% if proc.pleurodesis_performed %}
+Pleurodesis: Chemical pleurodesis was performed via the tunneled pleural catheter{% if proc.pleurodesis_agent %} using {{ proc.pleurodesis_agent }}{% endif %}{% if proc.pleurodesis_dose %} (dose: {{ proc.pleurodesis_dose }}){% endif %}{% if proc.pleurodesis_method %} with method {{ proc.pleurodesis_method }}{% endif %}.{% if proc.pleurodesis_indication %} Indication: {{ proc.pleurodesis_indication }}.{% endif %}
+{% endif %}

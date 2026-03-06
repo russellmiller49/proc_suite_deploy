@@ -292,9 +292,7 @@ def get_registry_service() -> RegistryService:
     import os
 
     default_version = (
-        os.getenv("REGISTRY_DEFAULT_VERSION")
-        or os.getenv("REGISTRY_SCHEMA_VERSION")
-        or "v3"
+        os.getenv("REGISTRY_DEFAULT_VERSION") or os.getenv("REGISTRY_SCHEMA_VERSION") or "v3"
     ).strip()
     if default_version not in {"v2", "v3"}:
         raise ValueError(
@@ -382,13 +380,9 @@ def get_procedure_store() -> ProcedureStore:
                 logger.info("ProcedureStore initialized with Supabase backend")
                 return _procedure_store
             except Exception as e:
-                logger.warning(
-                    f"Failed to initialize Supabase store, falling back to memory: {e}"
-                )
+                logger.warning(f"Failed to initialize Supabase store, falling back to memory: {e}")
         else:
-            logger.warning(
-                "Supabase credentials not configured, falling back to memory backend"
-            )
+            logger.warning("Supabase credentials not configured, falling back to memory backend")
 
     # Default: in-memory backend
     _procedure_store = InMemoryProcedureStore()

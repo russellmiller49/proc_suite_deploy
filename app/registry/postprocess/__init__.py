@@ -153,6 +153,8 @@ __all__ = [
     # Registry-record-level guardrails
     "populate_ebus_node_events_fallback",
     "sanitize_ebus_events",
+    "extract_rose_sentence",
+    "parse_rose_outcomes",
     "cull_hollow_ebus_claims",
     "reconcile_ebus_sampling_from_specimen_log",
     "enrich_ebus_node_event_sampling_details",
@@ -2645,7 +2647,7 @@ def _ebus_station_pattern(station: str) -> re.Pattern[str] | None:
     if token.isdigit():
         # Station "7" is highly collision-prone; require "station 7" or a station-style line prefix.
         return re.compile(
-            rf"(?i)(?:\bstation\s*{re.escape(token)}\b|\b{re.escape(token)}\b\s*(?:[:\-]|\(|,))"
+            rf"(?i)(?:\bstation\s*{re.escape(token)}\b|\b{re.escape(token)}\b\s*(?:(?:[:\-]|\(|,)|\band\b))"
         )
     # Substations are frequently documented as 11Rs/11Ri and should match canonical
     # event station keys (11R/11L) during reconciliation.
@@ -2847,6 +2849,22 @@ def sanitize_ebus_events(record: RegistryRecord, full_text: str) -> list[str]:
             else:
                 warnings.append(f"AUTO_CORRECTED_EBUS_CRITERIA_ONLY: {station_token}")
 
+    def _add_nonstation_target(value: str) -> None:
+        cleaned = str(value or "").strip()
+        if not cleaned:
+            return
+        existing_targets = getattr(linear, "targets_sampled", None) if linear is not None else None
+        merged: list[str] = []
+        if isinstance(existing_targets, list):
+            for item in existing_targets:
+                token = str(item or "").strip()
+                if token and token not in merged:
+                    merged.append(token)
+        if cleaned not in merged:
+            merged.append(cleaned)
+        if hasattr(linear, "targets_sampled"):
+            setattr(linear, "targets_sampled", merged or None)
+
     # Guardrail: cull hallucinated stations that do not appear in the note text at all.
     if full_text:
         alias_patterns: dict[str, list[re.Pattern[str]]] = {
@@ -2871,6 +2889,12 @@ def sanitize_ebus_events(record: RegistryRecord, full_text: str) -> list[str]:
             station_token = station.strip().upper()
             pat = _ebus_station_pattern(station_token)
             if pat is None:
+                target_text = getattr(event, "target_text", None)
+                target_phrase = str(target_text).strip() if isinstance(target_text, str) and target_text.strip() else station.strip()
+                setattr(event, "station", None)
+                setattr(event, "target_text", target_phrase)
+                _add_nonstation_target(target_phrase)
+                warnings.append(f"EBUS_NONSTATION_TARGET_CAPTURED: {target_phrase.lower()}")
                 kept_events.append(event)
                 continue
             if pat.search(full_text):
@@ -2889,6 +2913,7 @@ def sanitize_ebus_events(record: RegistryRecord, full_text: str) -> list[str]:
 
     # Keep legacy aggregate station lists consistent when present.
     sampled: list[str] = []
+    nonstation_targets: list[str] = []
     for event in node_events:
         action = getattr(event, "action", None)
         if action not in sampling_actions:
@@ -2896,6 +2921,10 @@ def sanitize_ebus_events(record: RegistryRecord, full_text: str) -> list[str]:
         station = getattr(event, "station", None)
         if isinstance(station, str) and station.strip():
             sampled.append(station.strip().upper())
+        else:
+            target_text = getattr(event, "target_text", None)
+            if isinstance(target_text, str) and target_text.strip():
+                nonstation_targets.append(target_text.strip())
 
     granular = getattr(record, "granular_data", None)
     stations_detail = getattr(granular, "linear_ebus_stations_detail", None) if granular is not None else None
@@ -2909,6 +2938,19 @@ def sanitize_ebus_events(record: RegistryRecord, full_text: str) -> list[str]:
                 sampled.append(station.strip().upper())
     if hasattr(linear, "stations_sampled"):
         setattr(linear, "stations_sampled", sorted(set(sampled)) if sampled else None)
+    if hasattr(linear, "targets_sampled"):
+        existing_targets = getattr(linear, "targets_sampled", None)
+        merged_targets: list[str] = []
+        if isinstance(existing_targets, list):
+            for value in existing_targets:
+                token = str(value or "").strip()
+                if token and token not in merged_targets:
+                    merged_targets.append(token)
+        for value in nonstation_targets:
+            token = str(value or "").strip()
+            if token and token not in merged_targets:
+                merged_targets.append(token)
+        setattr(linear, "targets_sampled", merged_targets or None)
 
     return warnings
 
@@ -2976,6 +3018,27 @@ def reconcile_ebus_sampling_from_narrative(record: RegistryRecord, full_text: st
             n_val = 0
         if 1 <= n_val <= 20:
             each_station_passes = n_val
+
+    def _find_sampling_quote_for_station(station: str) -> str | None:
+        station_upper = (station or "").strip().upper()
+        if not station_upper:
+            return None
+        station_line_re = re.compile(
+            rf"(?i)^\s*{re.escape(station_upper)}\s*[:\-–]\s*.*$",
+            re.MULTILINE,
+        )
+        station_token_re = re.compile(rf"(?i)\b(?:station\s*)?{re.escape(station_upper)}\b")
+        specimen_re = re.compile(r"(?i)\b(?:tbna|fna|passes?|sampled|sampling|aspirat(?:e|ed|ion))\b")
+
+        for raw_line in (full_text or "").splitlines():
+            line = (raw_line or "").strip()
+            if not line:
+                continue
+            if station_line_re.search(line) and specimen_re.search(line):
+                return line
+            if station_token_re.search(line) and specimen_re.search(line):
+                return line
+        return None
 
     station_to_quote: dict[str, str] = {}
     for raw_line in (full_text or "").splitlines():
@@ -3116,6 +3179,54 @@ def reconcile_ebus_sampling_from_narrative(record: RegistryRecord, full_text: st
         if sampling_quote:
             station_to_quote.setdefault(station, sampling_quote)
 
+    procedures = getattr(record, "procedures_performed", None)
+    linear = getattr(procedures, "linear_ebus", None) if procedures is not None else None
+    granular = getattr(record, "granular_data", None)
+    stations_detail = getattr(granular, "linear_ebus_stations_detail", None) if granular is not None else None
+
+    sampled_stations_from_record: set[str] = set()
+    passes_from_detail: dict[str, int] = {}
+    if linear is not None:
+        for value in getattr(linear, "stations_sampled", None) or []:
+            token = str(value or "").strip().upper()
+            if not token:
+                continue
+            if normalize_station is not None:
+                token = normalize_station(token) or token
+            token = validate_station_format(str(token)) or str(token).strip().upper()
+            token = token.strip().upper()
+            if token:
+                sampled_stations_from_record.add(token)
+
+    if isinstance(stations_detail, list):
+        for detail in stations_detail:
+            sampled_flag = getattr(detail, "sampled", None)
+            if sampled_flag is False:
+                continue
+            station = getattr(detail, "station", None)
+            if not isinstance(station, str) or not station.strip():
+                continue
+            token = station.strip().upper()
+            if normalize_station is not None:
+                token = normalize_station(token) or token
+            token = validate_station_format(str(token)) or str(token).strip().upper()
+            token = token.strip().upper()
+            if not token:
+                continue
+            sampled_stations_from_record.add(token)
+            passes = getattr(detail, "number_of_passes", None)
+            try:
+                passes_int = int(passes) if passes not in (None, "", 0) else 0
+            except Exception:
+                passes_int = 0
+            if passes_int > 0 and token not in passes_from_detail:
+                passes_from_detail[token] = passes_int
+
+    for station in sorted(sampled_stations_from_record):
+        quote = _find_sampling_quote_for_station(station)
+        if quote:
+            station_to_quote.setdefault(station, quote)
+
     if not station_to_quote and each_station_passes is None:
         return warnings
 
@@ -3214,6 +3325,30 @@ def reconcile_ebus_sampling_from_narrative(record: RegistryRecord, full_text: st
         if passes_set:
             warnings.append(
                 f"EBUS_NARRATIVE_RECONCILE: set passes={each_station_passes} for stations {sorted(set(passes_set))}"
+            )
+
+    detail_passes_set: list[str] = []
+    if passes_from_detail:
+        sampling_actions = {"needle_aspiration", "core_biopsy", "forceps_biopsy"}
+        for event in node_events:
+            action = getattr(event, "action", None)
+            if action not in sampling_actions:
+                continue
+            station = getattr(event, "station", None)
+            if not isinstance(station, str) or not station.strip():
+                continue
+            key = station.strip().upper()
+            passes = passes_from_detail.get(key)
+            if not passes:
+                continue
+            if getattr(event, "passes", None) in (None, "", 0):
+                setattr(event, "passes", passes)
+                detail_passes_set.append(key)
+
+        if detail_passes_set:
+            setattr(linear, "node_events", node_events)
+            warnings.append(
+                f"EBUS_NARRATIVE_RECONCILE: backfilled passes from granular detail for {sorted(set(detail_passes_set))}"
             )
 
     return warnings
@@ -4342,7 +4477,7 @@ def populate_ebus_node_events_fallback(record: RegistryRecord, full_text: str) -
                 raw = (m_rose.group(1) or "").strip()
                 raw = raw.strip(" :;-\"'").strip()
                 if raw:
-                    rose_val = raw[:180]
+                    rose_val = _normalize_rose_result_text(raw[:180])
                     rose_span = (line_offset + m_rose.start(), line_offset + m_rose.end())
 
         station_tokens: list[tuple[str, int, int]] = []
@@ -4430,6 +4565,23 @@ def populate_ebus_node_events_fallback(record: RegistryRecord, full_text: str) -
             if action != "inspected_only":
                 stations_sampled.append(station)
 
+    def _extract_nonstation_target_phrase(snippet_text: str) -> str | None:
+        snippet = re.sub(r"\s+", " ", (snippet_text or "").strip())
+        if not snippet:
+            return None
+        patterns = (
+            r"(?i)\btarget(?:ing|ed)?\s+(?:a|an|the)?\s*(?P<target>[^.;,\n]{3,120}?\b(?:mass|lesion|nodule|node|structure)\b)",
+            r"(?i)\b(?:tbna|fna|needle\s+aspirat(?:ion|e|ed)?|biops(?:y|ied|ies)|sampling)\b[^.;\n]{0,100}\b(?:of|from)\s+(?:a|an|the)?\s*(?P<target>[^.;,\n]{3,120}?\b(?:mass|lesion|nodule|node|structure)\b)",
+        )
+        for pat in patterns:
+            m = re.search(pat, snippet)
+            if not m:
+                continue
+            target = re.sub(r"\s+", " ", (m.group("target") or "").strip(" ,;:-"))
+            if target:
+                return target
+        return snippet[:120] if snippet else None
+
     if not station_events:
         # Some notes clearly document EBUS-TBNA sampling but omit station tokens
         # (e.g., "Lymph node sizing and sampling were performed using EBUS-TBNA ...").
@@ -4446,13 +4598,15 @@ def populate_ebus_node_events_fallback(record: RegistryRecord, full_text: str) -
             snippet = re.sub(r"\s+", " ", (mass_match.group(0) or "").strip())
             start = int(mass_match.start())
             end = int(mass_match.end())
-            station_events["Lung Mass"] = NodeInteraction(
-                station="Lung Mass",
+            target_phrase = _extract_nonstation_target_phrase(snippet) or "lung mass"
+            station_events[target_phrase] = NodeInteraction(
+                station=None,
+                target_text=target_phrase,
                 action="needle_aspiration",
                 outcome=None,
                 evidence_quote=snippet[:280] if snippet else "EBUS-TBNA sampling documented (lung mass).",
             )
-            station_evidence["Lung Mass"] = {
+            station_evidence[target_phrase] = {
                 "token_start": start,
                 "token_end": end,
                 "quote_start": start,
@@ -4460,7 +4614,9 @@ def populate_ebus_node_events_fallback(record: RegistryRecord, full_text: str) -
             }
             setattr(linear, "node_events", list(station_events.values()))
             if hasattr(linear, "stations_sampled"):
-                setattr(linear, "stations_sampled", ["Lung Mass"])
+                setattr(linear, "stations_sampled", None)
+            if hasattr(linear, "targets_sampled"):
+                setattr(linear, "targets_sampled", [target_phrase])
             try:
                 from app.common.spans import Span
 
@@ -4468,10 +4624,10 @@ def populate_ebus_node_events_fallback(record: RegistryRecord, full_text: str) -
                 if not isinstance(evidence, dict):
                     evidence = {}
                 text = full_text[start:end].strip()
-                evidence.setdefault("procedures_performed.linear_ebus.stations_sampled.0", []).append(
+                evidence.setdefault("procedures_performed.linear_ebus.targets_sampled.0", []).append(
                     Span(text=text, start=start, end=end, confidence=0.9)
                 )
-                evidence.setdefault("procedures_performed.linear_ebus.node_events.0.station", []).append(
+                evidence.setdefault("procedures_performed.linear_ebus.node_events.0.target_text", []).append(
                     Span(text=text, start=start, end=end, confidence=0.9)
                 )
                 evidence.setdefault("procedures_performed.linear_ebus.node_events.0.evidence_quote", []).append(
@@ -4480,7 +4636,7 @@ def populate_ebus_node_events_fallback(record: RegistryRecord, full_text: str) -
                 record.evidence = evidence
             except Exception:
                 pass
-            warnings.append("EBUS_FALLBACK: sampling documented for lung mass; added node_event.")
+            warnings.append(f"EBUS_NONSTATION_TARGET_CAPTURED: {target_phrase.lower()}")
             return warnings
 
         tbna_match = re.search(r"(?is)\bebus[-\s]?tbna\b", full_text)
@@ -4494,13 +4650,15 @@ def populate_ebus_node_events_fallback(record: RegistryRecord, full_text: str) -
             snippet = re.sub(r"\s+", " ", (tbna_match.group(0) or "").strip())
             start = int(tbna_match.start())
             end = int(tbna_match.end())
-            station_events["UNSPECIFIED"] = NodeInteraction(
-                station="UNSPECIFIED",
+            target_phrase = _extract_nonstation_target_phrase(snippet) or "unspecified ebus target"
+            station_events[target_phrase] = NodeInteraction(
+                station=None,
+                target_text=target_phrase,
                 action="needle_aspiration",
                 outcome=None,
                 evidence_quote=snippet[:280] if snippet else "EBUS-TBNA sampling documented (stations not specified).",
             )
-            station_evidence["UNSPECIFIED"] = {
+            station_evidence[target_phrase] = {
                 "token_start": start,
                 "token_end": end,
                 "quote_start": start,
@@ -4508,7 +4666,9 @@ def populate_ebus_node_events_fallback(record: RegistryRecord, full_text: str) -
             }
             setattr(linear, "node_events", list(station_events.values()))
             if hasattr(linear, "stations_sampled"):
-                setattr(linear, "stations_sampled", ["UNSPECIFIED"])
+                setattr(linear, "stations_sampled", None)
+            if hasattr(linear, "targets_sampled"):
+                setattr(linear, "targets_sampled", [target_phrase])
             try:
                 from app.common.spans import Span
 
@@ -4516,10 +4676,10 @@ def populate_ebus_node_events_fallback(record: RegistryRecord, full_text: str) -
                 if not isinstance(evidence, dict):
                     evidence = {}
                 text = full_text[start:end].strip()
-                evidence.setdefault("procedures_performed.linear_ebus.stations_sampled.0", []).append(
+                evidence.setdefault("procedures_performed.linear_ebus.targets_sampled.0", []).append(
                     Span(text=text, start=start, end=end, confidence=0.9)
                 )
-                evidence.setdefault("procedures_performed.linear_ebus.node_events.0.station", []).append(
+                evidence.setdefault("procedures_performed.linear_ebus.node_events.0.target_text", []).append(
                     Span(text=text, start=start, end=end, confidence=0.9)
                 )
                 evidence.setdefault("procedures_performed.linear_ebus.node_events.0.evidence_quote", []).append(
@@ -4528,12 +4688,21 @@ def populate_ebus_node_events_fallback(record: RegistryRecord, full_text: str) -
                 record.evidence = evidence
             except Exception:
                 pass
-            warnings.append("EBUS_FALLBACK: sampling documented but stations missing; added placeholder node_event.")
+            warnings.append(f"EBUS_NONSTATION_TARGET_CAPTURED: {target_phrase.lower()}")
         return warnings
 
     setattr(linear, "node_events", list(station_events.values()))
     if hasattr(linear, "stations_sampled"):
         setattr(linear, "stations_sampled", sorted(set(stations_sampled)) if stations_sampled else None)
+    if hasattr(linear, "targets_sampled"):
+        targets_sampled: list[str] = []
+        for event in station_events.values():
+            target_text = getattr(event, "target_text", None)
+            if isinstance(target_text, str) and target_text.strip():
+                token = target_text.strip()
+                if token not in targets_sampled:
+                    targets_sampled.append(token)
+        setattr(linear, "targets_sampled", targets_sampled or None)
 
     # Best-effort evidence spans for UI highlighting.
     try:
@@ -4547,18 +4716,26 @@ def populate_ebus_node_events_fallback(record: RegistryRecord, full_text: str) -
         if isinstance(node_events, list):
             for idx, event in enumerate(node_events):
                 station = getattr(event, "station", None)
-                if not isinstance(station, str) or not station.strip():
+                target_text = getattr(event, "target_text", None)
+                key = station if isinstance(station, str) and station.strip() else target_text
+                if not isinstance(key, str) or not key.strip():
                     continue
-                meta = station_evidence.get(station)
+                meta = station_evidence.get(key)
                 if not isinstance(meta, dict):
                     continue
                 start = meta.get("token_start")
                 end = meta.get("token_end")
                 if isinstance(start, int) and isinstance(end, int) and end > start:
-                    evidence.setdefault(
-                        f"procedures_performed.linear_ebus.node_events.{idx}.station",
-                        [],
-                    ).append(Span(text=full_text[start:end], start=start, end=end, confidence=0.9))
+                    if isinstance(station, str) and station.strip():
+                        evidence.setdefault(
+                            f"procedures_performed.linear_ebus.node_events.{idx}.station",
+                            [],
+                        ).append(Span(text=full_text[start:end], start=start, end=end, confidence=0.9))
+                    elif isinstance(target_text, str) and target_text.strip():
+                        evidence.setdefault(
+                            f"procedures_performed.linear_ebus.node_events.{idx}.target_text",
+                            [],
+                        ).append(Span(text=full_text[start:end], start=start, end=end, confidence=0.9))
 
                 quote_start = meta.get("quote_start")
                 quote_end = meta.get("quote_end")
@@ -4621,6 +4798,22 @@ def populate_ebus_node_events_fallback(record: RegistryRecord, full_text: str) -
                         [],
                     ).append(Span(text=full_text[start:end], start=start, end=end, confidence=0.9))
 
+        targets_sampled = getattr(linear, "targets_sampled", None)
+        if isinstance(targets_sampled, list):
+            for idx, target in enumerate(targets_sampled):
+                if not isinstance(target, str) or not target.strip():
+                    continue
+                meta = station_evidence.get(target)
+                if not isinstance(meta, dict):
+                    continue
+                start = meta.get("token_start")
+                end = meta.get("token_end")
+                if isinstance(start, int) and isinstance(end, int) and end > start:
+                    evidence.setdefault(
+                        f"procedures_performed.linear_ebus.targets_sampled.{idx}",
+                        [],
+                    ).append(Span(text=full_text[start:end], start=start, end=end, confidence=0.9))
+
         record.evidence = evidence
     except Exception:
         pass
@@ -4654,6 +4847,83 @@ _EBUS_NEGATED_MALIGNANCY_RE = re.compile(
     r"\b(?:no|not|without|negative\s+for|did\s+not\s+identify)\b[^.\n]{0,40}\bmalignan",
     re.IGNORECASE,
 )
+_EBUS_ROSE_SENTENCE_RE = re.compile(r"(?i)\bROSE\b[^.]*\.")
+_EBUS_STATION_CAPTURE_RE = re.compile(
+    r"(?i)\b(?:station\s*)?(2R|2L|4R|4L|5|7|8|9|10R|10L|11R(?:S|I)?|11L(?:S|I)?)\b"
+)
+_EBUS_HELPER_VERBS_RE = re.compile(r"(?i)^(?:did|show(?:ed)?|was|were|is|are)$")
+
+
+def _normalize_rose_result_text(raw: Any) -> str | None:
+    text = str(raw or "").strip()
+    if not text:
+        return None
+    if _EBUS_HELPER_VERBS_RE.fullmatch(text):
+        return None
+    return text
+
+
+def extract_rose_sentence(text: str) -> str | None:
+    """Return the first full ROSE sentence using a strict sentence capture."""
+    match = _EBUS_ROSE_SENTENCE_RE.search(text or "")
+    if not match:
+        return None
+    sentence = re.sub(r"\s+", " ", (match.group(0) or "").strip())
+    return sentence or None
+
+
+def _classify_rose_clause(text: str) -> str | None:
+    clause = str(text or "")
+    if not clause:
+        return None
+    if re.search(r"(?i)\bdid\s+not\s+show\s+evidence\s+of\s+malignan\w*\b", clause):
+        return "benign"
+    if _EBUS_NEGATED_MALIGNANCY_RE.search(clause):
+        return "benign"
+    if _EBUS_ROSE_NONDx_RE.search(clause):
+        return "nondiagnostic"
+    if _EBUS_NEGATED_SUSPICIOUS_RE.search(clause):
+        return "benign"
+    if _EBUS_ROSE_SUSPICIOUS_RE.search(clause):
+        return "suspicious"
+    if _EBUS_ROSE_MALIGNANT_RE.search(clause) and not _EBUS_NEGATED_MALIGNANCY_RE.search(clause):
+        return "malignant"
+    if _EBUS_ROSE_BENIGN_RE.search(clause):
+        return "benign"
+    return None
+
+
+def parse_rose_outcomes(sentence: str) -> dict[str, str]:
+    """Map station targets in a ROSE sentence to nearest outcome clauses."""
+    text = re.sub(r"\s+", " ", (sentence or "").strip())
+    if not text:
+        return {}
+
+    clauses = [c.strip() for c in re.split(r"(?i)\s*(?:,|;|\band\b)\s*", text) if c and c.strip()]
+    mapping: dict[str, str] = {}
+    active_outcome: str | None = None
+
+    for clause in clauses:
+        clause_outcome = _classify_rose_clause(clause)
+        if clause_outcome:
+            active_outcome = clause_outcome
+
+        stations_in_clause: list[str] = []
+        for match in _EBUS_STATION_CAPTURE_RE.finditer(clause):
+            token = (match.group(1) or "").strip().upper()
+            normalized = validate_station_format(token) or token
+            if normalized:
+                stations_in_clause.append(str(normalized).upper())
+
+        if stations_in_clause and active_outcome:
+            for station in stations_in_clause:
+                mapping[station] = active_outcome
+
+    if mapping:
+        return mapping
+
+    inferred = _classify_rose_clause(text)
+    return {"__global__": inferred} if inferred else {}
 
 
 def _infer_ebus_node_outcome_from_rose_window(rose_window: str, station: str) -> str | None:
@@ -4703,41 +4973,34 @@ def enrich_ebus_node_event_outcomes(record: RegistryRecord, full_text: str) -> l
     if not full_text:
         return warnings
 
-    # Build ROSE windows (bounded slices) for efficient station lookups.
-    rose_windows: list[str] = []
-    for marker in _EBUS_ROSE_MARKER_RE.finditer(full_text):
-        start = max(0, marker.start() - 600)
-        end = min(len(full_text), marker.end() + 600)
-        rose_windows.append(full_text[start:end])
-
-    if not rose_windows:
+    rose_sentence = extract_rose_sentence(full_text)
+    if not rose_sentence:
         return warnings
-
-    def _rose_sentence(window: str) -> str | None:
-        for sent in re.split(r"(?:\n+|(?<=[.!?])\s+)", window or ""):
-            if _EBUS_ROSE_MARKER_RE.search(sent):
-                cleaned = re.sub(r"\s+", " ", sent).strip()
-                if cleaned:
-                    return cleaned[:280]
-        return None
+    outcomes_by_target = parse_rose_outcomes(rose_sentence)
+    global_outcome = outcomes_by_target.get("__global__")
 
     for event in node_events:
         if getattr(event, "action", None) != "needle_aspiration":
             continue
         station = getattr(event, "station", None)
-        if not isinstance(station, str) or not station.strip():
-            continue
-
         outcome = getattr(event, "outcome", None)
         outcome_str = str(outcome or "").strip().lower()
+        rose_result = _normalize_rose_result_text(getattr(event, "rose_result", None))
+        if rose_result is None and hasattr(event, "rose_result"):
+            setattr(event, "rose_result", None)
+
+        target_key = None
+        if isinstance(station, str) and station.strip():
+            target_key = (validate_station_format(station.strip().upper()) or station.strip().upper()).upper()
+        target_text = getattr(event, "target_text", None)
+        if not target_key and isinstance(target_text, str) and target_text.strip():
+            target_key = target_text.strip().upper()
 
         inferred: str | None = None
-        rose_quote: str | None = None
-        for window in rose_windows:
-            inferred = _infer_ebus_node_outcome_from_rose_window(window, station)
-            if inferred:
-                rose_quote = _rose_sentence(window)
-                break
+        if target_key:
+            inferred = outcomes_by_target.get(target_key)
+        if not inferred and global_outcome:
+            inferred = global_outcome
 
         if inferred:
             # Allow ROSE-derived benign to override "suspicious" labels that came from
@@ -4747,9 +5010,11 @@ def enrich_ebus_node_event_outcomes(record: RegistryRecord, full_text: str) -> l
             )
             if override_allowed:
                 setattr(event, "outcome", inferred)
-                if rose_quote:
-                    setattr(event, "evidence_quote", rose_quote)
-                warnings.append(f"AUTO_EBUS_OUTCOME: {station.strip().upper()} -> {inferred}")
+                if hasattr(event, "rose_result"):
+                    setattr(event, "rose_result", inferred)
+                setattr(event, "evidence_quote", rose_sentence[:280])
+                warning_target = target_key or "unknown"
+                warnings.append(f"AUTO_EBUS_OUTCOME: {warning_target} -> {inferred}")
 
     return warnings
 
@@ -5045,7 +5310,8 @@ def enrich_eus_b_sampling_details(record: RegistryRecord, full_text: str) -> lis
 
 _PLEURAL_THORACOSCOPY_BIOPSY_RE = re.compile(
     r"\bbiops(?:y|ies)\b[^.\n]{0,120}\bpleur(?:a|al|e)?\b"
-    r"|\bpleur(?:a|al|e)?\b[^.\n]{0,120}\bbiops(?:y|ies)\b",
+    r"|\bpleur(?:a|al|e)?\b[^.\n]{0,120}\bbiops(?:y|ies)\b"
+    r"|\b(?:one|two|three|four|five|six|seven|eight|nine|ten|\d{1,2})\s+biops(?:y|ies)\s+specimens?\b",
     re.IGNORECASE,
 )
 

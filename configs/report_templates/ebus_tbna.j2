@@ -27,6 +27,7 @@
 EBUS-TBNA Staging
 
 A systematic EBUS survey was performed.
+{% if airway_findings is defined and airway_findings %}Airway findings: {{ airway_findings }}.{% endif %}
 
 {% if proc.needle_gauge %}
 Needle: {{ proc.needle_gauge }} needle
@@ -59,6 +60,10 @@ ROSE Results: {{ st.rose_result }}
 {% if proc.overall_rose_diagnosis %}Overall ROSE Diagnosis: {{ proc.overall_rose_diagnosis }}.{% endif %}
 {% else %}
 EBUS-TBNA Staging The endobronchial ultrasound-capable bronchoscope was introduced and a systematic mediastinal and hilar survey was performed.{% if _needle_desc %} The following lymph node stations were identified and sampled based on ultrasound criteria using a {{ _needle_desc }} needle:{% else %} The following lymph node stations were identified and sampled based on ultrasound criteria:{% endif %}
+
+{% if airway_findings is defined and airway_findings %}
+Airway findings: {{ airway_findings }}.
+{% endif %}
 
 {% if proc.stations %}
 {% for st in proc.stations %}

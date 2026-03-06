@@ -400,6 +400,26 @@ def verify_evidence_integrity(record: RegistryRecord, full_note_text: str) -> tu
                 candidate_quotes = _evidence_texts_for_prefix(record, field_path)
                 verified = any(_verify_quote_in_text(q, full_text) for q in candidate_quotes)
 
+        if not verified and field_path == "pleural_procedures.ipc.performed":
+            ipc_header_fallback = bool(
+                re.search(r"(?is)\bprocedure\s*:\s*[^\n]{0,240}\b32552\b", full_text)
+                or re.search(r"(?i)\b32552\b", full_text)
+                or re.search(r"(?i)\bRemoval\s+of\s+indwelling\s+tunneled\s+pleural\s+catheter\b", full_text)
+            )
+            if ipc_header_fallback:
+                verified = True
+                if hasattr(obj, "action") and not str(getattr(obj, "action", "") or "").strip():
+                    setattr(obj, "action", "Removal")
+                _add_first_anchor_span(
+                    record,
+                    field_path,
+                    full_text,
+                    [
+                        r"(?i)\bRemoval\s+of\s+indwelling\s+tunneled\s+pleural\s+catheter\b",
+                        r"(?i)\b32552\b",
+                    ],
+                )
+
         if verified:
             return
 

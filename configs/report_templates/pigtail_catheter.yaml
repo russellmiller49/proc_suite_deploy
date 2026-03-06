@@ -16,5 +16,11 @@ optional_fields:
   - fluid_appearance
   - specimen_tests
   - cxr_ordered
+  - fibrinolytic_agents
+  - tpa_dose_mg
+  - dnase_dose_mg
+  - fibrinolytic_schedule
+  - fibrinolytic_number_of_doses
+  - fibrinolytic_indication
 proc_types:
   - pigtail_catheter

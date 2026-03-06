@@ -1,8 +1,9 @@
 {% set _render_style = (render_style | default("", true)) | lower %}
 {% set _method = (proc.confirmation_method or "imaging") | trim %}
 {% set _pattern = (proc.rebus_pattern or "") | trim %}
+{% set _suppress_pattern = (suppress_rebus_pattern if suppress_rebus_pattern is defined else false) %}
 
-{% if _pattern %}rEBUS demonstrated {{ _pattern | lower }} pattern.{% endif %}
+{% if _pattern and not _suppress_pattern %}rEBUS demonstrated {{ _pattern | lower }} pattern.{% endif %}
 Tool-in-lesion was confirmed with {{ _method }}.
 {% if proc.screenshots_saved %}Screenshots were saved to the record.{% endif %}
 {% if proc.notes %}Notes: {{ proc.notes }}.{% endif %}

@@ -115,6 +115,45 @@ def _add_compat_flat_fields(raw: dict[str, Any]) -> dict[str, Any]:
             return "LLL"
         return None
 
+    def _extract_lobe_tokens_in_order(text: str) -> list[str]:
+        if not text:
+            return []
+        tokens: list[str] = []
+        for match in re.finditer(r"(?i)\b(RUL|RML|RLL|LUL|LLL)\b", text):
+            tok = match.group(1).upper()
+            if tok not in tokens:
+                tokens.append(tok)
+        # Long-form phrases (rare in short prompts, but common in dictations).
+        long_form = (
+            ("RIGHT UPPER LOBE", "RUL"),
+            ("RIGHT MIDDLE LOBE", "RML"),
+            ("RIGHT LOWER LOBE", "RLL"),
+            ("LEFT UPPER LOBE", "LUL"),
+            ("LEFT LOWER LOBE", "LLL"),
+        )
+        upper = text.upper()
+        for phrase, tok in long_form:
+            if phrase in upper and tok not in tokens:
+                tokens.append(tok)
+        return tokens
+
+    def _join_location_tokens(tokens: list[str]) -> str | None:
+        cleaned: list[str] = []
+        seen: set[str] = set()
+        for token in tokens or []:
+            tok = str(token or "").strip().upper()
+            if not tok or tok in seen:
+                continue
+            seen.add(tok)
+            cleaned.append(tok)
+        if not cleaned:
+            return None
+        if len(cleaned) == 1:
+            return cleaned[0]
+        if len(cleaned) == 2:
+            return f"{cleaned[0]} and {cleaned[1]}"
+        return ", ".join(cleaned[:-1]) + f", and {cleaned[-1]}"
+
     def _extract_bronch_segment_hint(text: str) -> str | None:
         """Best-effort bronchopulmonary segment token (e.g., RB10, LB6, B6)."""
         if not text:
@@ -236,6 +275,283 @@ def _add_compat_flat_fields(raw: dict[str, Any]) -> dict[str, Any]:
         if not isinstance(value, list):
             return []
         return [str(v).strip() for v in value if str(v).strip()]
+
+    def _coerce_int(value: Any) -> int | None:
+        if value in (None, "", [], {}):
+            return None
+        try:
+            return int(float(value))
+        except Exception:
+            return None
+
+    def _normalize_blvr_brand(value: Any) -> str | None:
+        text = str(value or "").strip()
+        if not text:
+            return None
+        lowered = text.lower()
+        if "zephyr" in lowered:
+            return "Zephyr (Pulmonx)"
+        if "spiration" in lowered:
+            return "Spiration (Olympus)"
+        return text
+
+    def _normalize_segment_token(value: Any) -> str:
+        text = str(value or "").strip().upper()
+        # Normalize common spacing artifacts in shorthand like "LB1 + 2" -> "LB1+2".
+        text = re.sub(r"\s*\+\s*", "+", text)
+        return text
+
+    def _extract_blvr_text_fields(text: str) -> dict[str, Any]:
+        parsed: dict[str, Any] = {}
+        if not text:
+            return parsed
+        lowered = text.lower()
+        if not re.search(r"\b(?:blvr|chartis|zephyr|spiration|endobronchial\s+valve|valves?)\b", lowered):
+            return parsed
+
+        brand = None
+        if "zephyr" in lowered:
+            brand = "Zephyr (Pulmonx)"
+        elif "spiration" in lowered:
+            brand = "Spiration (Olympus)"
+        if brand:
+            parsed["blvr_valve_type"] = brand
+
+        segment_token_pattern = r"(?i)\b([RL]B\d{1,2}(?:\s*\+\s*\d{1,2})?)\b"
+        segment_tokens = _dedupe_preserve_order(
+            [_normalize_segment_token(match.group(1)) for match in re.finditer(segment_token_pattern, text)]
+        )
+        segment_size_pairs = list(
+            re.finditer(
+                r"(?i)\b([RL]B\d{1,2}(?:\s*\+\s*\d{1,2})?)\b\s*(?:[:=\-]|\s)\s*(?:size\s*)?(\d(?:\.\d+)?)\b",
+                text,
+            )
+        )
+        if segment_tokens:
+            parsed["blvr_segments_treated"] = segment_tokens
+
+        if segment_size_pairs:
+            size_vals = [match.group(2) for match in segment_size_pairs if match.group(2)]
+            if size_vals:
+                parsed["blvr_valve_sizes"] = size_vals
+            if "blvr_segments_treated" not in parsed:
+                parsed["blvr_segments_treated"] = _dedupe_preserve_order(
+                    [_normalize_segment_token(match.group(1)) for match in segment_size_pairs]
+                )
+
+        lobe_tokens = _dedupe_preserve_order(
+            [
+                match.group(1).upper()
+                for match in re.finditer(r"(?i)\b(RUL|RML|RLL|LUL|LLL|LINGULA)\b", text)
+            ]
+        )
+        if len(lobe_tokens) == 1:
+            parsed["blvr_target_lobe"] = lobe_tokens[0]
+        elif "blvr_target_lobe" not in parsed and lobe_tokens:
+            # For multi-lobe dictations, try to anchor the *planned* or *target* lobe.
+            match = re.search(
+                r"(?i)\b(?:plan(?:s|ned)?\s+to\s+proceed|will\s+proceed|to\s+proceed|schedule(?:d)?|planned)\b"
+                r"[^.\n]{0,80}\b(RUL|RML|RLL|LUL|LLL|LINGULA)\b",
+                text,
+            )
+            if match:
+                parsed["blvr_target_lobe"] = match.group(1).upper()
+
+        chartis_used = "chartis" in lowered
+        if chartis_used:
+            parsed["blvr_chartis_used"] = True
+
+        cv_negative = bool(
+            re.search(
+                r"(?i)\b(?:cv\s*negative|no\s+collateral\s+ventilation|minimal\s+collateral\s+ventilation|collateral\s+ventilation\s+absent)\b",
+                text,
+            )
+        )
+        cv_positive = bool(re.search(r"(?i)\b(?:cv\s*positive|collateral\s+ventilation\s+positive|collateral\s+ventilation\s+present)\b", text))
+        if cv_negative and not cv_positive:
+            parsed["blvr_collateral_ventilation_absent"] = True
+        elif cv_positive and not cv_negative:
+            parsed["blvr_collateral_ventilation_absent"] = False
+
+        removal_context = bool(
+            re.search(
+                r"(?i)\b(?:valve\s+remov(?:al|ed)|remove(?:d)?\s+(?:all\s+)?\d*\s*valves?|valves?\s+removed)\b",
+                text,
+            )
+        )
+        exchange_context = bool(re.search(r"(?i)\bvalve[s]?\s+exchange(?:d)?\b|\bexchange(?:d)?\s+valves?\b", text))
+        placement_context = bool(
+            re.search(
+                r"(?i)\b(?:valves?\s+(?:placed|deploy(?:ed|ment)|inserted)|(?:placed|deployed|inserted)\s+\d+\s+valves?)\b",
+                text,
+            )
+        )
+
+        if exchange_context:
+            parsed["blvr_procedure_type"] = "Valve exchange"
+        elif removal_context:
+            parsed["blvr_procedure_type"] = "Valve removal"
+        elif placement_context:
+            parsed["blvr_procedure_type"] = "Valve placement"
+        elif chartis_used:
+            parsed["blvr_procedure_type"] = "Valve assessment"
+
+        removed_count = (
+            _parse_count(text, r"\ball\s*(\d+)\s*valves?\b[^.\n]{0,30}\bremoved\b")
+            or _parse_count(text, r"\b(\d+)\s*valves?\b[^.\n]{0,30}\bremoved\b")
+            or _parse_count(text, r"\bremoved\b[^.\n]{0,20}\b(\d+)\s*valves?\b")
+        )
+        if removed_count is not None:
+            parsed["blvr_valves_removed"] = removed_count
+
+        exchanged_count = (
+            _parse_count(text, r"\bexchange(?:d)?\b[^.\n]{0,25}\b(\d+)\s*valves?\b")
+            or _parse_count(text, r"\b(\d+)\s*valves?\b[^.\n]{0,25}\bexchange(?:d)?\b")
+        )
+        if exchanged_count is not None:
+            parsed["blvr_valves_exchanged"] = exchanged_count
+
+        if segment_tokens and "blvr_number_of_valves" not in parsed:
+            parsed["blvr_number_of_valves"] = len(segment_tokens)
+        if "blvr_number_of_valves" not in parsed:
+            placement_count = (
+                _parse_count(text, r"\b(?:placed|deploy(?:ed|ment)|inserted)\b[^.\n]{0,30}\b(\d+)\s*valves?\b")
+                or _parse_count(text, r"\b(\d+)\s*valves?\b[^.\n]{0,30}\b(?:placed|deployed|inserted)\b")
+                or _parse_count(text, r"\b(\d+)\s*valves?\b")
+            )
+            if placement_count is not None:
+                parsed["blvr_number_of_valves"] = placement_count
+
+        if "blvr_target_lobe" not in parsed:
+            long_lobe_map = {
+                "right upper lobe": "RUL",
+                "right middle lobe": "RML",
+                "right lower lobe": "RLL",
+                "left upper lobe": "LUL",
+                "left lower lobe": "LLL",
+                "lingula": "LINGULA",
+            }
+            for phrase, token in long_lobe_map.items():
+                if phrase in lowered:
+                    parsed["blvr_target_lobe"] = token
+                    break
+
+        if parsed.get("blvr_procedure_type") in ("Valve removal", "Valve exchange") and "blvr_valves_removed" not in parsed:
+            inferred_removed = _coerce_int(parsed.get("blvr_number_of_valves"))
+            if inferred_removed and inferred_removed > 0:
+                parsed["blvr_valves_removed"] = inferred_removed
+
+        return parsed
+
+    def _extract_pleural_volume_ml(text: str) -> int | None:
+        if not text:
+            return None
+        verbs = r"(?:drained|removed|aspirated|obtained|withdrawn|evacuated|extracted|tapped|yield(?:ed)?|collected)"
+
+        # Bilateral side-tagged volumes (e.g., "Right 1200ml ... Left 800ml ...")
+        side_map: dict[str, float] = {}
+        for side in ("right", "left"):
+            match = re.search(rf"(?i)\b{side}\b[^.\n]{{0,80}}?\b(\d+(?:\.\d+)?)\s*(L|mL|ml|cc)\b", text)
+            if not match:
+                continue
+            try:
+                value = float(match.group(1))
+            except Exception:
+                continue
+            unit = str(match.group(2) or "").lower()
+            if unit == "l":
+                value *= 1000.0
+            side_map[side] = value
+        if "right" in side_map and "left" in side_map:
+            try:
+                return int(round(side_map["right"] + side_map["left"]))
+            except Exception:
+                pass
+
+        patterns = [
+            rf"(?i)\b{verbs}\b[^.\n]{{0,20}}?\b(\d+(?:\.\d+)?)\s*(L|mL|ml|cc)\b",
+            rf"(?i)\b(\d+(?:\.\d+)?)\s*(L|mL|ml|cc)\b[^.\n]{{0,40}}\b{verbs}\b",
+            rf"(?i)\ba\s+total\s+of\s+(\d+(?:\.\d+)?)\s*(L|mL|ml|cc)\b",
+        ]
+        for pattern in patterns:
+            match = re.search(pattern, text)
+            if not match:
+                continue
+            try:
+                value = float(match.group(1))
+            except Exception:
+                continue
+            unit = str(match.group(2) or "").lower()
+            if unit == "l":
+                value *= 1000.0
+            # Guardrail: ignore very small volumes which are more likely anesthetic (lidocaine) amounts.
+            if value < 20.0:
+                continue
+            try:
+                return int(round(value))
+            except Exception:
+                continue
+
+        # Context-only fallback when explicitly in thoracentesis/effusion context.
+        if re.search(r"(?i)\bthoracentesis\b|\bpleural\s+(?:fluid|effusion)\b|\beffusion\b", text):
+            match = re.search(r"(?i)\b(\d+(?:\.\d+)?)\s*(L|mL|ml|cc)\b", text)
+            if match:
+                try:
+                    value = float(match.group(1))
+                except Exception:
+                    value = None
+                unit = str(match.group(2) or "").lower()
+                if value is not None:
+                    if unit == "l":
+                        value *= 1000.0
+                    if value >= 20.0:
+                        try:
+                            return int(round(value))
+                        except Exception:
+                            pass
+        return None
+
+    def _extract_pleural_fluid_appearance(text: str) -> str | None:
+        if not text:
+            return None
+        verbs = r"(?:drained|removed|aspirated|obtained|withdrawn|evacuated|extracted|tapped|yield(?:ed)?|collected)"
+        patterns = [
+            rf"(?i)\b{verbs}\b[^.\n]{{0,30}}?\b\d+(?:\.\d+)?\s*(?:L|mL|ml|cc)\s+([a-z][a-z\s/-]{{0,40}}?)(?:\s+fluid\b|[.,;]|$)",
+            rf"(?i)\b\d+(?:\.\d+)?\s*(?:L|mL|ml|cc)\s+([a-z][a-z\s/-]{{0,40}}?)(?:\s+fluid\b)?\s+\b{verbs}\b",
+            r"(?i)\b\d+(?:\.\d+)?\s*(?:L|mL|ml|cc)\s+of\s+([a-z][a-z\s/-]{0,40}?)(?:\s+fluid\b|[.,;]|$)",
+        ]
+        for pattern in patterns:
+            match = re.search(pattern, text)
+            if not match:
+                continue
+            appearance = str(match.group(1) or "").strip().strip(",:;.-").strip()
+            appearance = re.sub(r"(?i)\b(?:initially|during\s+procedure)\b", "", appearance).strip()
+            appearance = re.sub(r"(?i)\b(?:fluid|effusion)\b", "", appearance).strip()
+            if appearance:
+                return appearance
+        return None
+
+    def _is_historical_chest_tube_context(text: str) -> bool:
+        if not text:
+            return False
+        lowered = text.lower()
+        if "chest tube" not in lowered:
+            return False
+        if not re.search(r"\b(?:blvr|valve)\b", lowered):
+            return False
+        historical_markers = [
+            r"\bday\s*\d+\b",
+            r"\bpost\s+valve\s+placement\b",
+            r"\bdespite\s+\d+\s+days?\b",
+            r"\bdecision\s+to\s+remove\s+valves?\b",
+            r"\bair\s+leak\s+resolved\b",
+            r"\bremoved\s+next\s+day\b",
+        ]
+        has_historical = any(re.search(pattern, lowered) for pattern in historical_markers)
+        has_current_insertion_detail = bool(
+            re.search(r"\b(?:ultrasound|u/s|guid(?:ed|ance)|intercostal|seldinger|\d+\s*fr)\b", lowered)
+        )
+        return has_historical and not has_current_insertion_detail
 
     def _derive_sampled_stations_from_linear_ebus(linear_ebus: dict[str, Any]) -> list[str]:
         invalid_station_tokens = {"UNSPECIFIED", "UNKNOWN", "N/A", "NA"}
@@ -809,68 +1125,187 @@ def _add_compat_flat_fields(raw: dict[str, Any]) -> dict[str, Any]:
                     raw["lesion_location"] = nav_target
 
     # Best-effort parse EBUS station details from free text (passes/size/ROSE).
-    if raw.get("ebus_stations_detail") in (None, "", [], {}) and source_text:
+    #
+    # Note: upstream granular extraction often provides partial station detail; supplement
+    # with explicit free-text station lists (e.g., "stations 2R x4, 10R x3, 2L x2") while
+    # preserving station ordering from the note when available.
+    if source_text:
+        def _valid_station_token(value: str) -> str | None:
+            token = (value or "").strip().upper()
+            match = re.match(r"^(?P<num>\d{1,2})(?P<lr>[LR])?$", token)
+            if not match:
+                return None
+            try:
+                num = int(match.group("num"))
+            except Exception:
+                return None
+            if num < 1 or num > 12:
+                return None
+            return f"{num}{match.group('lr') or ''}"
+
+        def _valid_passes(value: str) -> int | None:
+            try:
+                num = int(value)
+            except Exception:
+                return None
+            # Typical EBUS pass counts are small; reject likely dimensional artifacts.
+            if num < 1 or num > 20:
+                return None
+            return num
+
+        existing_detail = raw.get("ebus_stations_detail") or []
         details_by_station: dict[str, dict[str, Any]] = {}
+        existing_order: list[str] = []
+        if isinstance(existing_detail, list):
+            for item in existing_detail:
+                if not isinstance(item, dict):
+                    continue
+                st_raw = item.get("station") or item.get("station_name")
+                if st_raw in (None, "", [], {}):
+                    continue
+                st = _valid_station_token(str(st_raw))
+                if not st:
+                    continue
+                entry = dict(item)
+                entry["station"] = st
+                if st not in details_by_station:
+                    details_by_station[st] = entry
+                    existing_order.append(st)
+
+        parsed_order: list[str] = []
+        changed = False
+
+        def _upsert_station(
+            st: str,
+            *,
+            passes: int | None = None,
+            size_mm: Any | None = None,
+            rose_result: str | None = None,
+        ) -> None:
+            nonlocal changed
+            if st not in details_by_station:
+                details_by_station[st] = {"station": st}
+                changed = True
+            entry = details_by_station[st]
+
+            if passes is not None and entry.get("passes") in (None, "", [], {}):
+                entry["passes"] = passes
+                changed = True
+            if size_mm is not None and entry.get("size_mm") in (None, "", [], {}):
+                entry["size_mm"] = size_mm
+                changed = True
+            if rose_result:
+                existing_rose = str(entry.get("rose_result") or "").strip()
+                candidate = str(rose_result).strip()
+
+                def _rose_rank(value: str) -> int:
+                    lowered = value.lower()
+                    if re.search(r"\b(?:malignan|carcinoma|adenocarcinoma|squamous|nsclc|sclc|small\s+cell|lymphoma)\b", lowered):
+                        return 3
+                    if re.search(r"\b(?:atypical|suspicious|positive)\b", lowered):
+                        return 2
+                    if re.search(r"\b(?:negative|benign|lymphocytes|nondiagnostic|adequate)\b", lowered):
+                        return 1
+                    return 0
+
+                existing_norm = re.sub(r"\s+", " ", existing_rose).strip()
+                candidate_norm = re.sub(r"\s+", " ", candidate).strip()
+                if not existing_norm:
+                    entry["rose_result"] = candidate_norm
+                    changed = True
+                else:
+                    existing_rank = _rose_rank(existing_norm)
+                    candidate_rank = _rose_rank(candidate_norm)
+                    # Allow overrides when free-text station-level detail is more specific
+                    # (e.g., "Malignant - small cell carcinoma" vs "Malignant"), or when
+                    # upstream binding incorrectly assigns a benign/lymphocytic ROSE to a
+                    # station that is explicitly malignant in the note.
+                    if (
+                        candidate_rank > existing_rank
+                        or (candidate_rank == existing_rank and len(candidate_norm) > len(existing_norm))
+                    ):
+                        entry["rose_result"] = candidate_norm
+                        changed = True
+
+            if st not in parsed_order:
+                parsed_order.append(st)
 
         # Pattern: "Stations: 11R (4x), 2L (2x), 4L (4x)"
         match = re.search(r"(?i)\bstations?\s*:\s*([^\n]+)", source_text)
         if match:
             chunk = match.group(1)
-            for st, passes in re.findall(r"(?i)\b(\d{1,2}[LR]?)\s*\(\s*(\d+)\s*x\s*\)", chunk):
-                key = st.upper()
-                details_by_station.setdefault(key, {"station": key})["passes"] = int(passes)
+            for st_raw, passes_raw in re.findall(r"(?i)\b(\d{1,2}[LR]?)\s*\(\s*(\d+)\s*x\s*\)", chunk):
+                st = _valid_station_token(st_raw)
+                passes = _valid_passes(passes_raw)
+                if st and passes:
+                    _upsert_station(st, passes=passes)
 
         # Pattern: "... sampled stations 2R x4, 10R x3, 2L x2 ..."
         for line in source_text.splitlines():
-            # Require the plural "stations" to avoid accidentally matching per-node size
-            # dimensions like "22.0x13.6mm" on lines beginning with "Station 11R: ...".
+            # Require the plural "stations" to reduce false positives from size dimensions.
             if not re.search(r"(?i)\bstations\b", line):
                 continue
             if not re.search(r"(?i)\b\d{1,2}[LR]?\s*(?:x|×)\s*\d+\b", line):
                 continue
-            for st, passes in re.findall(r"(?i)\b(\d{1,2}[LR]?)\s*(?:x|×)\s*(\d+)\b", line):
-                key = st.upper()
-                details_by_station.setdefault(key, {"station": key})["passes"] = int(passes)
+            for st_raw, passes_raw in re.findall(r"(?i)\b(\d{1,2}[LR]?)\s*(?:x|×)\s*(\d+)\b", line):
+                st = _valid_station_token(st_raw)
+                passes = _valid_passes(passes_raw)
+                if st and passes:
+                    _upsert_station(st, passes=passes)
 
         # Pattern: "- 4R (18mm): Positive for Adeno."
         for line in source_text.splitlines():
             stripped = line.strip()
-            bullet = re.match(r"[-*]\s*(\d{1,2}[LR]?)\s*\(\s*(\d+)\s*mm\s*\)\s*:\s*(.+)", stripped, flags=re.IGNORECASE)
-            if bullet:
-                st = bullet.group(1).upper()
-                details = details_by_station.setdefault(st, {"station": st})
-                try:
-                    details["size_mm"] = int(bullet.group(2))
-                except Exception:
-                    pass
-                details["rose_result"] = bullet.group(3).strip().rstrip(".")
+            bullet = re.match(
+                r"[-*]\s*(\d{1,2}[LR]?)\s*\(\s*(\d+)\s*mm\s*\)\s*:\s*(.+)",
+                stripped,
+                flags=re.IGNORECASE,
+            )
+            if not bullet:
+                continue
+            st = _valid_station_token(bullet.group(1))
+            if not st:
+                continue
+            size_val: int | None = None
+            try:
+                size_val = int(bullet.group(2))
+            except Exception:
+                size_val = None
+            _upsert_station(st, size_mm=size_val, rose_result=bullet.group(3).strip().rstrip("."))
 
         # Pattern: "Station 11R: ... Executed 2 aspiration passes. ROSE yielded: ..."
         for station_line in re.finditer(r"(?im)^\s*Station\s+(\d{1,2}[LR]?)\s*:\s*(.+?)\s*$", source_text):
-            st = station_line.group(1).upper()
+            st = _valid_station_token(station_line.group(1))
+            if not st:
+                continue
             rest = station_line.group(2)
-            details = details_by_station.setdefault(st, {"station": st})
             mp = re.search(r"(?i)\b(\d+)\s*(?:aspiration\s*)?passes\b", rest)
-            if mp:
-                try:
-                    details["passes"] = int(mp.group(1))
-                except Exception:
-                    pass
+            passes = _valid_passes(mp.group(1)) if mp else None
+
             mr = re.search(r"(?i)\bROSE\s*(?:yielded|result)\s*[:\\-]\s*([^\\.]+)", rest)
-            if mr:
-                details["rose_result"] = mr.group(1).strip().rstrip(".")
+            rose = mr.group(1).strip().rstrip(".") if mr else None
+
+            size_mm: Any | None = None
             ms = re.search(r"(?i)\b(\d+(?:\.\d+)?)\s*(?:x|×)\s*(\d+(?:\.\d+)?)\s*mm\b", rest)
             if ms:
                 try:
                     size_val = max(float(ms.group(1)), float(ms.group(2)))
-                    details["size_mm"] = round(size_val, 1) if not size_val.is_integer() else int(size_val)
+                    size_mm = round(size_val, 1) if not size_val.is_integer() else int(size_val)
                 except Exception:
-                    pass
+                    size_mm = None
 
-        if details_by_station:
-            raw["ebus_stations_detail"] = list(details_by_station.values())
-            if raw.get("ebus_stations_sampled") in (None, "", [], {}):
-                raw["ebus_stations_sampled"] = list(details_by_station.keys())
+            _upsert_station(st, passes=passes, size_mm=size_mm, rose_result=rose)
+
+        if details_by_station and (changed or parsed_order or raw.get("ebus_stations_detail") in (None, "", [], {})):
+            order = parsed_order + [st for st in existing_order if st not in parsed_order]
+            if not order:
+                order = existing_order or list(details_by_station.keys())
+            raw["ebus_stations_detail"] = [details_by_station[st] for st in order if st in details_by_station]
+            existing_sampled = raw.get("ebus_stations_sampled")
+            if existing_sampled in (None, "", [], {}) or (
+                isinstance(existing_sampled, list) and len(existing_sampled) < len(raw["ebus_stations_detail"])
+            ):
+                raw["ebus_stations_sampled"] = [st for st in order if st in details_by_station]
 
     # Ensure station list fields reflect per-station detail when present.
     stations_detail = raw.get("ebus_stations_detail") or []
@@ -888,7 +1323,13 @@ def _add_compat_flat_fields(raw: dict[str, Any]) -> dict[str, Any]:
         if detail_stations:
             existing_list = raw.get("linear_ebus_stations") or raw.get("ebus_stations_sampled")
             existing = existing_list if isinstance(existing_list, list) else []
-            if not existing or len(existing) < len(detail_stations) or set(map(str, existing)) != set(detail_stations):
+            existing_norm = [str(item).strip().upper() for item in existing if str(item).strip()]
+            if (
+                not existing_norm
+                or len(existing_norm) < len(detail_stations)
+                or set(existing_norm) != set(detail_stations)
+                or existing_norm != detail_stations
+            ):
                 raw["linear_ebus_stations"] = detail_stations
                 raw["ebus_stations_sampled"] = detail_stations
 
@@ -942,6 +1383,56 @@ def _add_compat_flat_fields(raw: dict[str, Any]) -> dict[str, Any]:
         target_val = str(text_fields.get("target") or "").strip()
         if target_val:
             raw["primary_indication"] = f"a {target_val}" if re.match(r"^\d", target_val) else target_val
+
+    def _infer_primary_indication_from_for_clause(text: str) -> str | None:
+        if not text.strip():
+            return None
+        head = re.sub(r"\s+", " ", text.strip())
+        head = re.sub(r"(?i)^case\s*\d+\s*[:\-]\s*", "", head).strip()
+        head = head[:900]
+
+        def _clean(value: str) -> str | None:
+            value = value.strip().strip(",;:-").strip()
+            value = re.sub(
+                r"(?i)\b(?:bal|tbna|tbbx|tb?bx|biops(?:y|ies)|brush(?:ings)?|cryobiops(?:y|ies)|cryo)\b.*$",
+                "",
+                value,
+            ).strip()
+            value = value.replace("[", "").replace("]", "").strip().rstrip(".").strip()
+            return value or None
+
+        pattern = re.compile(
+            r"(?i)\b(?:"
+            r"bronchoscopy|rigid\s+bronchoscopy|flexible\s+bronchoscopy|robotic\s+bronchoscopy|"
+            r"thoracentesis|pleuroscopy|thoracoscopy|medical\s+thoracoscopy|"
+            r"ebus(?:-tbna)?|chartis(?:\s+assessment)?|blvr(?:\s+(?:assessment|candidacy|evaluation))?|"
+            r"endobronchial\s+valves?|valves?\s+(?:assessment|placement)|"
+            r"stent(?:\s+placement)?|airway\s+dilation|balloon\s+dilation|whole\s+lung\s+lavage|lung\s+lavage"
+            r")\b[^\n\.;]{0,140}?\bfor\b\s+([^\n\.;]{3,240})"
+        )
+        for match in pattern.finditer(head):
+            pre_tail = head[max(0, match.start(1) - 80) : match.start(1)]
+            if re.search(r"(?i)\b(?:sent|submitted|specimens?|samples?)\s+for\s*$", pre_tail.strip()):
+                continue
+            value = _clean(match.group(1))
+            if value and len(value) <= 240:
+                return value
+
+        # Fallback: capture the earliest "for <...>" clause in the opening line, which
+        # is commonly used as a compact indication in prompt-style notes.
+        match = re.search(r"(?i)\bfor\b\s+([^\n\.;]{3,240})", head[:260])
+        if match:
+            pre_tail = head[max(0, match.start(1) - 80) : match.start(1)]
+            if not re.search(r"(?i)\b(?:sent|submitted|specimens?|samples?)\s+for\s*$", pre_tail.strip()):
+                value = _clean(match.group(1))
+                if value and len(value) <= 240:
+                    return value
+        return None
+
+    if raw.get("primary_indication") in (None, "", [], {}) and source_text:
+        inferred = _infer_primary_indication_from_for_clause(source_text)
+        if inferred:
+            raw["primary_indication"] = inferred
     if raw.get("preop_diagnosis_text") in (None, "", [], {}) and text_fields.get("dx"):
         raw["preop_diagnosis_text"] = text_fields["dx"]
     if raw.get("follow_up_plan") in (None, "", [], {}) and text_fields.get("plan"):
@@ -1093,7 +1584,7 @@ def _add_compat_flat_fields(raw: dict[str, Any]) -> dict[str, Any]:
     for pattern in (
         r"\bTBNA\b\s*(?:x|×)\s*(\d+)\b",
         r"\bTBNA\s*passes?\s*:\s*(\d+)\b",
-        r"\bTBNA\b[^\n]{0,30}\b(\d+)\s*(?:passes?|times)\b",
+        r"\bTBNA\b[^\n]{0,120}\b(\d+)\s*(?:passes?|times)\b",
         r"\bneedle\s*passes?\s*:\s*(\d+)\b",
         r"\bpasses?\s*(?:executed|performed|obtained|collected)\s*:\s*(\d+)\b",
         r"\b(\d+)\s*needle\s*passes?\b",
@@ -1103,6 +1594,21 @@ def _add_compat_flat_fields(raw: dict[str, Any]) -> dict[str, Any]:
         tbna_count = _parse_count(counts_text, pattern)
         if tbna_count is not None:
             break
+
+    tbna_needle_gauge: str | None = None
+    tbna_rose_result: str | None = None
+    if source_text:
+        match = re.search(r"(?i)\bTBNA\b[^\n]{0,200}?\b(\d{1,2})\s*g\b", source_text)
+        if match:
+            tbna_needle_gauge = f"{match.group(1)}G"
+        match = re.search(
+            r"(?i)\bROSE\b[^\n]{0,40}?(?:result\s*[:\\-]|\+|:)\s*([^\n\.;]{2,120})",
+            source_text,
+        )
+        if match:
+            value = match.group(1).strip().rstrip(".").strip()
+            if value and not re.search(r"(?i)\b(?:available|yes|no|pending)\b", value):
+                tbna_rose_result = value
 
     bx_count = None
     for pattern in (
@@ -1132,17 +1638,45 @@ def _add_compat_flat_fields(raw: dict[str, Any]) -> dict[str, Any]:
             break
 
     bal_location_hint = None
+    tbbx_location_hint = None
     if counts_text:
         match = re.search(r"(?i)\bBAL\b\s*\(([^)]+)\)", counts_text)
         if match:
-            bal_location_hint = match.group(1).strip()
-    if bal_location_hint is None and counts_text:
-        match = re.search(
-            r"(?i)\b(?:lavage|washing)\b[^\n]{0,80}?\b(?:from|in|at)\s+([RL]B\d{1,2}|B\d{1,2}|RUL|RML|RLL|LUL|LLL)\b",
-            counts_text,
-        )
-        if match:
-            bal_location_hint = match.group(1).strip().upper()
+            joined = _join_location_tokens(_extract_lobe_tokens_in_order(match.group(1)))
+            if joined:
+                bal_location_hint = joined
+        if bal_location_hint is None:
+            match = re.search(
+                r"(?i)\bBAL\b[^\n]{0,80}?\b(?:from|in|at)\s+([^\n\.]{1,140})",
+                counts_text,
+            )
+            if match:
+                joined = _join_location_tokens(_extract_lobe_tokens_in_order(match.group(1)))
+                if joined:
+                    bal_location_hint = joined
+
+        bx_anchor = re.search(r"(?i)\bTBBX\b|\bTBX\b", counts_text)
+        if bx_anchor is None:
+            bx_anchor = re.search(r"(?i)\btransbronchial\s+(?:lung\s+)?biops(?:y|ies)?\b", counts_text)
+        if bx_anchor:
+            window = counts_text[bx_anchor.start() : min(len(counts_text), bx_anchor.start() + 360)]
+            match = re.search(r"(?i)\b(?:from|in|at)\b\s+([^\n\.]{1,180})", window)
+            if match:
+                joined = _join_location_tokens(_extract_lobe_tokens_in_order(match.group(1)))
+                if joined:
+                    tbbx_location_hint = joined
+            elif re.search(r"(?i)\bTBBX\b|\bTBX\b", window):
+                joined = _join_location_tokens(_extract_lobe_tokens_in_order(window))
+                if joined:
+                    tbbx_location_hint = joined
+
+        if bal_location_hint is None:
+            match = re.search(
+                r"(?i)\b(?:lavage|washing)\b[^\n]{0,80}?\b(?:from|in|at)\s+([RL]B\d{1,2}|B\d{1,2}|RUL|RML|RLL|LUL|LLL)\b",
+                counts_text,
+            )
+            if match:
+                bal_location_hint = match.group(1).strip().upper()
 
     rose_hint: str | None = None
     nodule_rose_hint: str | None = None
@@ -1296,11 +1830,35 @@ def _add_compat_flat_fields(raw: dict[str, Any]) -> dict[str, Any]:
                 return str(value)
             return str(int(num)) if num.is_integer() else str(num)
 
+        def _looks_generic_procedure_indication(value: Any) -> bool:
+            if not isinstance(value, str):
+                return False
+            lowered = value.strip().lower()
+            if not lowered:
+                return True
+            if any(tok in lowered for tok in ("bronch", "bronchoscopy", "ebus", "robotic", "navigat")):
+                if not any(
+                    tok in lowered
+                    for tok in (
+                        "nodule",
+                        "lesion",
+                        "mass",
+                        "lymph",
+                        "adenopathy",
+                        "stenosis",
+                        "effusion",
+                        "obstruction",
+                        "bleeding",
+                    )
+                ):
+                    return True
+            return False
+
         # Synthesize a compact primary indication for common nodule dictations when missing.
         # Guard: do not misread non-target measurements (balloon dilation sizes, APC probe size, stent revision distance)
         # as a peripheral nodule when the note lacks peripheral-target context.
         if (
-            raw.get("primary_indication") in (None, "", [], {})
+            (raw.get("primary_indication") in (None, "", [], {}) or _looks_generic_procedure_indication(raw.get("primary_indication")))
             and location_hint
             and derived_size_mm not in (None, "", [], {})
             and peripheral_target_context
@@ -1338,10 +1896,17 @@ def _add_compat_flat_fields(raw: dict[str, Any]) -> dict[str, Any]:
                 phrase += f" with a {bronchus_sign_val} bronchus sign"
             if pet_suv:
                 phrase += f" (PET SUV: {pet_suv})"
+            staging_context = bool(
+                re.search(r"(?i)\bstag(?:e|ing)\b", source_text)
+                or (raw.get("linear_ebus_stations") or raw.get("ebus_stations_sampled"))
+            )
+            chartis_context = "chartis" in source_text.lower()
+            if chartis_context:
+                phrase += " requiring bronchoscopic diagnosis and staging, as well as assessment for potential lung volume reduction"
+            elif staging_context:
+                phrase += " requiring bronchoscopic diagnosis and staging"
             if no_pet and not pet_suv:
                 phrase += ". No PET scan was performed"
-            if "chartis" in source_text.lower():
-                phrase += " requiring bronchoscopic diagnosis and staging, as well as assessment for potential lung volume reduction"
             raw["primary_indication"] = phrase.strip().rstrip(".")
 
         # If linear EBUS is present and a ROSE summary was captured, attach it to the EBUS fields.
@@ -1364,6 +1929,16 @@ def _add_compat_flat_fields(raw: dict[str, Any]) -> dict[str, Any]:
                 raw["preop_diagnosis_text"] = indication_hint or "Interstitial Lung Disease"
             elif "effusion" in lowered and "pleural" in lowered:
                 raw["preop_diagnosis_text"] = indication_hint or "Pleural effusion"
+            elif (
+                ("staging" in lowered or "lung cancer" in lowered)
+                and location_hint
+                and derived_size_mm not in (None, "", [], {})
+                and peripheral_target_context
+            ):
+                # Prefer a concise nodule Dx line (lobe + size) over a segment label
+                # for staging dictations; a suspected lymphadenopathy line is appended below.
+                size_str = _fmt_mm(derived_size_mm)
+                raw["preop_diagnosis_text"] = f"{location_hint} pulmonary nodule, {size_str} mm"
             elif ("staging" in lowered or "lung cancer" in lowered) and raw.get("nav_target_segment") not in (None, "", [], {}):
                 target = str(raw.get("nav_target_segment") or "").strip()
                 target = target.split(",", 1)[0].strip()
@@ -1570,13 +2145,39 @@ def _add_compat_flat_fields(raw: dict[str, Any]) -> dict[str, Any]:
     # DictPayloadAdapter compat: map nested `procedures_performed.*` into top-level payload keys.
     # This allows the reporter adapters to build partially-populated procedure models.
     peripheral_tbna = procs.get("peripheral_tbna")
+    ebus_station_syntax = bool(
+        source_text
+        and (
+            re.search(r"(?i)\b(?:station\s*)?\d{1,2}[LR]?\s*\(\s*\d+(?:\.\d+)?\s*mm\)", source_text)
+            or re.search(r"(?i)\bstation\s+\d{1,2}[LR]?\b", source_text)
+        )
+    )
+    has_ebus_context = bool(source_text and re.search(r"(?i)\b(?:ebus|eusb|eus-?b)\b", source_text))
+    has_peripheral_context = bool(
+        source_text
+        and re.search(
+            r"(?i)\b(?:nodule|lesion|mass|target|peripheral|robotic|ion|monarch|emn|navigation|r\s*ebus|radial\s+ebus|cbct|cone\s*beam|tool[-\s]?in[-\s]?lesion)\b",
+            source_text,
+        )
+    )
+    ebus_like_without_peripheral = (has_ebus_context or ebus_station_syntax) and not has_peripheral_context
+    if ebus_like_without_peripheral:
+        # Guardrail: EBUS station sampling (e.g., "station 4R/7") is often misclassified as peripheral TBNA.
+        # Do not allow a peripheral TBNA payload to leak into the reporter bundle without explicit peripheral context.
+        raw.pop("transbronchial_needle_aspiration", None)
+        if isinstance(procs.get("peripheral_tbna"), dict) and procs["peripheral_tbna"].get("performed") is True:
+            procs.pop("peripheral_tbna", None)
+            raw["procedures_performed"] = procs
     if raw.get("transbronchial_needle_aspiration") in (None, "", [], {}) and (
-        tbna_count is not None or (isinstance(peripheral_tbna, dict) and peripheral_tbna.get("performed") is True)
+        not ebus_like_without_peripheral
+        and (tbna_count is not None or (isinstance(peripheral_tbna, dict) and peripheral_tbna.get("performed") is True))
     ):
         raw["transbronchial_needle_aspiration"] = {
             "lung_segment": _first_nonempty_str(raw.get("nav_target_segment"), raw.get("lesion_location"), location_hint, segment_hint),
             "needle_tools": "TBNA",
             "samples_collected": tbna_count,
+            "needle_gauge": tbna_needle_gauge,
+            "rose_result": tbna_rose_result,
             "tests": [],
         }
 
@@ -1793,6 +2394,193 @@ def _add_compat_flat_fields(raw: dict[str, Any]) -> dict[str, Any]:
 
     # --- Airway therapeutics compat (performed flags -> reporter adapters) ---
     note_text = source_text if isinstance(source_text, str) else ""
+
+    # --- BLVR compat: nested V3/ML fields + text fallback for reporter adapters ---
+    blvr = procs.get("blvr") or {}
+    if isinstance(blvr, dict):
+        if raw.get("blvr_procedure_type") in (None, "", [], {}):
+            procedure_type = _first_nonempty_str(blvr.get("procedure_type"))
+            if procedure_type:
+                raw["blvr_procedure_type"] = procedure_type
+
+        if raw.get("blvr_valve_type") in (None, "", [], {}):
+            valve_type = _normalize_blvr_brand(blvr.get("valve_type"))
+            if valve_type:
+                raw["blvr_valve_type"] = valve_type
+
+        if raw.get("blvr_number_of_valves") in (None, "", [], {}):
+            valve_count = _coerce_int(blvr.get("number_of_valves"))
+            if valve_count is not None:
+                raw["blvr_number_of_valves"] = valve_count
+
+        if raw.get("blvr_target_lobe") in (None, "", [], {}):
+            target_lobe = _first_nonempty_str(blvr.get("target_lobe"))
+            if target_lobe:
+                raw["blvr_target_lobe"] = str(target_lobe).upper()
+
+        if raw.get("blvr_segments_treated") in (None, "", [], {}):
+            segs = _coerce_str_list(blvr.get("segments_treated"))
+            if segs:
+                raw["blvr_segments_treated"] = _dedupe_preserve_order([seg.upper() for seg in segs])
+
+        if raw.get("blvr_valve_sizes") in (None, "", [], {}):
+            sizes = _coerce_str_list(blvr.get("valve_sizes"))
+            if sizes:
+                raw["blvr_valve_sizes"] = sizes
+
+        collateral = _first_nonempty_str(blvr.get("collateral_ventilation_assessment"))
+        if collateral:
+            col_lower = collateral.lower()
+            if raw.get("blvr_chartis_used") in (None, "", [], {}):
+                if "chartis" in col_lower:
+                    raw["blvr_chartis_used"] = True
+            if raw.get("blvr_collateral_ventilation_absent") in (None, "", [], {}):
+                if re.search(r"(?i)\b(?:negative|no|minimal|absent)\b", collateral):
+                    raw["blvr_collateral_ventilation_absent"] = True
+                elif re.search(r"(?i)\b(?:positive|present)\b", collateral):
+                    raw["blvr_collateral_ventilation_absent"] = False
+
+    if isinstance(granular, dict):
+        blvr_placements = granular.get("blvr_valve_placements")
+        if isinstance(blvr_placements, list) and blvr_placements:
+            lobes: list[str] = []
+            segs: list[str] = []
+            sizes: list[str] = []
+            brands: list[str] = []
+            for item in blvr_placements:
+                if not isinstance(item, dict):
+                    continue
+                lobe = _first_nonempty_str(item.get("target_lobe"))
+                if lobe:
+                    lobes.append(lobe.upper())
+                seg = _first_nonempty_str(item.get("segment"))
+                if seg:
+                    segs.append(seg.upper())
+                size = _first_nonempty_str(item.get("valve_size"))
+                if size:
+                    sizes.append(size)
+                brand = _normalize_blvr_brand(item.get("valve_type"))
+                if brand:
+                    brands.append(brand)
+
+            lobes = _dedupe_preserve_order(lobes)
+            segs = _dedupe_preserve_order(segs)
+            brands = _dedupe_preserve_order(brands)
+
+            if raw.get("blvr_number_of_valves") in (None, "", [], {}):
+                raw["blvr_number_of_valves"] = len(blvr_placements)
+            if raw.get("blvr_target_lobe") in (None, "", [], {}) and len(lobes) == 1:
+                raw["blvr_target_lobe"] = lobes[0]
+            if raw.get("blvr_segments_treated") in (None, "", [], {}) and segs:
+                raw["blvr_segments_treated"] = segs
+            if raw.get("blvr_valve_sizes") in (None, "", [], {}) and sizes:
+                raw["blvr_valve_sizes"] = sizes
+            if raw.get("blvr_valve_type") in (None, "", [], {}) and len(brands) == 1:
+                raw["blvr_valve_type"] = brands[0]
+
+        chartis_measurements = granular.get("blvr_chartis_measurements")
+        if isinstance(chartis_measurements, list) and chartis_measurements:
+            if raw.get("blvr_chartis_used") in (None, "", [], {}):
+                raw["blvr_chartis_used"] = True
+            cv_negative = False
+            cv_positive = False
+            chartis_lobes: list[str] = []
+            for item in chartis_measurements:
+                if not isinstance(item, dict):
+                    continue
+                lobe = _first_nonempty_str(item.get("lobe_assessed"))
+                if lobe:
+                    chartis_lobes.append(lobe.upper())
+                result = _first_nonempty_str(item.get("cv_result")) or ""
+                if re.search(r"(?i)\b(?:cv\s*negative|negative|absent)\b", result):
+                    cv_negative = True
+                if re.search(r"(?i)\b(?:cv\s*positive|positive|present)\b", result):
+                    cv_positive = True
+
+            if raw.get("blvr_target_lobe") in (None, "", [], {}):
+                unique_chartis_lobes = _dedupe_preserve_order(chartis_lobes)
+                if len(unique_chartis_lobes) == 1:
+                    raw["blvr_target_lobe"] = unique_chartis_lobes[0]
+
+            if raw.get("blvr_collateral_ventilation_absent") in (None, "", [], {}):
+                if cv_negative and not cv_positive:
+                    raw["blvr_collateral_ventilation_absent"] = True
+                elif cv_positive and not cv_negative:
+                    raw["blvr_collateral_ventilation_absent"] = False
+
+    blvr_text = _extract_blvr_text_fields(note_text)
+    if blvr_text:
+        for key, value in blvr_text.items():
+            if value in (None, "", [], {}):
+                continue
+            # Explicit removal/exchange cues should override noisy upstream labels.
+            if key in {"blvr_valves_removed", "blvr_valves_exchanged"}:
+                raw[key] = value
+                continue
+            if key == "blvr_procedure_type":
+                if value in {"Valve removal", "Valve exchange"}:
+                    raw[key] = value
+                    continue
+                if raw.get(key) in (None, "", [], {}):
+                    raw[key] = value
+                continue
+            if raw.get(key) in (None, "", [], {}):
+                raw[key] = value
+
+    if raw.get("blvr_removal_locations") in (None, "", [], {}):
+        removal_locations: list[str] = []
+        segs = _coerce_str_list(raw.get("blvr_segments_treated"))
+        if segs:
+            removal_locations.extend([seg.upper() for seg in segs])
+        target_lobe = _first_nonempty_str(raw.get("blvr_target_lobe"))
+        if target_lobe:
+            removal_locations.append(target_lobe.upper())
+        if removal_locations:
+            raw["blvr_removal_locations"] = _dedupe_preserve_order(removal_locations)
+
+    if raw.get("blvr_removal_indication") in (None, "", [], {}) and note_text:
+        match = re.search(
+            r"(?i)\b(?:valve\s+remov(?:al|ed)|remove(?:d)?\s+valves?)\s+for\s+([^\.\n]+)",
+            note_text,
+        )
+        indication = match.group(1).strip().rstrip(".") if match else None
+        if not indication:
+            if re.search(r"(?i)\bpersistent\s+(?:air\s+leak|pneumothorax|ptx)\b", note_text):
+                indication = "Persistent air leak/pneumothorax"
+            elif re.search(r"(?i)\btherapy\s+complete\b|\bair\s+leak\s+resolved\b", note_text):
+                indication = "Therapy complete / leak resolved"
+        if indication:
+            raw["blvr_removal_indication"] = indication
+
+    if raw.get("blvr_valve_details") in (None, "", [], {}):
+        details: list[dict[str, Any]] = []
+        valve_type = _normalize_blvr_brand(raw.get("blvr_valve_type")) or "Valve"
+        target_lobe = _first_nonempty_str(raw.get("blvr_target_lobe"))
+        segs = _coerce_str_list(raw.get("blvr_segments_treated"))
+        sizes = _coerce_str_list(raw.get("blvr_valve_sizes"))
+        if segs:
+            for idx, seg in enumerate(segs):
+                item: dict[str, Any] = {
+                    "valve_type": valve_type,
+                    "lobe": target_lobe or "target lobe",
+                    "segment": seg.upper(),
+                }
+                if idx < len(sizes):
+                    item["valve_size"] = sizes[idx]
+                elif len(sizes) == 1:
+                    item["valve_size"] = sizes[0]
+                details.append(item)
+        elif sizes:
+            for size in sizes:
+                details.append(
+                    {
+                        "valve_type": valve_type,
+                        "lobe": target_lobe or "target lobe",
+                        "valve_size": size,
+                    }
+                )
+        if details:
+            raw["blvr_valve_details"] = details
 
     aspiration = procs.get("therapeutic_aspiration")
     if raw.get("therapeutic_aspiration") in (None, "", [], {}) and isinstance(aspiration, dict) and aspiration.get("performed") is True:
@@ -2040,7 +2828,9 @@ def _add_compat_flat_fields(raw: dict[str, Any]) -> dict[str, Any]:
         elif bx_count is not None:
             raw["bronch_num_tbbx"] = bx_count
 
-    if raw.get("bronch_location_lobe") in (None, "", [], {}):
+    if tbbx_location_hint:
+        raw["bronch_location_lobe"] = tbbx_location_hint
+    elif raw.get("bronch_location_lobe") in (None, "", [], {}):
         raw["bronch_location_lobe"] = _first_nonempty_str(location_hint, clinical_context.get("lesion_location"))
     if raw.get("bronch_location_segment") in (None, "", [], {}):
         if segment_hint:
@@ -2055,6 +2845,51 @@ def _add_compat_flat_fields(raw: dict[str, Any]) -> dict[str, Any]:
     # --- Pleural compat: map V3 pleural_procedures.* into legacy flat keys for adapters ---
     pleural = raw.get("pleural_procedures") or {}
     if isinstance(pleural, dict):
+        # Reporter guardrail: tunneled pleural catheter removal is often dictated as a short one-liner and can be
+        # inverted into "chest tube + pleurodesis" when "pleurodesis achieved" is mentioned as an outcome.
+        if raw.get("tunneled_pleural_catheter_remove") in (None, "", [], {}) and source_text:
+            lowered = source_text.lower()
+            has_tunneled_catheter_keyword = bool(
+                re.search(
+                    r"(?i)\b(?:tunneled\s+pleural\s+catheter|indwelling\s+pleural\s+catheter|pleurx|\b(?:tpc|ipc)\b)\b",
+                    source_text,
+                )
+            )
+            has_catheter_removal_phrase = bool(
+                re.search(
+                    r"(?i)\b(?:catheter|pleurx|\bipc\b|\btpc\b)\b[^.\n]{0,60}\b(?:remov(?:al|ed)|remove|explant(?:ed)?|taken\s+out)\b"
+                    r"|\b(?:remov(?:al|ed)|remove|explant(?:ed)?|taken\s+out)\b[^.\n]{0,60}\b(?:catheter|pleurx|\bipc\b|\btpc\b)\b",
+                    source_text,
+                )
+            )
+            if has_tunneled_catheter_keyword and has_catheter_removal_phrase:
+                side = None
+                has_right = bool(re.search(r"(?i)\bright\b", source_text))
+                has_left = bool(re.search(r"(?i)\bleft\b", source_text))
+                if has_right and not has_left:
+                    side = "right"
+                elif has_left and not has_right:
+                    side = "left"
+
+                if side:
+                    reason_parts: list[str] = []
+                    if re.search(r"(?i)\b(?:spontaneous\s+pleurodesis|autopleurodesis|pleurodesis\s+achieved)\b", source_text):
+                        reason_parts.append("Spontaneous pleurodesis achieved")
+                    match = re.search(r"(?i)\bno\s+drainage\b[^\n]{0,60}", source_text)
+                    if match:
+                        reason_parts.append(match.group(0).strip().rstrip("."))
+                    reason = "; ".join(reason_parts) if reason_parts else None
+
+                    sutured = True if ("suture" in lowered or "sutured" in lowered) else None
+                    raw["tunneled_pleural_catheter_remove"] = {
+                        "side": side,
+                        "reason": reason,
+                        "sutured": sutured,
+                        "complications": None,
+                    }
+                    # Prevent insertion/chest-tube adapters from firing on this removal note.
+                    raw["pleural_procedure_type"] = "tunneled catheter removal"
+
         # Fallback: infer common pleural procedures from free text when structured flags are missing.
         if raw.get("pleural_procedure_type") in (None, "", [], {}) and source_text:
             lowered = source_text.lower()
@@ -2062,9 +2897,24 @@ def _add_compat_flat_fields(raw: dict[str, Any]) -> dict[str, Any]:
                 raw["pleural_procedure_type"] = "pigtail catheter"
             elif "thoracentesis" in lowered:
                 raw["pleural_procedure_type"] = "thoracentesis"
-            elif "tunneled pleural catheter" in lowered or "pleurx" in lowered:
+            elif (
+                "tunneled pleural catheter" in lowered
+                or "indwelling pleural catheter" in lowered
+                or "pleurx" in lowered
+                or re.search(r"(?i)\b(?:tpc|ipc)\b", source_text)
+            ):
                 raw["pleural_procedure_type"] = "tunneled catheter"
-            elif "chest tube" in lowered:
+            elif "pleurodesis" in lowered:
+                # Do not infer a pleurodesis *procedure* from outcome phrases like "spontaneous pleurodesis achieved".
+                if not re.search(
+                    r"(?i)\b(?:spontaneous\s+pleurodesis|auto\s*pleurodesis|autopleurodesis|pleurodesis\s+achieved)\b",
+                    source_text,
+                ):
+                    if re.search(r"(?i)\b(?:pleurx|tunneled|tpc|ipc)\b", source_text):
+                        raw["pleural_procedure_type"] = "tunneled catheter"
+                    else:
+                        raw["pleural_procedure_type"] = "chest tube"
+            elif "chest tube" in lowered and not _is_historical_chest_tube_context(source_text):
                 raw["pleural_procedure_type"] = "chest tube"
 
         thor = pleural.get("thoracentesis") or {}
@@ -2095,24 +2945,14 @@ def _add_compat_flat_fields(raw: dict[str, Any]) -> dict[str, Any]:
             if raw.get("pleural_volume_drained_ml") in (None, "", [], {}):
                 volume = thor.get("volume_removed_ml")
                 if volume is None and source_text:
-                    match = re.search(r"(?i)\b(?:drained|removed)\s+(\d{2,5})\s*(?:mL|ml|cc)\b", source_text)
-                    if match:
-                        try:
-                            volume = int(match.group(1))
-                        except Exception:
-                            volume = None
+                    volume = _extract_pleural_volume_ml(source_text)
                 if volume is not None:
                     raw["pleural_volume_drained_ml"] = volume
 
             if raw.get("pleural_fluid_appearance") in (None, "", [], {}):
                 appearance = _first_nonempty_str(thor.get("fluid_appearance"))
                 if not appearance and source_text:
-                    match = re.search(
-                        r"(?i)\b(?:drained|removed)\s+\d{2,5}\s*(?:mL|ml|cc)\s+([a-z][a-z\s-]{0,40})",
-                        source_text,
-                    )
-                    if match:
-                        appearance = match.group(1).strip().rstrip(".")
+                    appearance = _extract_pleural_fluid_appearance(source_text)
                 if appearance:
                     raw["pleural_fluid_appearance"] = appearance
 
@@ -2148,26 +2988,14 @@ def _add_compat_flat_fields(raw: dict[str, Any]) -> dict[str, Any]:
                     raw["pleural_guidance"] = "Ultrasound"
 
             if raw.get("pleural_volume_drained_ml") in (None, "", [], {}) and source_text:
-                volume_ml = None
-                match = re.search(r"(?i)\b(\d{2,5})\s*(?:mL|ml|cc)\b", source_text)
-                if match:
-                    try:
-                        volume_ml = int(match.group(1))
-                    except Exception:
-                        volume_ml = None
-                match = re.search(r"(?i)\b(\d+(?:\.\d+)?)\s*L\b", source_text)
-                if match:
-                    try:
-                        volume_ml = int(round(float(match.group(1)) * 1000))
-                    except Exception:
-                        volume_ml = volume_ml
+                volume_ml = _extract_pleural_volume_ml(source_text)
                 if volume_ml is not None:
                     raw["pleural_volume_drained_ml"] = volume_ml
 
             if raw.get("pleural_fluid_appearance") in (None, "", [], {}) and source_text:
-                match = re.search(r"(?i)\b(?:drained|removed)\s+\d+(?:\.\d+)?\s*(?:L|mL|ml|cc)\s+([a-z][a-z\s-]{0,40})", source_text)
-                if match:
-                    raw["pleural_fluid_appearance"] = match.group(1).strip().rstrip(".")
+                appearance = _extract_pleural_fluid_appearance(source_text)
+                if appearance:
+                    raw["pleural_fluid_appearance"] = appearance
 
             if raw.get("drainage_device") in (None, "", [], {}) and source_text:
                 brand = _first_nonempty_str(ipc.get("catheter_brand"))
@@ -2183,6 +3011,157 @@ def _add_compat_flat_fields(raw: dict[str, Any]) -> dict[str, Any]:
             if raw.get("cxr_ordered") in (None, "", [], {}) and source_text:
                 if re.search(r"(?i)\bcxr\b|chest x[-\\s]?ray", source_text):
                     raw["cxr_ordered"] = True
+
+        chest_tube = pleural.get("chest_tube") or {}
+        if isinstance(chest_tube, dict) and chest_tube.get("performed") is True:
+            action = str(chest_tube.get("action") or "").strip().lower()
+            if raw.get("pleural_procedure_type") in (None, "", [], {}):
+                if action != "removal" and not _is_historical_chest_tube_context(source_text or ""):
+                    tube_type = str(chest_tube.get("tube_type") or "").strip().lower()
+                    if tube_type == "pigtail":
+                        raw["pleural_procedure_type"] = "pigtail catheter"
+                    else:
+                        raw["pleural_procedure_type"] = "chest tube"
+
+            if raw.get("pleural_side") in (None, "", [], {}):
+                side = _first_nonempty_str(chest_tube.get("side"))
+                if side:
+                    raw["pleural_side"] = side.lower()
+
+            if raw.get("pleural_guidance") in (None, "", [], {}):
+                guidance = _first_nonempty_str(chest_tube.get("guidance"))
+                if guidance:
+                    raw["pleural_guidance"] = None if guidance.lower() in {"none", "none/landmark"} else guidance
+
+            if raw.get("size_fr") in (None, "", [], {}):
+                size_fr = chest_tube.get("tube_size_fr")
+                if size_fr not in (None, "", [], {}):
+                    raw["size_fr"] = f"{size_fr}Fr"
+
+        pleurodesis = pleural.get("pleurodesis") or {}
+        if isinstance(pleurodesis, dict) and pleurodesis.get("performed") is True:
+            raw["pleural_pleurodesis_performed"] = True
+            if raw.get("pleural_pleurodesis_agent") in (None, "", [], {}):
+                agent = _first_nonempty_str(pleurodesis.get("agent"))
+                if agent:
+                    raw["pleural_pleurodesis_agent"] = agent
+            if raw.get("pleural_pleurodesis_method") in (None, "", [], {}):
+                method = _first_nonempty_str(pleurodesis.get("method"))
+                if method:
+                    raw["pleural_pleurodesis_method"] = method
+            if raw.get("pleural_pleurodesis_dose") in (None, "", [], {}):
+                talc_dose = pleurodesis.get("talc_dose_grams")
+                if talc_dose not in (None, "", [], {}):
+                    raw["pleural_pleurodesis_dose"] = f"{talc_dose} g"
+            if raw.get("pleural_pleurodesis_indication") in (None, "", [], {}):
+                indication = _first_nonempty_str(pleurodesis.get("indication"))
+                if indication:
+                    raw["pleural_pleurodesis_indication"] = indication
+            if raw.get("pleural_procedure_type") in (None, "", [], {}):
+                if source_text and re.search(r"(?i)\b(?:pleurx|tunneled|tpc|ipc)\b", source_text):
+                    raw["pleural_procedure_type"] = "tunneled catheter"
+                elif source_text and re.search(r"(?i)\bpigtail\b", source_text):
+                    raw["pleural_procedure_type"] = "pigtail catheter"
+                else:
+                    raw["pleural_procedure_type"] = "chest tube"
+
+        fibrinolytic = pleural.get("fibrinolytic_therapy") or {}
+        if isinstance(fibrinolytic, dict) and fibrinolytic.get("performed") is True:
+            agents = _coerce_str_list(fibrinolytic.get("agents"))
+            if raw.get("pleural_fibrinolytic_agents") in (None, "", [], {}) and agents:
+                raw["pleural_fibrinolytic_agents"] = _dedupe_preserve_order(agents)
+
+            if raw.get("pleural_tpa_dose_mg") in (None, "", [], {}):
+                tpa_dose = fibrinolytic.get("tpa_dose_mg")
+                if tpa_dose not in (None, "", [], {}):
+                    raw["pleural_tpa_dose_mg"] = tpa_dose
+            if raw.get("pleural_dnase_dose_mg") in (None, "", [], {}):
+                dnase_dose = fibrinolytic.get("dnase_dose_mg")
+                if dnase_dose not in (None, "", [], {}):
+                    raw["pleural_dnase_dose_mg"] = dnase_dose
+            if raw.get("pleural_fibrinolytic_number_of_doses") in (None, "", [], {}):
+                doses = _coerce_int(fibrinolytic.get("number_of_doses"))
+                if doses is not None:
+                    raw["pleural_fibrinolytic_number_of_doses"] = doses
+            if raw.get("pleural_fibrinolytic_indication") in (None, "", [], {}):
+                indication = _first_nonempty_str(fibrinolytic.get("indication"))
+                if indication:
+                    raw["pleural_fibrinolytic_indication"] = indication
+
+            if source_text:
+                if raw.get("pleural_tpa_dose_mg") in (None, "", [], {}):
+                    match = re.search(r"(?i)\b(\d+(?:\.\d+)?)\s*mg\b[^.\n]{0,20}\b(?:tpa|alteplase)\b", source_text)
+                    if match:
+                        try:
+                            raw["pleural_tpa_dose_mg"] = float(match.group(1))
+                        except Exception:
+                            pass
+                if raw.get("pleural_dnase_dose_mg") in (None, "", [], {}):
+                    match = re.search(r"(?i)\b(\d+(?:\.\d+)?)\s*mg\b[^.\n]{0,20}\b(?:dnase|dornase)\b", source_text)
+                    if match:
+                        try:
+                            raw["pleural_dnase_dose_mg"] = float(match.group(1))
+                        except Exception:
+                            pass
+                if raw.get("pleural_fibrinolytic_number_of_doses") in (None, "", [], {}):
+                    match = re.search(r"(?i)\b(?:x|×)\s*(\d+)\s*(?:days?|doses?)\b", source_text)
+                    if match:
+                        try:
+                            raw["pleural_fibrinolytic_number_of_doses"] = int(match.group(1))
+                        except Exception:
+                            pass
+                if raw.get("pleural_fibrinolytic_schedule") in (None, "", [], {}):
+                    match = re.search(r"(?i)\b(q\d+h|every\s+\d+\s*hours?)\b", source_text)
+                    if match:
+                        raw["pleural_fibrinolytic_schedule"] = match.group(1)
+                if raw.get("pleural_fibrinolytic_agents") in (None, "", [], {}):
+                    text_agents: list[str] = []
+                    if re.search(r"(?i)\b(?:tpa|alteplase)\b", source_text):
+                        text_agents.append("tPA")
+                    if re.search(r"(?i)\b(?:dnase|dornase)\b", source_text):
+                        text_agents.append("DNase")
+                    if text_agents:
+                        raw["pleural_fibrinolytic_agents"] = text_agents
+
+            if raw.get("pleural_procedure_type") in (None, "", [], {}) and source_text:
+                if re.search(r"(?i)\bpigtail\b", source_text):
+                    raw["pleural_procedure_type"] = "pigtail catheter"
+                elif not _is_historical_chest_tube_context(source_text):
+                    raw["pleural_procedure_type"] = "chest tube"
+
+        if source_text and raw.get("pleural_pleurodesis_performed") is not True:
+            # Guardrail: "spontaneous pleurodesis achieved" is an outcome (often the *reason* for catheter removal),
+            # not an intraprocedural pleurodesis action.
+            spontaneous_pleurodesis = bool(
+                re.search(
+                    r"(?i)\b(?:spontaneous\s+pleurodesis|auto\s*pleurodesis|autopleurodesis|pleurodesis\s+achieved)\b",
+                    source_text,
+                )
+            )
+            if not spontaneous_pleurodesis and re.search(
+                r"(?i)\b(?:pleurodesis|talc\s+slurry|doxycycline|talc\s+poudrage)\b",
+                source_text,
+            ):
+                raw["pleural_pleurodesis_performed"] = True
+                if raw.get("pleural_pleurodesis_agent") in (None, "", [], {}):
+                    if re.search(r"(?i)\btalc\b", source_text):
+                        raw["pleural_pleurodesis_agent"] = "Talc"
+                    elif re.search(r"(?i)\bdoxycycline\b", source_text):
+                        raw["pleural_pleurodesis_agent"] = "Doxycycline"
+                if raw.get("pleural_pleurodesis_method") in (None, "", [], {}):
+                    if re.search(r"(?i)\bslurry\b|\binstill", source_text):
+                        raw["pleural_pleurodesis_method"] = "Chemical - slurry"
+                    elif re.search(r"(?i)\bpoudrage\b", source_text):
+                        raw["pleural_pleurodesis_method"] = "Chemical - poudrage"
+
+        if source_text and raw.get("pleural_fibrinolytic_agents") in (None, "", [], {}):
+            if re.search(r"(?i)\b(?:tpa|alteplase|dnase|dornase|fibrinolytic)\b", source_text):
+                agents: list[str] = []
+                if re.search(r"(?i)\b(?:tpa|alteplase)\b", source_text):
+                    agents.append("tPA")
+                if re.search(r"(?i)\b(?:dnase|dornase)\b", source_text):
+                    agents.append("DNase")
+                raw["pleural_fibrinolytic_agents"] = agents or ["fibrinolytic"]
 
         # If we inferred a pleural procedure type (or have one) but didn't get structured details,
         # backfill simple side/volume/appearance/guidance from the raw text.
@@ -2209,29 +3188,14 @@ def _add_compat_flat_fields(raw: dict[str, Any]) -> dict[str, Any]:
                     raw["pleural_guidance"] = "Ultrasound"
 
             if raw.get("pleural_volume_drained_ml") in (None, "", [], {}):
-                volume_ml = None
-                match = re.search(r"(?i)\b(\d{2,5})\s*(?:mL|ml|cc)\b", source_text)
-                if match:
-                    try:
-                        volume_ml = int(match.group(1))
-                    except Exception:
-                        volume_ml = None
-                match = re.search(r"(?i)\b(\d+(?:\.\d+)?)\s*L\b", source_text)
-                if match:
-                    try:
-                        volume_ml = int(round(float(match.group(1)) * 1000))
-                    except Exception:
-                        volume_ml = volume_ml
+                volume_ml = _extract_pleural_volume_ml(source_text)
                 if volume_ml is not None:
                     raw["pleural_volume_drained_ml"] = volume_ml
 
             if raw.get("pleural_fluid_appearance") in (None, "", [], {}):
-                match = re.search(
-                    r"(?i)\b(?:drained|removed)\s+\d+(?:\.\d+)?\s*(?:L|mL|ml|cc)\s+([a-z][a-z\s-]{0,40})",
-                    source_text,
-                )
-                if match:
-                    raw["pleural_fluid_appearance"] = match.group(1).strip().rstrip(".")
+                appearance = _extract_pleural_fluid_appearance(source_text)
+                if appearance:
+                    raw["pleural_fluid_appearance"] = appearance
 
             if pleural_type == "pigtail catheter" and raw.get("size_fr") in (None, "", [], {}):
                 match = re.search(r"(?i)\b(\d+(?:\.\d+)?)\s*fr\b", source_text)

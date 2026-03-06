@@ -77,10 +77,7 @@ def _print_evidence(record: RegistryRecord) -> None:
     table.add_column("Spans")
     for field, spans in record.evidence.items():
         formatted = [
-            (
-                f"{span.section or 'Unknown'}: “{span.text.strip()}” "
-                f"({span.start}-{span.end})"
-            )
+            (f"{span.section or 'Unknown'}: “{span.text.strip()}” ({span.start}-{span.end})")
             for span in spans
         ]
         table.add_row(field, "\n".join(formatted))

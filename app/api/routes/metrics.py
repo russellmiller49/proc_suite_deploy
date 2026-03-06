@@ -269,6 +269,7 @@ def _extract_label(labels_str: str, label_name: str) -> str | None:
 
     # Parse format: {key="value",key2="value2"}
     import re
+
     pattern = rf'{label_name}="([^"]*)"'
     match = re.search(pattern, labels_str)
     return match.group(1) if match else None

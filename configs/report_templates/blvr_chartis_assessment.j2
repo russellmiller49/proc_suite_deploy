@@ -1,0 +1,18 @@
+The Chartis system was used to assess for collateral ventilation (CV) in the following lobes:
+{% for item in proc.assessments or [] %}
+- {{ item.lobe }}: {{ item.cv_result }}
+{% endfor %}
+No endobronchial valves were deployed during this procedure.
+{% if proc.procedure_aborted %}
+{% if proc.aborted_reason %}
+Procedure aborted: {{ proc.aborted_reason }}.
+{% else %}
+Procedure aborted.
+{% endif %}
+{% endif %}
+{% if proc.planned_target_lobe or proc.planned_valve_type %}
+Plan: Proceed with BLVR valve placement{% if proc.planned_target_lobe %} in the {{ proc.planned_target_lobe }}{% endif %}{% if proc.planned_valve_type %} using {{ proc.planned_valve_type }}{% endif %} at a future procedure.
+{% endif %}
+{% if proc.notes %}
+Notes: {{ proc.notes }}.
+{% endif %}

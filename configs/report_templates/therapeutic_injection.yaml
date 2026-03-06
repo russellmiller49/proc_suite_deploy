@@ -1,0 +1,16 @@
+id: therapeutic_injection
+label: Therapeutic Injection
+category: bronchoscopy
+cpt_hints: []
+schema_id: therapeutic_injection_v1
+output_section: PROCEDURE_DETAILS
+template_path: therapeutic_injection.j2
+required_fields: []
+optional_fields:
+  - medication
+  - dose
+  - number_of_sites
+  - sites
+  - notes
+proc_types:
+  - therapeutic_injection

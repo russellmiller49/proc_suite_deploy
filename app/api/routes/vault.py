@@ -22,7 +22,6 @@ from app.api.schemas.vault import (
 from app.registry_store.dependencies import get_registry_store_db
 from app.vault.models import UserPatientVault, UserVaultSettings
 
-
 router = APIRouter(prefix="/v1/vault", tags=["vault"])
 
 _current_user_dep = Depends(get_current_user)
@@ -73,7 +72,9 @@ def get_vault_settings(
     )
     row = db.execute(stmt).scalar_one_or_none()
     if row is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Vault settings not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Vault settings not found"
+        )
     return _settings_to_out(row)
 
 

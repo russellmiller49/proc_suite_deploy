@@ -8,6 +8,7 @@ import json
 import random
 import re
 import sys
+import traceback
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -19,7 +20,13 @@ if str(ROOT) not in sys.path:
 
 from app.api.services.qa_pipeline import ReportingStrategy, SimpleReporterStrategy
 from app.registry.application.registry_service import RegistryService
-from app.reporting.engine import ReporterEngine, _load_procedure_order, default_schema_registry, default_template_registry
+from app.reporting.engine import (
+    ReporterEngine,
+    _load_procedure_order,
+    build_procedure_bundle_from_extraction,
+    default_schema_registry,
+    default_template_registry,
+)
 from app.reporting.inference import InferenceEngine
 from app.reporting.validation import ValidationEngine
 
@@ -245,13 +252,20 @@ def run_reporter_markdown(
     *,
     strategy: ReportingStrategy,
     registry_engine: RegistryService,
-) -> tuple[str, list[str]]:
+) -> tuple[str, list[str], dict[str, Any], dict[str, Any]]:
     extraction = registry_engine.extract_fields_extraction_first(prompt_text)
     record_data = extraction.record.model_dump(exclude_none=True)
-    rendered = strategy.render(text=prompt_text, registry_data={"record": record_data})
+    bundle = build_procedure_bundle_from_extraction(record_data, source_text=prompt_text)
+    bundle_data = bundle.model_dump(exclude_none=True)
+    try:
+        rendered = strategy.render(text=prompt_text, registry_data={"record": record_data})
+    except Exception as exc:  # noqa: BLE001
+        setattr(exc, "_record_data", record_data)
+        setattr(exc, "_bundle_data", bundle_data)
+        raise
     markdown = str(rendered.get("markdown") or "").strip()
     warnings = [str(w) for w in (rendered.get("warnings") or [])]
-    return markdown, warnings
+    return markdown, warnings, record_data, bundle_data
 
 
 def write_results(
@@ -295,11 +309,14 @@ def write_results(
                 "prompt": row.prompt,
                 "markdown": None,
                 "warnings": [],
+                "extracted_record": None,
+                "built_bundle": None,
                 "error": None,
+                "exception_traceback": None,
             }
 
             try:
-                markdown, warnings = run_reporter_markdown(
+                markdown, warnings, record_data, bundle_data = run_reporter_markdown(
                     row.prompt,
                     strategy=strategy,
                     registry_engine=registry_engine,
@@ -312,13 +329,18 @@ def write_results(
                         handle.write(f"- {warning}\n")
                 case_payload["markdown"] = markdown
                 case_payload["warnings"] = warnings
+                case_payload["extracted_record"] = record_data
+                case_payload["built_bundle"] = bundle_data
                 success_count += 1
             except Exception as exc:  # noqa: BLE001
                 handle.write(f"<ERROR: {type(exc).__name__}: {exc}>\n")
+                case_payload["extracted_record"] = getattr(exc, "_record_data", None)
+                case_payload["built_bundle"] = getattr(exc, "_bundle_data", None)
                 case_payload["error"] = {
                     "type": type(exc).__name__,
                     "message": str(exc),
                 }
+                case_payload["exception_traceback"] = traceback.format_exc()
                 failure_count += 1
             handle.write("\n")
             case_results.append(case_payload)

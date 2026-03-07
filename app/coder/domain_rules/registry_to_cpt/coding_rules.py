@@ -253,6 +253,19 @@ def _airway_site_tokens(value: Any) -> set[str]:
     return tokens
 
 
+def _is_tracheal_stent_location(value: Any) -> bool:
+    return "Trachea" in _airway_site_tokens(value)
+
+
+def _is_topical_bronchoscopic_hemostatic_injection(proc: Any) -> bool:
+    if proc is None:
+        return False
+    medication = str(_get(proc, "medication") or "").strip().lower()
+    if not medication:
+        return False
+    return any(token in medication for token in ("txa", "tranexamic", "epinephrine", "epi"))
+
+
 def _normalize_lobe(value: Any) -> str | None:
     if value is None:
         return None
@@ -855,9 +868,15 @@ def derive_all_codes_with_meta(
                 rationales["31645"] = "therapeutic_aspiration.performed=true"
 
     # Therapeutic instillation/injection (31573)
-    if _performed(_proc(record, "therapeutic_injection")):
-        codes.append("31573")
-        rationales["31573"] = "therapeutic_injection.performed=true"
+    therapeutic_injection = _proc(record, "therapeutic_injection")
+    if _performed(therapeutic_injection):
+        if _is_topical_bronchoscopic_hemostatic_injection(therapeutic_injection):
+            warnings.append(
+                "Therapeutic injection medication appears to be topical bronchoscopic hemostasis (e.g. TXA/epinephrine); suppressing 31573."
+            )
+        else:
+            codes.append("31573")
+            rationales["31573"] = "therapeutic_injection.performed=true"
 
     # Foreign body removal
     if _performed(_proc(record, "foreign_body_removal")):
@@ -901,8 +920,9 @@ def derive_all_codes_with_meta(
             return
 
         if placement_action and not revision_action and not removal_action:
-            codes.append("31636")
-            rationales["31636"] = f"{field_prefix}.action indicates placement"
+            placement_code = "31631" if _is_tracheal_stent_location(_get(stent_obj, "location")) else "31636"
+            codes.append(placement_code)
+            rationales[placement_code] = f"{field_prefix}.action indicates placement"
             return
 
         if revision_action:
@@ -919,12 +939,13 @@ def derive_all_codes_with_meta(
                 codes.append("31638")
                 rationales["31638"] = f"{field_prefix} revision/repositioning without placement verbs (treat as existing stent revision)"
             else:
-                codes.append("31636")
-                rationales["31636"] = (
+                placement_code = "31631" if _is_tracheal_stent_location(_get(stent_obj, "location")) else "31636"
+                codes.append(placement_code)
+                rationales[placement_code] = (
                     f"{field_prefix} revision/repositioning documented without removal; bundled into placement (consider modifier 22 if significant)"
                 )
                 warnings.append(
-                    "Stent revision/repositioning documented without removal; coded as placement (31636). Consider modifier 22 when documentation supports increased work."
+                    f"Stent revision/repositioning documented without removal; coded as placement ({placement_code}). Consider modifier 22 when documentation supports increased work."
                 )
             return
 
@@ -1600,7 +1621,7 @@ def derive_all_codes_with_meta(
     # Bundling: stent revision/exchange (31638) supersedes removal/placement only when the
     # stent work appears to be on the same anatomic site.
     if "31638" in derived:
-        dropped_stent_codes = [c for c in ("31635", "31636") if c in derived]
+        dropped_stent_codes = [c for c in ("31635", "31631", "31636") if c in derived]
         if dropped_stent_codes:
             placement_loc = _get(_proc(record, "airway_stent"), "location")
             revision_loc = _get(_proc(record, "airway_stent_revision"), "location")
@@ -1613,20 +1634,20 @@ def derive_all_codes_with_meta(
 
             if distinct_sites:
                 warnings.append(
-                    "Stent placement (31636) and stent revision/exchange (31638) appear to be at distinct sites; keeping both. Add modifier 59/XS as appropriate."
+                    "Stent placement and stent revision/exchange (31638) appear to be at distinct sites; keeping both. Add modifier 59/XS as appropriate."
                 )
             else:
-                derived = [c for c in derived if c not in {"31635", "31636"}]
+                derived = [c for c in derived if c not in {"31635", "31631", "31636"}]
                 for c in dropped_stent_codes:
                     rationales.pop(c, None)
                 warnings.append(
-                    "CPT_CONFLICT_STENT_CYCLE: dropped 31635/31636 because 31638 covers stent revision/exchange"
+                    "CPT_CONFLICT_STENT_CYCLE: dropped stent placement/removal-only codes because 31638 covers stent revision/exchange"
                 )
 
     # Bundling: Dilation (31630) is typically integral to stent placement/revision
     # when performed to expand the stent at the same anatomic site.
     # Default (safe): assume same site unless the record provides distinct anatomy.
-    if "31630" in derived and any(c in derived for c in ("31636", "31638")):
+    if "31630" in derived and any(c in derived for c in ("31631", "31636", "31638")):
         stent_loc = _get(_proc(record, "airway_stent"), "location")
         stent_revision_loc = _get(_proc(record, "airway_stent_revision"), "location")
         dilation_loc = _get(_proc(record, "airway_dilation"), "location")
@@ -1650,11 +1671,11 @@ def derive_all_codes_with_meta(
                 stent_revision_tokens and dilation_tokens and not stent_revision_tokens.isdisjoint(dilation_tokens)
             )
             if placement_overlap:
-                stent_code = "31636"
+                stent_code = "31631" if "Trachea" in stent_tokens else "31636"
             elif revision_overlap:
                 stent_code = "31638"
             else:
-                stent_code = "31636" if "31636" in derived else "31638"
+                stent_code = "31631" if "31631" in derived else ("31636" if "31636" in derived else "31638")
             warnings.append(
                 f"31630 (dilation) bundled into {stent_code} (stent). If dilation was performed at a distinct site, add 31630 with modifier 59/XS."
             )

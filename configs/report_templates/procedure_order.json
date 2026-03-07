@@ -14,6 +14,7 @@
   "airway_dilation": 181,
   "microdebrider_debridement": 182,
   "endobronchial_tumor_destruction": 183,
+  "airway_stent_removal_revision": 184,
   "airway_stent_placement": 184,
   "endobronchial_catheter_placement": 185,
   "tblbx": 190,

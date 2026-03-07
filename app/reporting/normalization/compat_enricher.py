@@ -350,7 +350,8 @@ def _add_compat_flat_fields(raw: dict[str, Any]) -> dict[str, Any]:
         elif "blvr_target_lobe" not in parsed and lobe_tokens:
             # For multi-lobe dictations, try to anchor the *planned* or *target* lobe.
             match = re.search(
-                r"(?i)\b(?:plan(?:s|ned)?\s+to\s+proceed|will\s+proceed|to\s+proceed|schedule(?:d)?|planned)\b"
+                r"(?i)\b(?:target\s+lobe\s+selection|selected\s+target\s+lobe|plan(?:s|ned)?\s+to\s+proceed|"
+                r"will\s+proceed|to\s+proceed|schedule(?:d)?|planned)\b"
                 r"[^.\n]{0,80}\b(RUL|RML|RLL|LUL|LLL|LINGULA)\b",
                 text,
             )
@@ -446,7 +447,7 @@ def _add_compat_flat_fields(raw: dict[str, Any]) -> dict[str, Any]:
     def _extract_pleural_volume_ml(text: str) -> int | None:
         if not text:
             return None
-        verbs = r"(?:drained|removed|aspirated|obtained|withdrawn|evacuated|extracted|tapped|yield(?:ed)?|collected)"
+        verbs = r"(?:drained|drainage|removed|aspirated|obtained|withdrawn|evacuated|extracted|tapped|yield(?:ed)?|collected)"
 
         # Bilateral side-tagged volumes (e.g., "Right 1200ml ... Left 800ml ...")
         side_map: dict[str, float] = {}
@@ -465,6 +466,35 @@ def _add_compat_flat_fields(raw: dict[str, Any]) -> dict[str, Any]:
         if "right" in side_map and "left" in side_map:
             try:
                 return int(round(side_map["right"] + side_map["left"]))
+            except Exception:
+                pass
+
+        serial_values: list[float] = []
+        seen_serial: list[tuple[int, int]] = []
+        serial_patterns = [
+            rf"(?i)\b{verbs}\b[^.\n]{{0,25}}?\b(?:additional\s+)?(\d+(?:\.\d+)?)\s*(L|mL|ml|cc)\b",
+            rf"(?i)\b(?:additional\s+)?(\d+(?:\.\d+)?)\s*(L|mL|ml|cc)\b[^.\n]{{0,40}}\b{verbs}\b",
+            rf"(?i)\bgood\s+drainage\s+of\s+(\d+(?:\.\d+)?)\s*(L|mL|ml|cc)\b",
+        ]
+        for pattern in serial_patterns:
+            for match in re.finditer(pattern, text):
+                span = (int(match.start()), int(match.end()))
+                if any(not (span[1] <= existing[0] or span[0] >= existing[1]) for existing in seen_serial):
+                    continue
+                seen_serial.append(span)
+                try:
+                    value = float(match.group(1))
+                except Exception:
+                    continue
+                unit = str(match.group(2) or "").lower()
+                if unit == "l":
+                    value *= 1000.0
+                if value < 20.0:
+                    continue
+                serial_values.append(value)
+        if len(serial_values) > 1:
+            try:
+                return int(round(sum(serial_values)))
             except Exception:
                 pass
 
@@ -630,6 +660,50 @@ def _add_compat_flat_fields(raw: dict[str, Any]) -> dict[str, Any]:
             elastography_pattern = linear_ebus.get("elastography_pattern")
             if elastography_pattern not in (None, "", [], {}):
                 raw["ebus_elastography_pattern"] = elastography_pattern
+
+    eus_b = procs.get("eus_b") or {}
+    eusb_source_text = _first_nonempty_str(raw.get("source_text"), raw.get("note_text"), raw.get("raw_note"), raw.get("text"))
+    if isinstance(eus_b, dict) and eus_b.get("performed") is True and eusb_source_text:
+        match = re.search(
+            r"(?is)\bEUS-?B\b\s*:\s*(.+?)(?:\.\s*(?:All stations|No complications|Complications)\b|$)",
+            eusb_source_text,
+        )
+        eusb_text = match.group(1) if match else eusb_source_text
+        eusb_stations = _dedupe_preserve_order(
+            [station.upper() for station in re.findall(r"(?i)\b(1[0-2][LR]?|[2-9][LR]?)\b", eusb_text)]
+        )
+        if eusb_stations:
+            raw["eusb"] = {
+                "stations_sampled": eusb_stations,
+                "needle_gauge": _first_nonempty_str(eus_b.get("needle_gauge")),
+                "passes": None,
+                "rose_result": (
+                    "Adequate lymphocytes"
+                    if re.search(r"(?i)\bROSE\s+adequate\b|\badequate\b", eusb_text)
+                    else _first_nonempty_str(eus_b.get("rose_result"))
+                ),
+                "complications": None,
+            }
+
+            for key in ("linear_ebus_stations", "ebus_stations_sampled"):
+                existing = _coerce_str_list(raw.get(key))
+                if existing:
+                    filtered = [item for item in existing if str(item).strip().upper() not in set(eusb_stations)]
+                    if filtered:
+                        raw[key] = filtered
+
+            detail = raw.get("ebus_stations_detail")
+            if isinstance(detail, list):
+                filtered_detail = []
+                for item in detail:
+                    if not isinstance(item, dict):
+                        continue
+                    station = str(item.get("station") or item.get("station_name") or "").strip().upper()
+                    if station and station in set(eusb_stations):
+                        continue
+                    filtered_detail.append(item)
+                if filtered_detail:
+                    raw["ebus_stations_detail"] = filtered_detail
 
     # --- EBUS compat from granular per-station detail (extraction-first / completeness addendum) ---
     granular = raw.get("granular_data") or {}
@@ -1391,6 +1465,24 @@ def _add_compat_flat_fields(raw: dict[str, Any]) -> dict[str, Any]:
         head = re.sub(r"(?i)^case\s*\d+\s*[:\-]\s*", "", head).strip()
         head = head[:900]
 
+        def _looks_like_logistics(value: str) -> bool:
+            lowered = value.lower().strip(" ,;:-")
+            if re.fullmatch(r"\d+\s+(?:hours?|days?|weeks?|months?)", lowered):
+                return True
+            if re.fullmatch(r"\d+\s+(?:hours?|days?|weeks?|months?)\s+post\s+radiation", lowered):
+                return True
+            if re.match(r"^\d+\s+(?:hours?|days?|weeks?|months?)\b", lowered) and re.search(
+                r"\b(?:watch|monitoring|observation|post\s+radiation|pleurodesis|no\s+drainage)\b",
+                lowered,
+            ):
+                return True
+            if re.search(r"\b(?:watch|monitoring|observation)\b", lowered) and not re.search(
+                r"\b(?:pneumothorax|effusion|emphysema|mass|nodule|lesion|stenosis|pap|plugging|pleurodesis)\b",
+                lowered,
+            ):
+                return True
+            return False
+
         def _clean(value: str) -> str | None:
             value = value.strip().strip(",;:-").strip()
             value = re.sub(
@@ -1399,7 +1491,9 @@ def _add_compat_flat_fields(raw: dict[str, Any]) -> dict[str, Any]:
                 value,
             ).strip()
             value = value.replace("[", "").replace("]", "").strip().rstrip(".").strip()
-            return value or None
+            if not value or _looks_like_logistics(value):
+                return None
+            return value
 
         pattern = re.compile(
             r"(?i)\b(?:"
@@ -2582,6 +2676,24 @@ def _add_compat_flat_fields(raw: dict[str, Any]) -> dict[str, Any]:
         if details:
             raw["blvr_valve_details"] = details
 
+    wll = procs.get("whole_lung_lavage")
+    if isinstance(wll, dict) and wll.get("performed") is True:
+        if raw.get("wll_volume_instilled_l") in (None, "", [], {}):
+            total_l = wll.get("total_volume_liters") or wll.get("total_volume_l")
+            if total_l not in (None, "", [], {}):
+                raw["wll_volume_instilled_l"] = total_l
+        if raw.get("wll_side") in (None, "", [], {}):
+            side_match = re.search(
+                r"(?i)\b(?:whole\s+lung\s+lavage|wll)\b[^.\n]{0,60}\b(right|left)\b"
+                r"|\b(right|left)\b[^.\n]{0,60}\b(?:whole\s+lung\s+lavage|wll)\b",
+                note_text,
+            )
+            side = None
+            if side_match:
+                side = str(side_match.group(1) or side_match.group(2) or "").strip().lower()
+            if side:
+                raw["wll_side"] = side
+
     aspiration = procs.get("therapeutic_aspiration")
     if raw.get("therapeutic_aspiration") in (None, "", [], {}) and isinstance(aspiration, dict) and aspiration.get("performed") is True:
         aspirate_type = _first_nonempty_str(aspiration.get("material"))
@@ -2596,6 +2708,25 @@ def _add_compat_flat_fields(raw: dict[str, Any]) -> dict[str, Any]:
             "airway_segment": _first_nonempty_str(aspiration.get("location"), segment_hint, location_hint, "airways"),
             "aspirate_type": aspirate_type or "secretions",
         }
+    if raw.get("therapeutic_aspiration") in (None, "", [], {}) and note_text:
+        mucus_clearance = bool(
+            re.search(r"(?i)\b(?:mucus(?:\s+plugging)?|thick\s+secretions?|mucoid\s+impaction)\b", note_text)
+            and re.search(r"(?i)\b(?:suction(?:ing)?|aspirat(?:ed|ion)|lavage|cleared?|restored\s+patency)\b", note_text)
+        )
+        if mucus_clearance:
+            airway_segment = "airways"
+            if re.search(r"(?i)\bbilateral\s+lower\s+lobes?\s+and\s+rml\b", note_text):
+                airway_segment = "bilateral lower lobes and RML"
+            elif re.search(r"(?i)\bthroughout\s+the\s+tracheobronchial\s+tree\b", note_text):
+                airway_segment = "tracheobronchial tree"
+            raw["therapeutic_aspiration"] = {
+                "airway_segment": airway_segment,
+                "aspirate_type": "mucus",
+            }
+            if not re.search(r"(?i)\bBAL\b|bronchoalveolar\s+lavage", note_text):
+                raw["bal"] = None
+            if not re.search(r"(?i)\bbronchial\s+washing\b", note_text):
+                raw["bronchial_washing"] = None
 
     dilation = procs.get("airway_dilation")
     if raw.get("airway_dilation") in (None, "", [], {}) and isinstance(dilation, dict) and dilation.get("performed") is True:
@@ -2708,27 +2839,40 @@ def _add_compat_flat_fields(raw: dict[str, Any]) -> dict[str, Any]:
                     "interventions": None,
                     "final_patency_pct": None,
                 }
-        elif action_norm == "removal":
-            if raw.get("foreign_body_removal") in (None, "", [], {}):
+        elif action_norm in {"removal", "revision"}:
+            if raw.get("airway_stent_removal_revision") in (None, "", [], {}):
                 tools: list[str] = []
+                adjuncts: list[str] = []
                 lowered = (note_text or "").lower()
                 if "forceps" in lowered:
-                    tools.append("Forceps")
+                    tools.append("forceps")
                 if "snare" in lowered:
-                    tools.append("Snare")
+                    tools.append("snare")
                 if "basket" in lowered:
-                    tools.append("Basket")
+                    tools.append("basket")
                 if "cryo" in lowered:
-                    tools.append("Cryoprobe")
-                raw["foreign_body_removal"] = {
+                    tools.append("cryoprobe")
+                if "apc" in lowered or "argon plasma" in lowered:
+                    adjuncts.append("APC to granulation tissue")
+                if "granulation" in lowered:
+                    adjuncts.append("granulation tissue management")
+                technique = ", ".join(tools) if tools else "standard retrieval techniques"
+                outcome = None
+                match = re.search(r"(?i)\bairway\s+patent\b[^.\n]{0,80}", note_text)
+                if match:
+                    outcome = match.group(0).strip().rstrip(".")
+                raw["airway_stent_removal_revision"] = {
+                    "indication": (
+                        "Granulation tissue / stent revision"
+                        if "granulation" in lowered
+                        else "Airway stent removal"
+                    ),
+                    "stent_type": stent_type,
                     "airway_segment": stent_location,
-                    "tools_used": tools or ["Forceps"],
-                    "passes": None,
-                    "removed_intact": None,
-                    "mucosal_trauma": None,
-                    "bleeding": None,
-                    "hemostasis_method": None,
-                    "cxr_ordered": None,
+                    "technique": technique,
+                    "adjuncts": _dedupe_preserve_order(adjuncts),
+                    "outcome": outcome,
+                    "replacement_stent": None,
                     "notes": None,
                 }
         else:
@@ -2997,7 +3141,10 @@ def _add_compat_flat_fields(raw: dict[str, Any]) -> dict[str, Any]:
                 if appearance:
                     raw["pleural_fluid_appearance"] = appearance
 
-            if raw.get("drainage_device") in (None, "", [], {}) and source_text:
+            if (
+                raw.get("drainage_device") in (None, "", [], {})
+                or str(raw.get("drainage_device") or "").strip().lower() in {"other", "other catheter", "catheter"}
+            ) and source_text:
                 brand = _first_nonempty_str(ipc.get("catheter_brand"))
                 size = None
                 match = re.search(r"(?i)\b(\d+(?:\.\d+)?)\s*fr\b", source_text)
@@ -3007,6 +3154,8 @@ def _add_compat_flat_fields(raw: dict[str, Any]) -> dict[str, Any]:
                     raw["drainage_device"] = f"{size}Fr {brand} catheter"
                 elif brand:
                     raw["drainage_device"] = f"{brand} catheter"
+                else:
+                    raw["drainage_device"] = "tunneled pleural catheter"
 
             if raw.get("cxr_ordered") in (None, "", [], {}) and source_text:
                 if re.search(r"(?i)\bcxr\b|chest x[-\\s]?ray", source_text):
@@ -3202,7 +3351,10 @@ def _add_compat_flat_fields(raw: dict[str, Any]) -> dict[str, Any]:
                 if match:
                     raw["size_fr"] = f"{match.group(1)}Fr"
 
-            if raw.get("drainage_device") in (None, "", [], {}) and source_text:
+            if (
+                raw.get("drainage_device") in (None, "", [], {})
+                or str(raw.get("drainage_device") or "").strip().lower() in {"other", "other catheter", "catheter"}
+            ) and source_text:
                 size = None
                 match = re.search(r"(?i)\b(\d+(?:\.\d+)?)\s*fr\b", source_text)
                 if match:
@@ -3214,6 +3366,8 @@ def _add_compat_flat_fields(raw: dict[str, Any]) -> dict[str, Any]:
                     raw["drainage_device"] = f"{size}Fr {brand} catheter"
                 elif brand:
                     raw["drainage_device"] = f"{brand} catheter"
+                elif pleural_type == "tunneled catheter":
+                    raw["drainage_device"] = "tunneled pleural catheter"
 
             if raw.get("cxr_ordered") in (None, "", [], {}) and source_text:
                 if re.search(r"(?i)\bcxr\b|chest x[-\s]?ray", source_text):

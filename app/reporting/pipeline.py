@@ -728,6 +728,15 @@ class ReportPipeline:
                         line += f" ({total_str} L)"
                     lines.append(line)
 
+                for aspiration_proc in _by_type("therapeutic_aspiration"):
+                    data = _proc_data_dict(aspiration_proc)
+                    airway_segment = _as_text(data.get("airway_segment"))
+                    aspirate_type = _as_text(data.get("aspirate_type")) or "secretions"
+                    if airway_segment:
+                        lines.append(f"Therapeutic aspiration of {airway_segment} ({aspirate_type})")
+                    else:
+                        lines.append(f"Therapeutic aspiration ({aspirate_type})")
+
                 for bal_proc in _by_type("bal"):
                     data = _proc_data_dict(bal_proc)
                     seg = _as_text(data.get("lung_segment"))
@@ -757,6 +766,14 @@ class ReportPipeline:
                                 "Endobronchial Ultrasound-Guided Transbronchial Needle Aspiration (EBUS-TBNA)"
                             )
 
+                for eusb_proc in _by_type("eusb"):
+                    data = _proc_data_dict(eusb_proc)
+                    stations = _as_text(data.get("stations_sampled"))
+                    if stations:
+                        lines.append(f"EUS-B-guided needle aspiration (Stations {stations})")
+                    else:
+                        lines.append("EUS-B-guided needle aspiration")
+
                 for rigid_proc in _by_type("rigid_bronchoscopy"):
                     data = _proc_data_dict(rigid_proc)
                     interventions = data.get("interventions") or []
@@ -781,6 +798,14 @@ class ReportPipeline:
                         lines.append(f"Airway Stent Placement ({stent_type})")
                     else:
                         lines.append("Airway Stent Placement")
+
+                for stent_proc in _by_type("airway_stent_removal_revision"):
+                    data = _proc_data_dict(stent_proc)
+                    airway_segment = _as_text(data.get("airway_segment"))
+                    if airway_segment:
+                        lines.append(f"Airway Stent Removal / Revision ({airway_segment})")
+                    else:
+                        lines.append("Airway Stent Removal / Revision")
 
                 for ablation_proc in _by_type("peripheral_ablation"):
                     data = _proc_data_dict(ablation_proc)

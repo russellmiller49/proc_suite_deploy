@@ -1460,12 +1460,20 @@ def _extract_ln_stations_from_text(note_text: str) -> list[str]:
         r"(?<![0-9A-Z])(2R|2L|3p|4R|4L|5|7|8|9|10R|10L|11R(?:S|I)?|11L(?:S|I)?|12R|12L)(?![0-9A-Z])",
         re.IGNORECASE,
     )
+    table_header_re = re.compile(
+        r"(?i)\bstation\s*:?\s*(?:ebus\s+size|short\s+axis|size\s*\(mm\))[^.\n]{0,120}\bnumber\s+of\s+passes\b"
+    )
+    table_row_re = re.compile(
+        r"(?i)^\s*(?:2R|2L|3P|4R|4L|5|7|8|9|10R|10L|11R(?:S|I)?|11L(?:S|I)?|12R|12L|(?:right|left)(?:\s+(?:upper|middle|lower)\s+lobe)?\s+(?:mass|lesion|nodule)|lung\s+(?:mass|lesion|nodule)|mass|lesion|nodule)\b"
+    )
 
     stations: list[str] = []
 
     for raw_line in (note_text or "").splitlines():
         line = raw_line.strip()
         if not line:
+            continue
+        if table_header_re.search(line) or table_row_re.match(line):
             continue
 
         if not sampling_hint_re.search(line):
@@ -2492,6 +2500,49 @@ def extract_airway_stent(note_text: str) -> Dict[str, Any]:
                     best_loc = loc
         return best_loc
 
+    def _sentence_window_around(raw: str, pos: int, *, radius: int = 260) -> str:
+        if not raw:
+            return ""
+        start = max(0, pos - radius)
+        end = min(len(raw), pos + radius)
+        left_boundary = max(raw.rfind(".", 0, pos), raw.rfind("\n", 0, pos))
+        if left_boundary >= start:
+            start = left_boundary + 1
+        right_boundary_candidates = [b for b in (raw.find(".", pos), raw.find("\n", pos)) if b != -1]
+        if right_boundary_candidates:
+            right_boundary = min(right_boundary_candidates)
+            if right_boundary <= end:
+                end = right_boundary
+        return raw[start:end].strip()
+
+    def _infer_airway_site_for_stent_context(raw: str, pos: int) -> str | None:
+        if not raw:
+            return None
+        sentence = _sentence_window_around(raw, pos)
+        if sentence:
+            segments = [seg.strip() for seg in re.split(r"(?<=[.;])\s+|\n+", sentence) if seg.strip()]
+            placement_segments = [
+                seg
+                for seg in segments
+                if re.search(r"(?i)\bstent\b", seg)
+                and re.search(
+                    r"(?i)\b(?:deploy(?:ed|ment)?|insert(?:ed|ion)?|place(?:d|ment)?|advance(?:d|ment)?|implant(?:ed|ation)?|reposition(?:ed|ing)?)\b",
+                    seg,
+                )
+            ]
+            for segment in reversed(placement_segments or segments):
+                inferred = _infer_airway_site_last(segment)
+                if inferred:
+                    return inferred
+
+        around = raw[max(0, pos - 180) : min(len(raw), pos + 220)]
+        inferred = _infer_airway_site_last(around)
+        if inferred:
+            return inferred
+
+        lookback = raw[max(0, pos - 700) : pos]
+        return _infer_airway_site_last(lookback)
+
     def _has_nonhistorical_placed_stent(text: str) -> bool:
         """Detect new-stent placement from 'placed' while excluding history-only phrasing.
 
@@ -2751,9 +2802,7 @@ def extract_airway_stent(note_text: str) -> Dict[str, Any]:
             if diameter is not None and length is not None and 6 <= diameter <= 25 and 10 <= length <= 100:
                 placement_proc["diameter_mm"] = diameter
                 placement_proc["length_mm"] = length
-            # Infer site from immediate pre-context to avoid later BI manipulation phrases.
-            lookback = (preferred_text or "")[max(0, pos - 700) : pos]
-            inferred = _infer_airway_site_last(lookback)
+            inferred = _infer_airway_site_for_stent_context(preferred_text or "", pos)
             if inferred and not placement_proc.get("location"):
                 placement_proc["location"] = inferred
         elif classified_sizes and not placement_proc.get("device_size"):
@@ -2803,8 +2852,7 @@ def extract_airway_stent(note_text: str) -> Dict[str, Any]:
             if length is not None and not proc.get("length_mm"):
                 proc["length_mm"] = length
             if not proc.get("location"):
-                lookback = (preferred_text or "")[max(0, pos - 700) : pos]
-                inferred = _infer_airway_site_last(lookback)
+                inferred = _infer_airway_site_for_stent_context(preferred_text or "", pos)
                 if inferred:
                     proc["location"] = inferred
         elif classified_sizes and not proc.get("device_size"):
@@ -5101,7 +5149,11 @@ def extract_chest_tube_removal(note_text: str) -> Dict[str, Any]:
         return {}
 
     proc: dict[str, Any] = {"performed": True}
-    side = _extract_checked_side(note_text, "Entry Site") or _extract_checked_side(note_text, "Hemithorax")
+    side = (
+        _extract_checked_side(note_text, "Entry Site")
+        or _extract_checked_side(note_text, "Hemithorax")
+        or _extract_checked_side(note_text, "Side")
+    )
     if side in {"Left", "Right"}:
         proc["side"] = side
     return {"chest_tube_removal": proc}
@@ -5196,7 +5248,11 @@ def extract_ipc(note_text: str) -> Dict[str, Any]:
     elif insertion_hit:
         proc["action"] = "Insertion"
 
-    side = _extract_checked_side(note_text, "Entry Site") or _extract_checked_side(note_text, "Hemithorax")
+    side = (
+        _extract_checked_side(note_text, "Entry Site")
+        or _extract_checked_side(note_text, "Hemithorax")
+        or _extract_checked_side(note_text, "Side")
+    )
     if side in {"Left", "Right"}:
         proc["side"] = side
     else:

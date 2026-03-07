@@ -20,14 +20,16 @@ except Exception:  # pragma: no cover
 
 _EBUS_HINT_RE = re.compile(r"(?i)\b(?:ebus|endobronchial\s+ultrasound|ebus-tbna)\b")
 
+_STATION_TOKEN_PATTERN = r"(?:2R|2L|3P|4R|4L|5|7|8|9|10R|10L|11R(?:s|i)?|11L(?:s|i)?|12R|12L)"
+
 _STATION_HEADER_RE = re.compile(
-    r"(?is)\bStation\s+(?P<station>[0-9]{1,2}[LR]?(?:Rs|Ri|Ls|Li)?)\b"
+    rf"(?is)\bStation\s+(?P<station>{_STATION_TOKEN_PATTERN})\b"
 )
 _NUMBERED_STATION_HEADER_RE = re.compile(
-    r"(?im)^\s*\d{1,2}\s*[.)]\s*(?:station\s*)?(?P<station>[0-9]{1,2}[LR]?(?:Rs|Ri|Ls|Li)?)\b"
+    rf"(?im)^\s*\d{{1,2}}\s*[.)]\s*(?:station\s*)?(?P<station>{_STATION_TOKEN_PATTERN})\b"
 )
 _LINE_STATION_HEADER_RE = re.compile(
-    r"(?im)^\s*(?P<station>2R|2L|3P|4R|4L|5|7|8|9|10R|10L|11R(?:s|i)?|11L(?:s|i)?|12R|12L)\s*[:\-–]\s*"
+    rf"(?im)^\s*(?P<station>{_STATION_TOKEN_PATTERN})\s*[:\-–]\s*"
 )
 
 _GLOBAL_NEEDLE_GAUGE_RE = re.compile(r"(?i)\b(19|21|22|25)\s*[- ]?(?:g|gauge)\b")
@@ -69,11 +71,11 @@ _AXES_FALLBACK_RE = re.compile(
 _PAREN_MM_RE = re.compile(r"(?i)[\(\[]\s*(?P<mm>\d+(?:\.\d+)?)\s*mm\s*[\)\]]")
 
 _STATION_SIZE_LIST_LINE_RE = re.compile(
-    r"(?im)^\s*(?P<station>2R|2L|3P|4R|4L|5|7|8|9|10R|10L|11R(?:s|i)?|11L(?:s|i)?|12R|12L)\s*"
+    rf"(?im)^\s*(?P<station>{_STATION_TOKEN_PATTERN})\s*"
     r"[-:]\s*(?P<mm>\d+(?:\.\d+)?)\s*mm\b"
 )
 _INLINE_STATION_TOKEN_RE = re.compile(
-    r"(?i)\b(?P<station>2R|2L|3P|4R|4L|10R|10L|11R(?:s|i)?|11L(?:s|i)?|12R|12L)\b"
+    rf"(?i)\b(?P<station>2R|2L|3P|4R|4L|10R|10L|11R(?:s|i)?|11L(?:s|i)?|12R|12L)\b"
 )
 _INLINE_NUMERIC_STATION_PAREN_RE = re.compile(
     r"(?i)\b(?P<station>5|7|8|9)\b(?=\s*[\(\[]\s*\d+(?:\.\d+)?\s*mm\b)"
@@ -86,7 +88,7 @@ _NEEDLE_GAUGE_RE = re.compile(r"(?i)\b(19|21|22|25)\s*[- ]?(?:g|gauge)\b")
 
 _SITE_BLOCK_HEADER_RE = re.compile(r"(?im)^\s*site\s*#?\s*(?P<num>\d{1,2})\s*(?:[:\-–.]|\)\s*)")
 _SITE_STATION_TOKEN_RE = re.compile(
-    r"\b(2R|2L|4R|4L|7|10R|10L|11R(?:S|I)?|11L(?:S|I)?)\b",
+    rf"\b({_STATION_TOKEN_PATTERN})\b",
     re.IGNORECASE,
 )
 _SITE_PASSES_RE = re.compile(
@@ -94,6 +96,13 @@ _SITE_PASSES_RE = re.compile(
     r"needle\s+passes?|passes?|endobronchial\s+ultrasound\s+guided\s+transbronchial\s+biops(?:y|ies)"
     r")\b",
     re.IGNORECASE,
+)
+_TABLE_HEADER_RE = re.compile(
+    r"(?i)^\s*station\s*:?\s*(?:ebus\s+size|short\s+axis|size\s*\(mm\)).*\bnumber\s+of\s+passes\b"
+)
+_TABLE_ROW_RE = re.compile(
+    rf"(?i)^\s*(?P<label>{_STATION_TOKEN_PATTERN}|(?:right|left)(?:\s+(?:upper|middle|lower)\s+lobe)?\s+(?:mass|lesion|nodule)|lung\s+(?:mass|lesion|nodule)|mass|lesion|nodule)"
+    r"\s+(?P<mm>n/?a|\d+(?:\.\d+)?)\s+(?P<passes>\d{1,2})(?:\s+(?P<rose>[^.\n]+?))?\s*$"
 )
 
 _SAMPLED_FALSE_RE = re.compile(
@@ -784,6 +793,96 @@ def extract_linear_ebus_stations_detail(note_text: str) -> list[dict[str, Any]]:
                 entry["elastography_pattern"] = inferred
             elif "elastography" in section.lower():
                 entry.setdefault("elastography_performed", True)
+
+    # Structured station tables are authoritative for pass-count / sampled vs inspected logic,
+    # especially when zero-pass survey rows appear alongside one true sampled node.
+    cursor = 0
+    in_table = False
+    for raw_line in text.splitlines(keepends=True):
+        line_offset = cursor
+        cursor += len(raw_line)
+        line = raw_line.rstrip("\r\n")
+        stripped = line.strip()
+
+        if _TABLE_HEADER_RE.search(line):
+            in_table = True
+            continue
+        if not in_table:
+            continue
+        if not stripped:
+            in_table = False
+            continue
+
+        row_match = _TABLE_ROW_RE.match(line)
+        if not row_match:
+            in_table = False
+            continue
+
+        label_raw = (row_match.group("label") or "").strip()
+        if not label_raw:
+            continue
+
+        station = _normalize_station_token(label_raw)
+        entry_key = station
+        if not entry_key:
+            entry_key = re.sub(r"\s+", " ", label_raw).strip().title()
+        if not entry_key:
+            continue
+
+        entry = by_station.get(entry_key)
+        if entry is None:
+            entry = {"station": entry_key}
+            by_station[entry_key] = entry
+            order.append(entry_key)
+
+        mm_raw = (row_match.group("mm") or "").strip()
+        mm_val = None if mm_raw.lower() in {"n/a", "na"} else _to_float(mm_raw)
+        if mm_val is not None and entry.get("short_axis_mm") is None:
+            mm_start = line_offset + int(row_match.start("mm"))
+            mm_end = line_offset + int(row_match.end("mm"))
+            entry["short_axis_mm"] = mm_val
+            entry["_short_axis_mm_evidence"] = {
+                "text": mm_raw,
+                "start": mm_start,
+                "end": mm_end,
+            }
+
+        passes_raw = (row_match.group("passes") or "").strip()
+        passes_val = _to_int(passes_raw)
+        if passes_val is not None:
+            passes_start = line_offset + int(row_match.start("passes"))
+            passes_end = line_offset + int(row_match.end("passes"))
+            entry["number_of_passes"] = passes_val
+            entry["_number_of_passes_evidence"] = {
+                "text": passes_raw,
+                "start": passes_start,
+                "end": passes_end,
+            }
+            entry["sampled"] = passes_val > 0
+
+            if passes_val > 0 and entry.get("needle_gauge") is None and global_gauge is not None:
+                entry["needle_gauge"] = global_gauge
+                if global_gauge_evidence:
+                    entry.setdefault("_needle_gauge_evidence", global_gauge_evidence)
+
+        rose_raw = (row_match.group("rose") or "").strip()
+        if rose_raw:
+            rose_lower = rose_raw.lower()
+            entry["rose_performed"] = True
+            if "malignan" in rose_lower:
+                entry["rose_result"] = "Malignant"
+                entry.setdefault("morphologic_impression", "malignant")
+            elif "lymphocyte" in rose_lower:
+                entry["rose_result"] = "Adequate lymphocytes"
+                entry.setdefault("lymphocytes_present", True)
+            elif "granuloma" in rose_lower:
+                entry["rose_result"] = "Granuloma"
+            elif "suspicious" in rose_lower:
+                entry["rose_result"] = "Suspicious for malignancy"
+            elif "atypical" in rose_lower:
+                entry["rose_result"] = "Atypical cells"
+            elif "nondiagnostic" in rose_lower:
+                entry["rose_result"] = "Nondiagnostic"
 
     # Size-only station list lines (common in free-text narratives), e.g.:
     #   11L - 7.8mm

@@ -1,0 +1,8 @@
+Airway stent removal/revision was performed{% if proc.airway_segment %} in the {{ proc.airway_segment }}{% endif %}.
+{% if proc.indication %}Indication: {{ proc.indication }}.{% endif %}
+{% if proc.stent_type %}Stent details: {{ proc.stent_type }}.{% endif %}
+{% if proc.technique %}Technique: {{ proc.technique }}.{% endif %}
+{% if proc.adjuncts %}Adjuncts: {{ proc.adjuncts | join(', ') }}.{% endif %}
+{% if proc.outcome %}Outcome: {{ proc.outcome }}.{% else %}Post-intervention airway patency was confirmed.{% endif %}
+{% if proc.replacement_stent %}Replacement stent: {{ proc.replacement_stent }}.{% endif %}
+{% if proc.notes %}Notes: {{ proc.notes }}.{% endif %}

@@ -138,6 +138,19 @@ class AirwayStentPlacementPartial(BaseModel):
     notes: str | None = None
 
 
+class AirwayStentRemovalRevisionPartial(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    indication: str | None = None
+    stent_type: str | None = None
+    airway_segment: str | None = None
+    technique: str | None = None
+    adjuncts: List[str] = Field(default_factory=list)
+    outcome: str | None = None
+    replacement_stent: str | None = None
+    notes: str | None = None
+
+
 class MedicalThoracoscopyPartial(BaseModel):
     model_config = ConfigDict(extra="ignore")
 

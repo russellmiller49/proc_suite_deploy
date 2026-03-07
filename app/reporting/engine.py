@@ -69,6 +69,7 @@ from app.reporting.macro_engine import (
 from app.reporting.partial_schemas import (
     AirwayDilationPartial,
     AirwayStentPlacementPartial,
+    AirwayStentRemovalRevisionPartial,
     BALPartial,
     BLVRChartisAssessmentPartial,
     BronchialBrushingPartial,
@@ -1124,6 +1125,7 @@ def default_schema_registry() -> SchemaRegistry:
         "microdebrider_debridement_v1": MicrodebriderDebridementPartial,
         "endobronchial_tumor_destruction_v1": EndobronchialTumorDestructionPartial,
         "airway_stent_placement_v1": AirwayStentPlacementPartial,
+        "airway_stent_removal_revision_v1": AirwayStentRemovalRevisionPartial,
         "medical_thoracoscopy_v1": MedicalThoracoscopyPartial,
     }
     pleural_models = {
@@ -1816,6 +1818,12 @@ def build_procedure_bundle_from_extraction(
     airway_segment = _infer_airway_segment(note_text)
     obstruction_pre_pct, obstruction_post_pct = parse_obstruction_pre_post(note_text)
     ebl_ml = parse_ebl_ml(note_text)
+    stent_removal_context = bool(
+        re.search(
+            r"(?i)\b(?:stent\s+remov(?:al|ed)|remove(?:d)?\s+(?:the\s+)?stent|extract\s+stent|retriev(?:ed|al)\s+stent)\b",
+            note_text,
+        )
+    )
 
     # --- Rigid bronchoscopy / CAO heuristics ---
     rigid_context = bool(
@@ -1830,7 +1838,9 @@ def build_procedure_bundle_from_extraction(
             interventions.append("Microdebrider Debridement")
         if re.search(r"(?i)\bapc\b|argon\s+plasma", note_text):
             interventions.append("Argon Plasma Coagulation (APC)")
-        if re.search(r"(?i)\bstent\b", note_text):
+        if stent_removal_context:
+            interventions.append("Airway Stent Removal / Revision")
+        elif re.search(r"(?i)\bstent\b", note_text):
             interventions.append("Airway Stent Placement")
         if re.search(r"(?i)\bforeign\s+body\b|\baspirat", note_text):
             interventions.append("Foreign body removal")
@@ -1927,7 +1937,36 @@ def build_procedure_bundle_from_extraction(
                 {"modality": "APC", "airway_segment": airway_segment},
             )
 
-        if re.search(r"(?i)\bstent\b", note_text):
+        if stent_removal_context:
+            if "airway_stent_removal_revision" not in existing_proc_types:
+                tools: list[str] = []
+                if "forceps" in note_lower:
+                    tools.append("forceps")
+                if "snare" in note_lower:
+                    tools.append("snare")
+                if "basket" in note_lower:
+                    tools.append("basket")
+                if "cryo" in note_lower:
+                    tools.append("cryoprobe")
+                outcome = None
+                match = re.search(r"(?i)\bairway\s+patent\b[^.\n]{0,80}", note_text)
+                if match:
+                    outcome = match.group(0).strip().rstrip(".")
+                _append_proc(
+                    "airway_stent_removal_revision",
+                    "airway_stent_removal_revision_v1",
+                    {
+                        "indication": "Airway stent removal",
+                        "stent_type": None,
+                        "airway_segment": airway_segment,
+                        "technique": ", ".join(tools) if tools else "standard retrieval techniques",
+                        "adjuncts": ["APC to granulation tissue"] if re.search(r"(?i)\bapc\b|argon\s+plasma", note_text) else [],
+                        "outcome": outcome,
+                        "replacement_stent": None,
+                        "notes": None,
+                    },
+                )
+        elif re.search(r"(?i)\bstent\b", note_text):
             stent_type = None
             if re.search(r"(?i)\bultraflex\b", note_text):
                 stent_type = "Ultraflex SEMS"
@@ -1998,14 +2037,19 @@ def build_procedure_bundle_from_extraction(
 
     # --- Medical thoracoscopy / pleuroscopy ---
     if re.search(r"(?i)\bthoracoscopy\b|\bmedical\s+thoracoscopy\b|\bpleuroscopy\b", note_text):
+        thoracoscopy_text = note_text
+        match = re.search(r"(?i)\b(?:medical\s+thoracoscopy|thoracoscopy|pleuroscopy)\b", note_text)
+        if match:
+            thoracoscopy_text = note_text[match.start() :]
+
         side = None
-        if re.search(r"(?i)\bright\b", note_text):
+        if re.search(r"(?i)\bright\b", thoracoscopy_text):
             side = "right"
-        elif re.search(r"(?i)\bleft\b", note_text):
+        elif re.search(r"(?i)\bleft\b", thoracoscopy_text):
             side = "left"
 
         findings = None
-        match = re.search(r"(?i)\bfindings\s*[:\-]\s*([^\n,;]+)", note_text)
+        match = re.search(r"(?i)\bfindings\s*[:\-]\s*([^\n,;]+)", thoracoscopy_text)
         if match:
             findings = match.group(1).strip().rstrip(".")
 
@@ -2013,7 +2057,7 @@ def build_procedure_bundle_from_extraction(
         volume_ml = None
         match = re.search(
             r"(?i)\b(\d+(?:\.\d+)?)\s*(L|mL|ml|cc)\b[^.\n]{0,30}\b(?:drained|evacuated|removed)\b",
-            note_text,
+            thoracoscopy_text,
         )
         if match:
             try:
@@ -2025,20 +2069,25 @@ def build_procedure_bundle_from_extraction(
             except Exception:
                 volume_ml = None
 
-        if re.search(r"(?i)\b(?:evacuated|evacuation|drained)\b", note_text):
+        if re.search(r"(?i)\b(?:evacuated|evacuation|drained)\b", thoracoscopy_text):
             interventions.append(
                 f"Evacuation of pleural fluid ({volume_ml} mL)" if volume_ml is not None else "Evacuation of pleural fluid"
             )
 
         biopsy_count = None
-        match = re.search(r"(?i)\bbiops(?:y|ies)\b[^.\n]{0,30}\b(?:x|×)?\s*(\d+)\b", note_text)
+        match = re.search(
+            r"(?i)\b(?:pleural|parietal)[^.\n]{0,40}\bbiops(?:y|ies)\b[^.\n]{0,12}\b(?:x|×)?\s*(\d+)\b",
+            thoracoscopy_text,
+        )
+        if not match:
+            match = re.search(r"(?i)\bbiops(?:y|ies)\b[^.\n]{0,12}\b(?:x|×)?\s*(\d+)\b", thoracoscopy_text)
         if match:
             try:
                 biopsy_count = int(match.group(1))
             except Exception:
                 biopsy_count = None
         if biopsy_count is None:
-            match = re.search(r"(?i)\b(\d+)\s*(?:pleural\s+)?biops(?:y|ies)\b", note_text)
+            match = re.search(r"(?i)\b(\d+)\s*(?:pleural\s+|parietal\s+)?biops(?:y|ies)\b", thoracoscopy_text)
             if match:
                 try:
                     biopsy_count = int(match.group(1))
@@ -2048,8 +2097,8 @@ def build_procedure_bundle_from_extraction(
             interventions.append(f"Pleural biopsies ({biopsy_count} specimens)")
 
         talc_grams = None
-        if re.search(r"(?i)\btalc\b", note_text) and re.search(r"(?i)\b(?:poudrage|insufflat(?:ed|ion)|pleurodesis)\b", note_text):
-            match = re.search(r"(?i)\b(\d+(?:\.\d+)?)\s*g\b[^.\n]{0,30}\btalc\b", note_text)
+        if re.search(r"(?i)\btalc\b", thoracoscopy_text) and re.search(r"(?i)\b(?:poudrage|insufflat(?:ed|ion)|pleurodesis)\b", thoracoscopy_text):
+            match = re.search(r"(?i)\b(\d+(?:\.\d+)?)\s*g\b[^.\n]{0,30}\btalc\b", thoracoscopy_text)
             if match:
                 try:
                     talc_grams = float(match.group(1))
@@ -2059,9 +2108,9 @@ def build_procedure_bundle_from_extraction(
                 f"Talc poudrage pleurodesis ({talc_grams:g} g)" if talc_grams is not None else "Talc poudrage pleurodesis"
             )
 
-        if re.search(r"(?i)\bchest\s+tube\b", note_text):
+        if re.search(r"(?i)\bchest\s+tube\b", thoracoscopy_text):
             size_fr = None
-            match = re.search(r"(?i)\b(\d{1,2})\s*fr\b[^.\n]{0,30}\bchest\s+tube\b", note_text)
+            match = re.search(r"(?i)\b(\d{1,2})\s*fr\b[^.\n]{0,30}\bchest\s+tube\b", thoracoscopy_text)
             if match:
                 try:
                     size_fr = int(match.group(1))
@@ -2665,6 +2714,112 @@ def build_procedure_bundle_from_extraction(
     # Recompute indication after reporter-only enrichments
     indication_text = raw.get("primary_indication") or raw.get("indication") or raw.get("radiographic_findings")
 
+    def _diagnosis_needs_rewrite(value: Any) -> bool:
+        if value in (None, "", [], {}):
+            return True
+        text = re.sub(r"\s+", " ", str(value)).strip()
+        if not text:
+            return True
+        lowered = text.lower()
+        if lowered in {
+            "not documented",
+            "observation",
+            "restaging",
+            "complete mediastinal staging",
+            "diagnosis and pleurodesis",
+        }:
+            return True
+        if re.fullmatch(r"\d+\s+(?:hours?|days?|weeks?|months?)", lowered):
+            return True
+        if re.fullmatch(r"\d+\s+(?:hours?|days?|weeks?|months?)\s+post\s+radiation", lowered):
+            return True
+        if re.match(r"^\d+\s+(?:hours?|days?|weeks?|months?)\b", lowered) and re.search(
+            r"\b(?:pleurodesis|no\s+drainage|watch|monitoring|observation|post\s+radiation)\b",
+            lowered,
+        ):
+            return True
+        if "pneumothorax watch" in lowered and "emphysema" not in lowered:
+            return True
+        if re.search(r"\b(?:observation|watch|monitoring)\b", lowered) and not re.search(
+            r"\b(?:pneumothorax|effusion|emphysema|air\s+leak|mass|nodule|lesion|stenosis|pap|plugging|pleurodesis)\b",
+            lowered,
+        ):
+            return True
+        return False
+
+    def _first_phrase(pattern: str) -> str | None:
+        match = re.search(pattern, note_text)
+        if not match:
+            return None
+        value = re.sub(r"\s+", " ", match.group(0)).strip().rstrip(".")
+        return value or None
+
+    def _infer_clinical_indication() -> str | None:
+        if {"blvr_valve_placement", "blvr_valve_removal_exchange", "blvr_chartis_assessment"} & existing_proc_types:
+            emphysema = _first_phrase(r"(?i)\b(?:heterogeneous|homogeneous|severe)?\s*emphysema\b")
+            if emphysema:
+                return emphysema
+            air_leak = _first_phrase(r"(?i)\bpersistent\s+(?:air\s+leak|pneumothorax|ptx)\b")
+            if air_leak:
+                return air_leak
+            target_lobe = str(raw.get("blvr_target_lobe") or "").strip().upper()
+            if "blvr_valve_removal_exchange" in existing_proc_types and re.search(r"(?i)\bmigrat", note_text):
+                return f"{target_lobe or 'Endobronchial valve'} revision for migrated valve".strip()
+            return "Severe emphysema requiring bronchoscopic lung volume reduction"
+
+        if "whole_lung_lavage" in existing_proc_types:
+            if re.search(r"(?i)\b(?:pap|pulmonary\s+alveolar\s+proteinosis)\b", note_text):
+                return "Pulmonary alveolar proteinosis (PAP)"
+            return "Whole lung lavage"
+
+        if "therapeutic_aspiration" in existing_proc_types and re.search(r"(?i)\bmucus(?:\s+plugging)?\b", note_text):
+            collapse = " with lobar collapse" if re.search(r"(?i)\blobar\s+collapse\b|\batelect", note_text) else ""
+            return f"Mucus plugging{collapse}"
+
+        if "airway_stent_removal_revision" in existing_proc_types:
+            location = _first_phrase(r"(?i)\b(?:RMS|LMS|right\s+main\s*stem|left\s+main\s*stem|trachea)\b")
+            if re.search(r"(?i)\bgranulation\b", note_text):
+                return f"{location or 'Airway'} stent with granulation tissue requiring removal".strip()
+            return f"{location or 'Airway'} stent requiring removal".strip()
+
+        if {"tunneled_pleural_catheter_insert", "tunneled_pleural_catheter_remove", "thoracentesis_detailed", "thoracentesis_manometry", "medical_thoracoscopy", "chest_tube", "pigtail_catheter"} & existing_proc_types:
+            effusion_phrase = _first_phrase(
+                r"(?i)\b(?:malignant|refractory|recurrent)?\s*(?:hepatic\s+hydrothorax|pleural\s+effusion|free-flowing\s+effusion)\b"
+            )
+            if effusion_phrase:
+                return effusion_phrase
+            if "tunneled_pleural_catheter_insert" in existing_proc_types and re.search(r"(?i)\bpleurodesis\b", note_text):
+                return "Pleural effusion requiring tunneled pleural catheter drainage and pleurodesis"
+            if "tunneled_pleural_catheter_remove" in existing_proc_types and re.search(
+                r"(?i)\b(?:spontaneous\s+pleurodesis|autopleurodesis|pleurodesis\s+achieved)\b", note_text
+            ):
+                return "Spontaneous pleurodesis after indwelling pleural catheter"
+            if "medical_thoracoscopy" in existing_proc_types and re.search(
+                r"(?i)\b\d+(?:\.\d+)?\s*(?:L|mL|ml|cc)\b[^.\n]{0,20}\bdrained\b", note_text
+            ):
+                return "Pleural effusion requiring thoracoscopic evaluation"
+            if re.search(r"(?i)\bpleural\s+nodul", note_text):
+                return "Pleural disease with pleural nodularity"
+
+        if any(proc.proc_type == "robotic_navigation" for proc in procedures) and len(
+            [proc for proc in procedures if proc.proc_type == "robotic_navigation"]
+        ) > 1:
+            if re.search(r"(?i)\bbilateral\s+(?:nodules?|lesions?|masses?)\b", note_text):
+                return "Bilateral pulmonary nodules requiring bronchoscopic diagnosis"
+
+        return None
+
+    inferred_indication = _infer_clinical_indication()
+    if _diagnosis_needs_rewrite(indication_text) and inferred_indication:
+        indication_text = inferred_indication
+        raw["primary_indication"] = inferred_indication
+
+    if _diagnosis_needs_rewrite(raw.get("preop_diagnosis_text")) and indication_text not in (None, "", [], {}):
+        raw["preop_diagnosis_text"] = str(indication_text).strip()
+
+    if _diagnosis_needs_rewrite(raw.get("postop_diagnosis_text")) and raw.get("preop_diagnosis_text") not in (None, "", [], {}):
+        raw["postop_diagnosis_text"] = str(raw.get("preop_diagnosis_text")).strip()
+
     follow_up_plan = (
         raw.get("follow_up_plan", [""])[0] if isinstance(raw.get("follow_up_plan"), list) else raw.get("follow_up_plan")
     )
@@ -3258,6 +3413,194 @@ def build_procedure_bundle_from_extraction(
                 lines.append("Fluid evacuated and chest tube placed." if len(interventions) >= 2 else f"{interventions[0]}.")
             lines.append("Post-procedure monitoring per protocol; obtain post-procedure chest imaging.")
             impression_plan = "\n\n".join(lines)
+
+    def _proc_data_final(proc: ProcedureInput | None) -> dict[str, Any]:
+        if proc is None:
+            return {}
+        if isinstance(proc.data, BaseModel):
+            return proc.data.model_dump(exclude_none=True)
+        if isinstance(proc.data, dict):
+            return proc.data
+        return {}
+
+    def _join_labels(labels: list[str]) -> str:
+        cleaned = [label.strip() for label in labels if label and label.strip()]
+        if not cleaned:
+            return ""
+        if len(cleaned) == 1:
+            return cleaned[0]
+        if len(cleaned) == 2:
+            return f"{cleaned[0]} and {cleaned[1]}"
+        return ", ".join(cleaned[:-1]) + f", and {cleaned[-1]}"
+
+    nav_target_tokens = _dedupe_labels(
+        [
+            token
+            for proc in procedures
+            if proc.proc_type == "robotic_navigation"
+            for token in re.findall(r"(?i)\b(RUL|RML|RLL|LUL|LLL)\b", str(_proc_data_final(proc).get("lesion_location") or ""))
+        ]
+    )
+
+    if has_thoracoscopy or len(nav_target_tokens) > 1:
+        specimen_lines: list[str] = []
+        if len(nav_target_tokens) > 1:
+            for cryo_proc in [proc for proc in procedures if proc.proc_type == "transbronchial_cryobiopsy"]:
+                data = _proc_data_final(cryo_proc)
+                target = str(data.get("lung_segment") or "").strip().upper()
+                count = data.get("num_samples")
+                if target:
+                    if count not in (None, "", [], {}):
+                        specimen_lines.append(f"{target} Transbronchial Cryobiopsy ({count} samples) — Histology")
+                    else:
+                        specimen_lines.append(f"{target} Transbronchial Cryobiopsy — Histology")
+            for tbna_proc in [proc for proc in procedures if proc.proc_type == "transbronchial_needle_aspiration"]:
+                data = _proc_data_final(tbna_proc)
+                target = str(data.get("lung_segment") or "").strip().upper()
+                passes = data.get("samples_collected")
+                if target:
+                    if passes not in (None, "", [], {}):
+                        specimen_lines.append(f"{target} TBNA ({passes} passes) — Cytology")
+                    else:
+                        specimen_lines.append(f"{target} TBNA — Cytology")
+        else:
+            existing_specimens = str(raw.get("specimens_text") or "").strip()
+            if existing_specimens:
+                specimen_lines.extend([line.strip() for line in existing_specimens.splitlines() if line.strip()])
+
+        if has_thoracoscopy:
+            mt_proc = next((p for p in procedures if p.proc_type == "medical_thoracoscopy"), None)
+            mt = _proc_data_final(mt_proc)
+            for spec in mt.get("specimens") or []:
+                if isinstance(spec, str) and spec.strip():
+                    specimen_lines.append(spec.strip())
+
+        if specimen_lines:
+            raw["specimens_text"] = "\n".join(_dedupe_labels(specimen_lines))
+
+    if "blvr_valve_placement" in existing_proc_types and not impression_plan:
+        blvr_proc = next((p for p in procedures if p.proc_type == "blvr_valve_placement"), None)
+        data = _proc_data_final(blvr_proc)
+        lobes = [str(item).strip() for item in (data.get("lobes_treated") or []) if str(item).strip()]
+        valves = data.get("valves") or []
+        valve_count = len(valves) if isinstance(valves, list) and valves else None
+        lobe_text = _join_labels(lobes)
+        lines = []
+        if lobe_text and valve_count:
+            lines.append(f"Successful BLVR valve placement in the {lobe_text} with {valve_count} valves deployed.")
+        elif lobe_text:
+            lines.append(f"Successful BLVR valve placement in the {lobe_text}.")
+        else:
+            lines.append("Successful BLVR valve placement completed.")
+        if re.search(r"(?i)\bpneumothorax\s+watch\b", note_text):
+            lines.append("Admitted for pneumothorax watch per BLVR protocol.")
+        elif re.search(r"(?i)\badmitted\s+for\s+observation\b|\bobservation\b", note_text):
+            lines.append("Admitted for post-BLVR observation.")
+        if re.search(r"(?i)\bno\s+pneumothorax\b", note_text):
+            lines.append("Post-procedure imaging showed no pneumothorax.")
+        impression_plan = "\n\n".join(_dedupe_labels(lines))
+
+    if "blvr_valve_removal_exchange" in existing_proc_types and not impression_plan:
+        blvr_proc = next((p for p in procedures if p.proc_type == "blvr_valve_removal_exchange"), None)
+        data = _proc_data_final(blvr_proc)
+        lines = []
+        indication = str(data.get("indication") or "").strip()
+        if indication:
+            lines.append(f"Endobronchial valve removal/revision completed for {indication}.")
+        else:
+            lines.append("Endobronchial valve removal/revision completed.")
+        if re.search(r"(?i)\bmigrat", note_text):
+            lines.append("Migrated valve was retrieved successfully.")
+        if re.search(r"(?i)\bair\s+leak\s+resolved\b", note_text):
+            lines.append("Air leak resolved following valve removal.")
+        impression_plan = "\n\n".join(_dedupe_labels(lines))
+
+    if "whole_lung_lavage" in existing_proc_types and not impression_plan:
+        wll_proc = next((p for p in procedures if p.proc_type == "whole_lung_lavage"), None)
+        data = _proc_data_final(wll_proc)
+        side = str(data.get("side") or "").strip().lower()
+        side_title = side.title() if side in {"left", "right"} else "target"
+        total_l = data.get("total_volume_l") or data.get("max_volume_l")
+        lines = [f"Whole lung lavage of the {side_title.lower()} lung completed."]
+        if total_l not in (None, "", [], {}):
+            lines.append(f"Total lavage volume: {total_l} L warmed saline.")
+        if data.get("notes"):
+            lines.append(str(data["notes"]).strip().rstrip(".") + ".")
+        if re.search(r"(?i)\bplanned\s+for\s+next\s+week\b", note_text):
+            lines.append("Contralateral lavage is planned at a subsequent procedure.")
+        impression_plan = "\n\n".join(_dedupe_labels(lines))
+
+    if "therapeutic_aspiration" in existing_proc_types and not impression_plan:
+        aspiration_proc = next((p for p in procedures if p.proc_type == "therapeutic_aspiration"), None)
+        data = _proc_data_final(aspiration_proc)
+        airway_segment = str(data.get("airway_segment") or "airways").strip()
+        aspirate = str(data.get("aspirate_type") or "secretions").strip()
+        lines = [f"Successful therapeutic aspiration cleared {aspirate} from the {airway_segment}."]
+        if re.search(r"(?i)\brestored\s+patency\b", note_text):
+            lines.append("Patency was restored to the treated airways.")
+        if re.search(r"(?i)\bre-?expansion\b", note_text):
+            lines.append("Post-procedure imaging showed re-expansion.")
+        impression_plan = "\n\n".join(_dedupe_labels(lines))
+
+    if "tunneled_pleural_catheter_remove" in existing_proc_types and not impression_plan:
+        remove_proc = next((p for p in procedures if p.proc_type == "tunneled_pleural_catheter_remove"), None)
+        data = _proc_data_final(remove_proc)
+        side = str(data.get("side") or "").strip().lower()
+        side_title = side.title() if side in {"left", "right"} else ""
+        lines = [f"Successful {side_title + ' ' if side_title else ''}tunneled pleural catheter removal.".strip()]
+        reason = str(data.get("reason") or "").strip()
+        if reason:
+            lines.append(reason.rstrip(".") + ".")
+        lines.append("Site care instructions were provided.")
+        impression_plan = "\n\n".join(_dedupe_labels(lines))
+
+    if any(proc.proc_type in ("thoracentesis_detailed", "thoracentesis_manometry") for proc in procedures) and not impression_plan:
+        thora_proc = next(
+            (p for p in procedures if p.proc_type in ("thoracentesis_detailed", "thoracentesis_manometry")),
+            None,
+        )
+        data = _proc_data_final(thora_proc)
+        side = str(data.get("side") or "").strip()
+        volume = data.get("volume_removed_ml") or data.get("total_removed_ml")
+        appearance = str(data.get("fluid_character") or data.get("fluid_appearance") or "").strip()
+        line = f"Successful {side + ' ' if side else ''}thoracentesis"
+        if volume not in (None, "", [], {}):
+            line += f" with {volume} mL removed"
+        if appearance:
+            line += f" ({appearance})"
+        line += "."
+        lines = [line]
+        if re.search(r"(?i)\bstopped\s+due\s+to\s+patient\s+cough\b", note_text):
+            lines.append("Procedure was stopped due to patient cough.")
+        if re.search(r"(?i)\bno\s+pneumothorax\b", note_text):
+            lines.append("No post-procedure pneumothorax was identified.")
+        impression_plan = "\n\n".join(_dedupe_labels(lines))
+
+    if len(nav_target_tokens) > 1 and (
+        not impression_plan or any(token not in impression_plan.upper() for token in nav_target_tokens)
+    ):
+        nav_line = f"Successful robotic bronchoscopy with sampling of {_join_labels(nav_target_tokens)} targets."
+        if impression_plan:
+            impression_plan = "\n\n".join(_dedupe_labels([impression_plan, nav_line]))
+        else:
+            impression_plan = nav_line
+
+    if has_nav_sampling and has_thoracoscopy:
+        mt_proc = next((p for p in procedures if p.proc_type == "medical_thoracoscopy"), None)
+        mt = _proc_data_final(mt_proc)
+        thoracoscopy_lines: list[str] = []
+        side = str(mt.get("side") or "").strip().lower()
+        side_title = side.title() if side in {"left", "right"} else ""
+        thoracoscopy_lines.append(f"{side_title + ' ' if side_title else ''}diagnostic thoracoscopy completed.".strip())
+        for intervention in mt.get("interventions") or []:
+            text = str(intervention).strip()
+            if text:
+                thoracoscopy_lines.append(text.rstrip(".") + ".")
+        if not impression_plan or "thoracoscopy" not in impression_plan.lower():
+            if impression_plan:
+                impression_plan = "\n\n".join(_dedupe_labels([impression_plan] + thoracoscopy_lines))
+            else:
+                impression_plan = "\n\n".join(_dedupe_labels(thoracoscopy_lines))
 
     planned_not_performed = _extract_planned_not_performed_lines(note_text)
     if planned_not_performed:

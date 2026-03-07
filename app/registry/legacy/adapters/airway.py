@@ -8,6 +8,7 @@ from proc_schemas.clinical import airway as airway_schemas
 from app.reporting.partial_schemas import (
     AirwayDilationPartial,
     AirwayStentPlacementPartial,
+    AirwayStentRemovalRevisionPartial,
     EndobronchialTumorDestructionPartial,
 )
 
@@ -406,6 +407,13 @@ class WholeLungLavageAdapter(ExtractionAdapter):
         }
 
 
+class EUSBAdapter(DictPayloadAdapter):
+    proc_type = "eusb"
+    schema_model = airway_schemas.EUSB
+    schema_id = "eusb_v1"
+    source_key = "eusb"
+
+
 class BLVRValvePlacementAdapter(ExtractionAdapter):
     proc_type = "blvr_valve_placement"
     schema_model = airway_schemas.BLVRValvePlacement
@@ -788,6 +796,13 @@ class AirwayStentPlacementAdapter(DictPayloadAdapter):
     source_key = "airway_stent_placement"
 
 
+class AirwayStentRemovalRevisionAdapter(DictPayloadAdapter):
+    proc_type = "airway_stent_removal_revision"
+    schema_model = AirwayStentRemovalRevisionPartial
+    schema_id = "airway_stent_removal_revision_v1"
+    source_key = "airway_stent_removal_revision"
+
+
 class RigidBronchoscopyAdapter(DictPayloadAdapter):
     proc_type = "rigid_bronchoscopy"
     schema_model = airway_schemas.RigidBronchoscopy
@@ -876,6 +891,7 @@ __all__ = [
     "AwakeFOIAdapter",
     "AirwayDilationAdapter",
     "AirwayStentPlacementAdapter",
+    "AirwayStentRemovalRevisionAdapter",
     "BALAdapter",
     "BALVariantAdapter",
     "BLVRValvePlacementAdapter",
@@ -890,6 +906,7 @@ __all__ = [
     "CryoExtractionMucusAdapter",
     "DLTPlacementAdapter",
     "EBUSTBNAAdapter",
+    "EUSBAdapter",
     "EMNAdapter",
     "EndobronchialTumorDestructionAdapter",
     "EndobronchialBiopsyAdapter",

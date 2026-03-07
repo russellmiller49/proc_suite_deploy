@@ -1,5 +1,6 @@
 """Entity type definitions and categorization for granular NER."""
 
+import re
 from enum import Enum
 from typing import Dict, Set
 
@@ -134,12 +135,14 @@ INSPECTION_ACTION_KEYWORDS: Set[str] = {
 # Valid EBUS station names (canonical set)
 VALID_LN_STATIONS: Set[str] = {
     "2R", "2L",
+    "3P",
     "4R", "4L",
     "5",
     "7",
     "8",
     "9",
     "10R", "10L",
+    "12R", "12L",
     "11R", "11L", "11Rs", "11Ls", "11Ri", "11Li",
 }
 
@@ -170,6 +173,7 @@ def normalize_station(text: str) -> str | None:
     """
     # Remove common prefixes/suffixes
     text = text.strip().upper()
+    text = re.sub(r"\s+", " ", text)
 
     # Handle "station X" or "level X" patterns
     for prefix in ["STATION ", "LEVEL ", "LN "]:
@@ -179,9 +183,11 @@ def normalize_station(text: str) -> str | None:
     # Map common variations
     variations = {
         "2 RIGHT": "2R", "2 LEFT": "2L",
+        "3 P": "3P",
         "4 RIGHT": "4R", "4 LEFT": "4L",
         "10 RIGHT": "10R", "10 LEFT": "10L",
         "11 RIGHT": "11R", "11 LEFT": "11L",
+        "12 RIGHT": "12R", "12 LEFT": "12L",
         "11RS": "11Rs", "11LS": "11Ls",
         "11RI": "11Ri", "11LI": "11Li",
         "SUBCARINAL": "7",

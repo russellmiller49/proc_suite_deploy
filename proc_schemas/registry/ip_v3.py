@@ -44,12 +44,17 @@ class LinearEBUS(BaseModel):
             event.station
             for event in self.node_events
             if event.action in ("needle_aspiration", "core_biopsy", "forceps_biopsy")
+            and event.station is not None
         ]
 
     @property
     def stations_inspected_only(self) -> List[str]:
         """Derived property for reporting."""
-        return [event.station for event in self.node_events if event.action == "inspected_only"]
+        return [
+            event.station
+            for event in self.node_events
+            if event.action == "inspected_only" and event.station is not None
+        ]
 
 
 class PatientInfo(BaseModel):

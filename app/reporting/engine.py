@@ -269,6 +269,18 @@ def _serialize_concept(concept: Any) -> Dict[str, Any]:
 _CONFIG_TEMPLATE_ROOT = Path(__file__).resolve().parents[2] / "configs" / "report_templates"
 _DEFAULT_ORDER_PATH = _CONFIG_TEMPLATE_ROOT / "procedure_order.json"
 _LOGGER = logging.getLogger(__name__)
+_APPROVED_REDACTION_PLACEHOLDERS = frozenset(
+    {
+        "[Age]",
+        "[Date]",
+        "[Name]",
+        "[Patient Name]",
+        "[Sex]",
+    }
+)
+_ALLOWED_LITERAL_NONE_LINE_PATTERNS = (
+    re.compile(r"(?i)^\s*COMPLICATIONS\s*:?\s*None(?:[\s.;]|$)"),
+)
 
 
 def join_nonempty(values: Iterable[str], sep: str = ", ") -> str:
@@ -737,9 +749,22 @@ class ReporterEngine:
         errors: list[str] = []
         if "{{" in text or "}}" in text:
             errors.append("Unrendered Jinja variables found.")
-        if re.search(r"\[[^\]\n]{2,}\]", text):
+        bracket_tokens = {
+            token
+            for token in re.findall(r"\[[^\]\n]{2,}\]", text)
+            if token not in _APPROVED_REDACTION_PLACEHOLDERS
+        }
+        if bracket_tokens:
             errors.append("Bracketed placeholder text remains.")
-        if re.search(r"\bNone\b", text):
+        has_disallowed_none = False
+        for line in text.splitlines():
+            if "None" not in line:
+                continue
+            if any(pattern.search(line) for pattern in _ALLOWED_LITERAL_NONE_LINE_PATTERNS):
+                continue
+            has_disallowed_none = True
+            break
+        if has_disallowed_none:
             errors.append("Literal 'None' found in rendered text.")
         if ".." in text:
             errors.append("Double periods found.")

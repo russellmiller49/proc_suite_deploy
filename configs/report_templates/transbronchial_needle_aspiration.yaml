@@ -5,11 +5,20 @@ cpt_hints: ["31629", "31633"]
 schema_id: transbronchial_needle_aspiration_v1
 output_section: PROCEDURE_DETAILS
 template_path: transbronchial_needle_aspiration.j2
-required_fields:
-  - lung_segment
-  - needle_tools
-  - samples_collected
-  - tests
+required_fields: []
 optional_fields: []
+fields:
+  lung_segment:
+    required: true
+    critical: true
+  needle_tools:
+    required: false
+    critical: false
+  samples_collected:
+    required: false
+    critical: false
+  tests:
+    required: false
+    critical: false
 proc_types:
   - transbronchial_needle_aspiration

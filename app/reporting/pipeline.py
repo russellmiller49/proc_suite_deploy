@@ -121,6 +121,33 @@ def _extract_extrinsic_compression(text: str) -> str | None:
     return finding or None
 
 
+_SHELL_METADATA_TAIL_RE = re.compile(
+    r"(?i)(?:^|[,\s])(?:complications?|ebl|dispo(?:sition)?|hemorrhage)\s*:"
+)
+_SHELL_EMPTY_TEXT_RE = re.compile(r"(?i)^(?:none|none\.|n/?a|not\s+documented\.?)$")
+
+
+def _clean_shell_text(value: Any) -> str | None:
+    if value in (None, "", [], {}):
+        return None
+    text = re.sub(r"\s+", " ", str(value)).strip()
+    if not text:
+        return None
+    match = _SHELL_METADATA_TAIL_RE.search(text)
+    if match:
+        text = text[: match.start()].rstrip(" ,;:.")
+    return text or None
+
+
+def _clean_shell_specimens_text(value: Any) -> str | None:
+    text = _clean_shell_text(value)
+    if not text:
+        return None
+    if _SHELL_EMPTY_TEXT_RE.fullmatch(text):
+        return None
+    return text
+
+
 class ReportPipeline:
     def __init__(self, engine: ReporterEngine, *, config: ReporterConfig | None = None):
         self.engine = engine
@@ -821,15 +848,15 @@ class ReportPipeline:
             label_summary = _build_procedure_summary()
             cpt_summary = _summarize_cpt_candidates(state.procedures_metadata, unmatched_autocode)
             shell_payload = OperativeShellInputs(
-                indication_text=bundle.indication_text,
+                indication_text=_clean_shell_text(bundle.indication_text),
                 preop_diagnosis_text=bundle.preop_diagnosis_text,
                 postop_diagnosis_text=bundle.postop_diagnosis_text,
                 procedures_summary=label_summary,
                 cpt_summary=cpt_summary,
                 estimated_blood_loss=bundle.estimated_blood_loss,
                 complications_text=bundle.complications_text,
-                specimens_text=bundle.specimens_text,
-                impression_plan=bundle.impression_plan,
+                specimens_text=_clean_shell_specimens_text(bundle.specimens_text),
+                impression_plan=_clean_shell_text(bundle.impression_plan),
             )
             shell_context = {
                 "procedure_details_block": procedure_details_block,

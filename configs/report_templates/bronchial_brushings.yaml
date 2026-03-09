@@ -5,11 +5,20 @@ cpt_hints: ["31623"]
 schema_id: bronchial_brushings_v1
 output_section: PROCEDURE_DETAILS
 template_path: bronchial_brushings.j2
-required_fields:
-  - lung_segment
-  - samples_collected
-  - tests
-optional_fields:
-  - brush_tool
+required_fields: []
+optional_fields: []
+fields:
+  lung_segment:
+    required: true
+    critical: true
+  samples_collected:
+    required: false
+    critical: false
+  tests:
+    required: false
+    critical: false
+  brush_tool:
+    required: false
+    critical: false
 proc_types:
   - bronchial_brushings

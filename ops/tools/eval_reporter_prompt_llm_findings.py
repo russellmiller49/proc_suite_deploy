@@ -1,29 +1,12 @@
 #!/usr/bin/env python3
-"""Evaluate GPT findings->registry->report pipeline on reporter_prompt split.
-
-This is the Structured-First reporter POC (v2):
-masked prompt text -> GPT findings (evidence-cited) -> synthetic NER -> registry flags
--> guardrails -> deterministic registry->CPT -> reporter templates.
-
-Safety:
-- This script is OFFLINE by default. To allow real GPT calls, set:
-  PROCSUITE_ALLOW_ONLINE=1
-  LLM_PROVIDER=openai_compat
-  OPENAI_API_KEY=...
-  OPENAI_MODEL_STRUCTURER=gpt-5-mini
-"""
+"""Evaluate reporter generation via the llm_findings seed path."""
 
 from __future__ import annotations
 
 import argparse
-import json
 import os
-import random
 import sys
-from dataclasses import dataclass
-from difflib import SequenceMatcher
 from pathlib import Path
-from typing import Any
 
 ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
@@ -35,47 +18,28 @@ def _truthy_env(name: str) -> bool:
 
 
 def configure_eval_env() -> dict[str, str]:
-    """Force deterministic settings and guard against unintended LLM calls.
-
-    By default this script runs offline; set PROCSUITE_ALLOW_ONLINE=1 to enable
-    real GPT calls for the findings extraction step.
-    """
     allow_online = _truthy_env("PROCSUITE_ALLOW_ONLINE")
 
     forced = {
-        # Avoid loading repo-local dotenv (which may contain API keys).
         "PROCSUITE_SKIP_DOTENV": "1",
-        # Required runtime invariant (keep scripts aligned with service behavior).
         "PROCSUITE_PIPELINE_MODE": "extraction_first",
         "REGISTRY_EXTRACTION_ENGINE": "parallel_ner",
-        # No LLM self-correct/fallback during eval scoring.
         "REGISTRY_SELF_CORRECT_ENABLED": "0",
         "REGISTRY_LLM_FALLBACK_ON_COVERAGE_FAIL": "0",
-        # Disable RAW-ML auditing (may call LLM depending on config).
         "REGISTRY_AUDITOR_SOURCE": "disabled",
-        # Force stub/offline LLMs in the registry service even if keys are present.
         "REGISTRY_USE_STUB_LLM": "1",
         "GEMINI_OFFLINE": "1",
-        # Reporter-only fallback should not be used for this evaluation.
         "QA_REPORTER_ALLOW_SIMPLE_FALLBACK": "0",
         "PROCSUITE_FAST_MODE": "1",
         "PROCSUITE_SKIP_WARMUP": "1",
     }
 
     if allow_online:
-        forced.update(
-            {
-                "OPENAI_OFFLINE": "0",
-                "REPORTER_DISABLE_LLM": "0",
-            }
-        )
+        forced["OPENAI_OFFLINE"] = "0"
+        forced["REPORTER_DISABLE_LLM"] = "0"
     else:
-        forced.update(
-            {
-                "OPENAI_OFFLINE": "1",
-                "REPORTER_DISABLE_LLM": "1",
-            }
-        )
+        forced["OPENAI_OFFLINE"] = "1"
+        forced["REPORTER_DISABLE_LLM"] = "1"
 
     applied: dict[str, str] = {}
     for key, value in forced.items():
@@ -87,50 +51,29 @@ def configure_eval_env() -> dict[str, str]:
 
 _APPLIED_ENV_DEFAULTS = configure_eval_env()
 
-from app.api.services.qa_pipeline import ReportingStrategy, SimpleReporterStrategy
 from app.common.exceptions import LLMError
-from app.registry.application.registry_service import RegistryService
-from app.reporting.engine import ReporterEngine, _load_procedure_order, default_schema_registry, default_template_registry
-from app.reporting.inference import InferenceEngine
-from app.reporting.validation import ValidationEngine
-from app.reporting.llm_findings import build_record_payload_for_reporting, seed_registry_record_from_llm_findings
-from ml.lib.reporter_prompt_masking import mask_prompt_cpt_noise
-from ml.scripts.generate_reporter_gold_dataset import (
-    CRITICAL_FLAG_EXACT,
-    CRITICAL_FLAG_PREFIXES,
-    collect_performed_flags,
+from app.common.reporter_seed_eval import (
+    ReporterEvalCaseOutput,
+    ReporterEvalRow,
+    drop_reason_counts,
+    evaluate_seed_path,
+    load_eval_rows,
+    load_seed_fixture,
+    maybe_subsample,
+    maybe_write_json,
 )
+from app.registry.application.registry_service import RegistryService
+from app.registry.schema import RegistryRecord
+from app.reporting.llm_findings import (
+    ClinicalContextV1,
+    LLMFindingsSeedResult,
+    build_record_payload_for_reporting,
+    seed_registry_record_from_llm_findings,
+)
+from app.reporting.seed_pipeline import run_reporter_seed_pipeline, seed_outcome_from_llm_findings_seed
 
 DEFAULT_INPUT = Path("data/ml_training/reporter_prompt/v1/reporter_prompt_test.jsonl")
 DEFAULT_OUTPUT = Path("data/ml_training/reporter_prompt/v1/reporter_prompt_llm_findings_eval_report.json")
-
-PROMOTION_GATES = {
-    "required_section_coverage": 0.99,
-    "avg_cpt_jaccard": 0.30,
-    "avg_performed_flag_f1": 0.40,
-    "critical_extra_flag_rate": 0.03,
-}
-
-REQUIRED_SECTION_HEADERS = [
-    "INTERVENTIONAL PULMONOLOGY OPERATIVE REPORT",
-    "INDICATION FOR OPERATION",
-    "CONSENT",
-    "PREOPERATIVE DIAGNOSIS",
-    "POSTOPERATIVE DIAGNOSIS",
-    "PROCEDURE",
-    "ANESTHESIA",
-    "MONITORING",
-    "COMPLICATIONS",
-    "PROCEDURE IN DETAIL",
-    "IMPRESSION / PLAN",
-]
-
-
-@dataclass(frozen=True)
-class EvalRow:
-    id: str
-    prompt_text: str
-    completion_canonical: str
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -139,166 +82,23 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
     parser.add_argument("--max-cases", type=int, default=0)
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--prompt-field", default="prompt_text")
+    parser.add_argument("--strict", action="store_true", help="Render in strict mode for fallback-rate measurement.")
     parser.add_argument(
-        "--prompt-field",
-        default="prompt_text",
-        help="Which JSONL field to use as prompt text (default: prompt_text). "
-        "Common options: prompt_text, prompt_text_masked.",
+        "--seed-fixture",
+        type=Path,
+        default=None,
+        help="Optional offline fixture for canned llm_findings seeds keyed by row id.",
     )
     return parser.parse_args(argv)
 
 
-def load_jsonl(path: Path) -> list[dict[str, Any]]:
-    rows: list[dict[str, Any]] = []
-    with path.open("r", encoding="utf-8") as handle:
-        for line in handle:
-            line = line.strip()
-            if not line:
-                continue
-            rows.append(json.loads(line))
-    return rows
-
-
-def to_rows(raw: list[dict[str, Any]], *, prompt_field: str) -> list[EvalRow]:
-    out: list[EvalRow] = []
-    for idx, row in enumerate(raw, start=1):
-        row_id = str(row.get("id") or f"row_{idx}")
-        prompt = str(row.get(prompt_field) or "").strip()
-        if not prompt and prompt_field == "prompt_text_masked":
-            raw_prompt = str(row.get("prompt_text") or "").strip()
-            if raw_prompt:
-                prompt = mask_prompt_cpt_noise(raw_prompt)
-        if not prompt:
-            prompt = str(row.get("prompt_text") or "").strip()
-        completion = str(row.get("completion_canonical") or "").strip()
-        if not prompt or not completion:
-            continue
-        out.append(EvalRow(id=row_id, prompt_text=prompt, completion_canonical=completion))
-    return out
-
-
-def maybe_subsample(rows: list[EvalRow], max_cases: int, seed: int) -> list[EvalRow]:
-    if max_cases <= 0 or len(rows) <= max_cases:
-        return rows
-    rng = random.Random(seed)
-    picked = rng.sample(rows, max_cases)
-    picked.sort(key=lambda item: item.id)
-    return picked
-
-
-def normalize_text(text: str) -> str:
-    lines = [line.strip() for line in (text or "").splitlines() if line.strip()]
-    return "\n".join(lines)
-
-
-def similarity_ratio(reference: str, candidate: str) -> float:
-    return SequenceMatcher(None, normalize_text(reference), normalize_text(candidate)).ratio()
-
-
-def missing_sections(report_text: str) -> list[str]:
-    upper = (report_text or "").upper()
-    return [header for header in REQUIRED_SECTION_HEADERS if header.upper() not in upper]
-
-
-def _is_critical_flag(path: str) -> bool:
-    return path in CRITICAL_FLAG_EXACT or path.startswith(CRITICAL_FLAG_PREFIXES)
-
-
-def extract_flags_and_cpt(note_text: str, registry_service: RegistryService) -> tuple[set[str], set[str]]:
-    result = registry_service.extract_fields_extraction_first(note_text)
-    record_data = result.record.model_dump(exclude_none=True)
-    flags = collect_performed_flags(record_data)
-    cpt = {str(code) for code in (result.cpt_codes or [])}
-    return flags, cpt
-
-
-def cpt_jaccard(gold: set[str], pred: set[str]) -> float:
-    union = gold | pred
-    if not union:
-        return 1.0
-    return float(len(gold & pred) / len(union))
-
-
-def flag_f1(gold: set[str], pred: set[str]) -> tuple[float, int, int]:
-    tp = len(gold & pred)
-    fp = len(pred - gold)
-    fn = len(gold - pred)
-    prec = tp / (tp + fp) if (tp + fp) else 1.0
-    rec = tp / (tp + fn) if (tp + fn) else 1.0
-    if prec + rec == 0:
-        return 0.0, fp, fn
-    return (2 * prec * rec / (prec + rec)), fp, fn
-
-
-def _avg(values: list[float]) -> float:
-    return float(sum(values) / len(values)) if values else 0.0
-
-
-DROP_REASON_KEYS = (
-    "evidence_substring_fail",
-    "keyword_fail",
-    "anatomy_fail",
-    "action_intent_fail",
-    "procedure_key_not_allowlisted",
-    "other",
-)
-
-
-def _extract_drop_reason_code(warning: str) -> str | None:
-    text = str(warning or "").strip()
-    if not text.startswith("LLM_FINDINGS_DROPPED:"):
-        return None
-    remainder = text.split(":", 1)[1].strip()
-    if not remainder:
-        return "other"
-    return remainder.split()[0].strip() or "other"
-
-
-def _categorize_drop_reason(code: str) -> str:
-    reason = str(code or "").strip()
-    if reason in {"missing_evidence_quote", "evidence_too_short"}:
-        return "evidence_substring_fail"
-    if reason == "keyword_missing":
-        return "keyword_fail"
-    if reason == "anatomy_not_in_evidence":
-        return "anatomy_fail"
-    if reason == "missing_action_intent":
-        return "action_intent_fail"
-    if reason == "invalid_procedure_key":
-        return "procedure_key_not_allowlisted"
-    return "other"
-
-
-def drop_reason_counts(warnings: list[str] | None) -> dict[str, int]:
-    counts = {key: 0 for key in DROP_REASON_KEYS}
-    for warning in warnings or []:
-        reason_code = _extract_drop_reason_code(warning)
-        if not reason_code:
-            continue
-        bucket = _categorize_drop_reason(reason_code)
-        counts[bucket] = int(counts.get(bucket, 0)) + 1
-    return counts
-
-
-LLM_ERROR_CODE_KEYS = (
-    "auth",
-    "model_access",
-    "rate_limit",
-    "timeout",
-    "network",
-    "bad_request",
-    "other",
-)
-
-
 def categorize_llm_error(exc: Exception) -> str | None:
-    """PHI-safe bucketing for LLMError failures (no raw prompt text)."""
     if not isinstance(exc, LLMError):
         return None
     msg = str(exc).strip().lower()
     if not msg:
         return "other"
-
     if any(token in msg for token in ("unauthorized", "invalid api key", "api_key", "authentication", "status=401")):
         return "auth"
     if any(token in msg for token in ("model", "not found", "does not exist", "you do not have access")):
@@ -314,47 +114,67 @@ def categorize_llm_error(exc: Exception) -> str | None:
     return "other"
 
 
-def evaluate_gates(summary: dict[str, Any]) -> dict[str, Any]:
-    checks: dict[str, Any] = {}
-    primary_pass = True
+def _seed_from_fixture_row(row: ReporterEvalRow, fixture_map: dict[str, dict[str, object]]) -> LLMFindingsSeedResult:
+    payload = fixture_map.get(row.id)
+    if payload is None:
+        raise KeyError(f"No llm seed fixture case found for {row.id}")
 
-    for key, threshold in PROMOTION_GATES.items():
-        observed = float(summary.get(key, 0.0))
-        if key == "critical_extra_flag_rate":
-            passed = observed <= threshold
-        else:
-            passed = observed >= threshold
-        checks[key] = {
-            "observed": round(observed, 4),
-            "threshold": threshold,
-            "passed": passed,
-        }
-        if not passed:
-            primary_pass = False
+    context_payload = payload.get("context")
+    context = ClinicalContextV1.model_validate(context_payload) if isinstance(context_payload, dict) else None
 
-    return {
-        "primary_gates_passed": primary_pass,
-        "all_checks": checks,
-        "deployment_recommendation": "allow_optional_qa_integration" if primary_pass else "do_not_integrate",
-    }
-
-
-def build_structured_strategy() -> ReportingStrategy:
-    templates = default_template_registry()
-    schemas = default_schema_registry()
-    reporter_engine = ReporterEngine(
-        templates,
-        schemas,
-        procedure_order=_load_procedure_order(),
+    return LLMFindingsSeedResult(
+        record=RegistryRecord.model_validate(payload.get("record") or {}),
+        masked_prompt_text=str(payload.get("masked_prompt_text") or row.prompt_text),
+        cpt_codes=[str(code) for code in list(payload.get("cpt_codes") or [])],
+        warnings=[str(item) for item in list(payload.get("warnings") or []) if str(item)],
+        needs_review=bool(payload.get("needs_review")),
+        context=context,
+        accepted_items=[],
+        accepted_findings=int(payload.get("accepted_findings") or 0),
+        dropped_findings=int(payload.get("dropped_findings") or 0),
     )
-    registry_engine = RegistryService()
-    return ReportingStrategy(
-        reporter_engine=reporter_engine,
-        inference_engine=InferenceEngine(),
-        validation_engine=ValidationEngine(templates, schemas),
-        registry_engine=registry_engine,
-        simple_strategy=SimpleReporterStrategy(),
-    )
+
+
+def build_case_runner(
+    *,
+    strict: bool,
+    fixture_map: dict[str, dict[str, object]] | None,
+):
+    def _run(row: ReporterEvalRow) -> ReporterEvalCaseOutput:
+        try:
+            if fixture_map is not None:
+                seed = _seed_from_fixture_row(row, fixture_map)
+            else:
+                seed = seed_registry_record_from_llm_findings(row.prompt_text)
+        except Exception as exc:  # noqa: BLE001
+            error_code = categorize_llm_error(exc)
+            raise RuntimeError(error_code or str(type(exc).__name__)) from exc
+
+        seed_outcome = seed_outcome_from_llm_findings_seed(
+            seed,
+            reporting_payload=build_record_payload_for_reporting(seed),
+        )
+        pipeline_result = run_reporter_seed_pipeline(
+            seed_outcome,
+            note_text=row.prompt_text,
+            strict=strict,
+            debug_enabled=False,
+        )
+        return ReporterEvalCaseOutput(
+            markdown=pipeline_result.markdown,
+            warnings=list(seed_outcome.warnings or []),
+            quality_flags=list(seed_outcome.quality_flags or []),
+            needs_review=bool(seed_outcome.needs_review),
+            render_fallback_used=bool(pipeline_result.render_fallback_used),
+            render_fallback_reason=pipeline_result.render_fallback_reason,
+            render_fallback_category=pipeline_result.render_fallback_category,
+            render_fallback_details=dict(pipeline_result.render_fallback_details or {}),
+            accepted_findings=int(getattr(seed, "accepted_findings", 0) or 0),
+            dropped_findings=int(getattr(seed, "dropped_findings", 0) or 0),
+            drop_reason_counts=drop_reason_counts(list(seed_outcome.warnings or [])),
+        )
+
+    return _run
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -362,155 +182,42 @@ def main(argv: list[str] | None = None) -> int:
     if not args.input.exists():
         raise FileNotFoundError(f"Input dataset not found: {args.input}")
 
-    if not _truthy_env("PROCSUITE_ALLOW_ONLINE"):
-        print("This evaluation requires real GPT calls.")
-        print("Set PROCSUITE_ALLOW_ONLINE=1 and configure OpenAI env vars to run.")
-        print("Refusing to run with offline defaults.")
+    if args.seed_fixture is None and not _truthy_env("PROCSUITE_ALLOW_ONLINE"):
+        print("This evaluation requires real GPT calls unless --seed-fixture is provided.")
+        print("Set PROCSUITE_ALLOW_ONLINE=1 or pass --seed-fixture for offline challenger evaluation.")
         return 2
 
-    raw_rows = load_jsonl(args.input)
-    prompt_field = str(getattr(args, "prompt_field", "prompt_text")).strip() or "prompt_text"
-    rows = maybe_subsample(to_rows(raw_rows, prompt_field=prompt_field), int(args.max_cases), int(args.seed))
-
-    reporter = build_structured_strategy()
+    rows = maybe_subsample(
+        load_eval_rows(Path(args.input), prompt_field=str(args.prompt_field or "prompt_text")),
+        int(args.max_cases),
+        int(args.seed),
+    )
+    fixture_map = load_seed_fixture(Path(args.seed_fixture)) if args.seed_fixture else None
     registry_service = RegistryService()
-
-    per_case: list[dict[str, Any]] = []
-    sim_scores: list[float] = []
-    cpt_scores: list[float] = []
-    f1_scores: list[float] = []
-    accepted_findings: list[int] = []
-    dropped_findings: list[int] = []
-    aggregate_drop_reasons = {key: 0 for key in DROP_REASON_KEYS}
-    llm_error_code_counts = {key: 0 for key in LLM_ERROR_CODE_KEYS}
-    full_shell_count = 0
-    failures = 0
-    critical_extra_cases = 0
-
-    for row in rows:
-        try:
-            seed = seed_registry_record_from_llm_findings(row.prompt_text)
-            per_case_drop_reasons = drop_reason_counts(seed.warnings)
-            for key, value in per_case_drop_reasons.items():
-                aggregate_drop_reasons[key] = int(aggregate_drop_reasons.get(key, 0)) + int(value)
-
-            accepted_findings.append(int(seed.accepted_findings))
-            dropped_findings.append(int(seed.dropped_findings))
-
-            record_payload = build_record_payload_for_reporting(seed)
-            rendered = reporter.render(
-                text=seed.masked_prompt_text,
-                registry_data={"record": record_payload},
-            )
-            markdown = str(rendered.get("markdown") or "")
-            if not markdown.strip():
-                raise RuntimeError("Empty markdown output")
-
-            sim = similarity_ratio(row.completion_canonical, markdown)
-            sim_scores.append(sim)
-
-            miss = missing_sections(markdown)
-            if not miss:
-                full_shell_count += 1
-
-            gold_flags, gold_cpt = extract_flags_and_cpt(row.completion_canonical, registry_service)
-            pred_flags, pred_cpt = extract_flags_and_cpt(markdown, registry_service)
-
-            cpt_score = cpt_jaccard(gold_cpt, pred_cpt)
-            f1, fp, fn = flag_f1(gold_flags, pred_flags)
-            critical_extra = sorted([flag for flag in (pred_flags - gold_flags) if _is_critical_flag(flag)])
-            if critical_extra:
-                critical_extra_cases += 1
-
-            cpt_scores.append(cpt_score)
-            f1_scores.append(f1)
-
-            per_case.append(
-                {
-                    "id": row.id,
-                    "text_similarity": round(sim, 4),
-                    "missing_sections": miss,
-                    "cpt_jaccard": round(cpt_score, 4),
-                    "performed_flag_f1": round(f1, 4),
-                    "critical_extra_flags": critical_extra,
-                    "flag_false_positive_count": fp,
-                    "flag_false_negative_count": fn,
-                    "seed_warnings_count": int(len(seed.warnings or [])),
-                    "accepted_findings": int(seed.accepted_findings),
-                    "dropped_findings": int(seed.dropped_findings),
-                    "drop_reason_counts": per_case_drop_reasons,
-                    "error": None,
-                    "error_code": None,
-                }
-            )
-        except Exception as exc:  # noqa: BLE001
-            failures += 1
-            err_code = categorize_llm_error(exc)
-            if err_code:
-                llm_error_code_counts[err_code] = int(llm_error_code_counts.get(err_code, 0)) + 1
-            per_case.append(
-                {
-                    "id": row.id,
-                    "text_similarity": 0.0,
-                    "missing_sections": REQUIRED_SECTION_HEADERS,
-                    "cpt_jaccard": 0.0,
-                    "performed_flag_f1": 0.0,
-                    "critical_extra_flags": [],
-                    "flag_false_positive_count": 0,
-                    "flag_false_negative_count": 0,
-                    "seed_warnings_count": 0,
-                    "accepted_findings": 0,
-                    "dropped_findings": 0,
-                    "drop_reason_counts": {key: 0 for key in DROP_REASON_KEYS},
-                    "error": f"{type(exc).__name__}",
-                    "error_code": err_code,
-                }
-            )
-
-    total = len(rows)
-    successful = total - failures
-
-    summary = {
-        "total_cases": total,
-        "successful_cases": successful,
-        "failed_cases": failures,
-        "avg_text_similarity": round(_avg(sim_scores), 4),
-        "required_section_coverage": round((full_shell_count / successful) if successful else 0.0, 4),
-        "avg_cpt_jaccard": round(_avg(cpt_scores), 4),
-        "avg_performed_flag_f1": round(_avg(f1_scores), 4),
-        "critical_extra_flag_rate": round((critical_extra_cases / successful) if successful else 0.0, 4),
-        "avg_accepted_findings": round(_avg([float(v) for v in accepted_findings]), 4),
-        "avg_dropped_findings": round(_avg([float(v) for v in dropped_findings]), 4),
-        "drop_reason_counts": aggregate_drop_reasons,
-        "llm_error_code_counts": llm_error_code_counts,
-    }
-
-    payload = {
-        "created_at": datetime_now_iso(),
-        "input_path": str(args.input),
-        "prompt_field": prompt_field,
-        "row_count": total,
-        "llm_provider": os.getenv("LLM_PROVIDER"),
-        "openai_primary_api": os.getenv("OPENAI_PRIMARY_API"),
-        "openai_model_structurer": os.getenv("OPENAI_MODEL_STRUCTURER"),
-        "environment_defaults_applied": _APPLIED_ENV_DEFAULTS,
-        "summary": summary,
-        "promotion_gate_report": evaluate_gates(summary),
-        "per_case": per_case,
-    }
-
-    args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-
-    print(f"Primary gates passed: {payload['promotion_gate_report']['primary_gates_passed']}")
+    payload = evaluate_seed_path(
+        rows=rows,
+        seed_path="llm_findings",
+        run_case=build_case_runner(strict=bool(args.strict), fixture_map=fixture_map),
+        registry_service=registry_service,
+        input_path=str(args.input),
+        output_path=str(args.output),
+        prompt_field=str(args.prompt_field or "prompt_text"),
+        environment_defaults_applied=_APPLIED_ENV_DEFAULTS,
+        metadata={
+            "production_default": False,
+            "challenger_only": True,
+            "strict_requested": bool(args.strict),
+            "llm_provider": os.getenv("LLM_PROVIDER"),
+            "openai_primary_api": os.getenv("OPENAI_PRIMARY_API"),
+            "openai_model_structurer": os.getenv("OPENAI_MODEL_STRUCTURER"),
+            "seed_fixture_used": bool(args.seed_fixture),
+            "seed_fixture_path": str(args.seed_fixture) if args.seed_fixture else None,
+        },
+    )
+    maybe_write_json(Path(args.output), payload)
+    print("Seed path: llm_findings")
     print(f"Wrote report: {args.output}")
     return 0
-
-
-def datetime_now_iso() -> str:
-    from datetime import datetime, timezone
-
-    return datetime.now(timezone.utc).isoformat()
 
 
 if __name__ == "__main__":

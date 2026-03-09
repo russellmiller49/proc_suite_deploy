@@ -6,12 +6,25 @@
   "schema_id": "bal_v1",
   "output_section": "PROCEDURE_DETAILS",
   "template_path": "bal.j2",
-  "required_fields": [
-    "lung_segment",
-    "instilled_volume_cc",
-    "returned_volume_cc",
-    "tests"
-  ],
+  "required_fields": [],
   "optional_fields": [],
+  "fields": {
+    "lung_segment": {
+      "required": false,
+      "critical": false
+    },
+    "instilled_volume_cc": {
+      "required": false,
+      "critical": false
+    },
+    "returned_volume_cc": {
+      "required": false,
+      "critical": false
+    },
+    "tests": {
+      "required": false,
+      "critical": false
+    }
+  },
   "proc_types": ["bal"]
 }

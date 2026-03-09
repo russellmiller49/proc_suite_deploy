@@ -5,9 +5,7 @@ cpt_hints: ["31632"]
 schema_id: transbronchial_cryobiopsy_v1
 output_section: PROCEDURE_DETAILS
 template_path: transbronchial_cryobiopsy.j2
-required_fields:
-  - lung_segment
-  - num_samples
+required_fields: []
 optional_fields:
   - cryoprobe_size_mm
   - freeze_seconds
@@ -18,10 +16,16 @@ optional_fields:
   - tests
   - radial_vessel_check
   - notes
+fields:
+  lung_segment:
+    required: true
+    critical: true
+  num_samples:
+    required: false
+    critical: false
 proc_types:
   - transbronchial_cryobiopsy
 critical_fields:
   - lung_segment
-  - num_samples
   - blocker_type
   - cryoprobe_size_mm

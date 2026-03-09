@@ -1,4 +1,8 @@
-After chest ultrasound documentation{% if proc.guidance %} with {{ proc.guidance|lower }} guidance{% endif %}, the {{ proc.side }} chest was prepped and draped in sterile fashion.
+{% set _guidance = (proc.guidance or "") | trim %}
+{% set _guidance_lower = _guidance | lower %}
+{% set _has_ultrasound_findings = proc.effusion_volume or proc.effusion_echogenicity or proc.loculations or proc.diaphragm_motion or proc.lung_sliding_pre or proc.lung_sliding_post or proc.lung_consolidation or proc.pleura_description %}
+{% set _has_chest_ultrasound = ("ultrasound" in _guidance_lower) or _has_ultrasound_findings %}
+After {% if _has_chest_ultrasound %}chest ultrasound documentation{% if _guidance and "ultrasound" not in _guidance_lower %} with {{ _guidance_lower }} guidance{% endif %}{% else %}sterile preparation and site confirmation{% endif %}, the {{ proc.side }} chest was prepped and draped in sterile fashion.
 A thoracostomy tube was inserted into the {{ proc.intercostal_space }} intercostal space along the {{ proc.entry_line }} using the Seldinger technique and connected to a drainage system.
 Placement was confirmed and secured.{% if proc.fluid_removed_ml is not none %} Return of {{ proc.fluid_removed_ml }} mL of{% if proc.fluid_appearance %} {{ proc.fluid_appearance|lower }}{% else %} fluid{% endif %}.{% endif %}
 {% if proc.specimen_tests %}Specimens were sent for {{ proc.specimen_tests | join(', ') }}.{% endif %}

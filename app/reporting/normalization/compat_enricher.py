@@ -192,6 +192,19 @@ def _add_compat_flat_fields(raw: dict[str, Any]) -> dict[str, Any]:
             return None
         return value if value >= 0 else None
 
+    def _has_explicit_bal_procedure_text(text: str) -> bool:
+        if not text:
+            return False
+        if re.search(r"(?i)\bbronchoalveolar\s+lavage\b", text):
+            return True
+        if re.search(r"(?i)\bBAL\b\s*\(([^)]+)\)", text):
+            return True
+        if re.search(r"(?i)\bBAL\b[^\n]{0,40}\b(?:performed|sent|obtained|completed|done|instilled|returned)\b", text):
+            return True
+        if re.search(r"(?i)\bBAL\b\s+(?:RUL|RML|RLL|LUL|LLL|[RL]B\d{1,2}|B\d{1,2})\b", text):
+            return True
+        return False
+
     def _parse_operator(text: str) -> str | None:
         if not text:
             return None
@@ -1677,13 +1690,10 @@ def _add_compat_flat_fields(raw: dict[str, Any]) -> dict[str, Any]:
     tbna_count = None
     for pattern in (
         r"\bTBNA\b\s*(?:x|×)\s*(\d+)\b",
-        r"\bTBNA\s*passes?\s*:\s*(\d+)\b",
-        r"\bTBNA\b[^\n]{0,120}\b(\d+)\s*(?:passes?|times)\b",
-        r"\bneedle\s*passes?\s*:\s*(\d+)\b",
-        r"\bpasses?\s*(?:executed|performed|obtained|collected)\s*:\s*(\d+)\b",
-        r"\b(\d+)\s*needle\s*passes?\b",
-        r"\baspiration\s*needle\s*passes?\s*(?:executed|performed|obtained|collected)?\s*:\s*(\d+)\b",
-        r"\b(\d+)\s+(?:peripheral\s+)?needle\s+biops(?:y|ies)\b",
+        r"\btransbronchial\s+needle\s+aspiration\b\s*(?:x|×)\s*(\d+)\b",
+        r"\bconventional\s+TBNA\b[^\n]{0,80}\b(\d+)\s*passes?\b",
+        r"\b(\d+)\s+(?:peripheral\s+)?TBNA\b",
+        r"\b(\d+)\s+peripheral\s+needle\s+biops(?:y|ies)\b",
     ):
         tbna_count = _parse_count(counts_text, pattern)
         if tbna_count is not None:
@@ -1704,6 +1714,16 @@ def _add_compat_flat_fields(raw: dict[str, Any]) -> dict[str, Any]:
             if value and not re.search(r"(?i)\b(?:available|yes|no|pending)\b", value):
                 tbna_rose_result = value
 
+    tbna_biopsy_block_only = bool(
+        source_text
+        and re.search(
+            r"(?is)\bprocedure\s*\d+\s*:\s*transbronchial\s+biopsy\b.{0,200}?\bTBNA\s*passes?\s*:\s*\d+\b",
+            source_text,
+        )
+    )
+    if tbna_biopsy_block_only:
+        tbna_count = None
+
     bx_count = None
     for pattern in (
         r"\b(?:TBBX|TB?BX|BX|BIOPS(?:Y|IES))\b\s*(?:x|×)\s*(\d+)\b",
@@ -1713,8 +1733,6 @@ def _add_compat_flat_fields(raw: dict[str, Any]) -> dict[str, Any]:
         r"\bbiops(?:y|ies)\s*:\s*(\d+)\b",
         r"\b(\d+)\s*(?:forceps\s*)?(?:bx|biops(?:y|ies))\b",
         r"\b(?:took|obtained|acquired)\s*(\d+)\s*(?:forceps\s*)?(?:bx|biops(?:y|ies))\b",
-        r"\b(?:grasping\s*)?forceps\s*specimens?\s*(?:acquired|obtained|collected)\s*:\s*(\d+)\b",
-        r"\bspecimens?\s*(?:acquired|obtained|collected)\s*:\s*(\d+)\b",
     ):
         bx_count = _parse_count(counts_text, pattern)
         if bx_count is not None:
@@ -1732,14 +1750,17 @@ def _add_compat_flat_fields(raw: dict[str, Any]) -> dict[str, Any]:
             break
 
     bal_location_hint = None
+    explicit_bal_location_hint = None
     tbbx_location_hint = None
+    washing_location_hint = None
+    has_explicit_bal_text = _has_explicit_bal_procedure_text(counts_text)
     if counts_text:
         match = re.search(r"(?i)\bBAL\b\s*\(([^)]+)\)", counts_text)
         if match:
             joined = _join_location_tokens(_extract_lobe_tokens_in_order(match.group(1)))
             if joined:
-                bal_location_hint = joined
-        if bal_location_hint is None:
+                explicit_bal_location_hint = joined
+        if explicit_bal_location_hint is None:
             match = re.search(
                 r"(?i)\bBAL\b[^\n]{0,80}?\b(?:from|in|at)\s+([^\n\.]{1,140})",
                 counts_text,
@@ -1747,7 +1768,7 @@ def _add_compat_flat_fields(raw: dict[str, Any]) -> dict[str, Any]:
             if match:
                 joined = _join_location_tokens(_extract_lobe_tokens_in_order(match.group(1)))
                 if joined:
-                    bal_location_hint = joined
+                    explicit_bal_location_hint = joined
 
         bx_anchor = re.search(r"(?i)\bTBBX\b|\bTBX\b", counts_text)
         if bx_anchor is None:
@@ -1764,13 +1785,14 @@ def _add_compat_flat_fields(raw: dict[str, Any]) -> dict[str, Any]:
                 if joined:
                     tbbx_location_hint = joined
 
-        if bal_location_hint is None:
+        if washing_location_hint is None:
             match = re.search(
                 r"(?i)\b(?:lavage|washing)\b[^\n]{0,80}?\b(?:from|in|at)\s+([RL]B\d{1,2}|B\d{1,2}|RUL|RML|RLL|LUL|LLL)\b",
                 counts_text,
             )
             if match:
-                bal_location_hint = match.group(1).strip().upper()
+                washing_location_hint = match.group(1).strip().upper()
+    bal_location_hint = explicit_bal_location_hint or washing_location_hint
 
     rose_hint: str | None = None
     nodule_rose_hint: str | None = None
@@ -2296,7 +2318,7 @@ def _add_compat_flat_fields(raw: dict[str, Any]) -> dict[str, Any]:
         and raw.get("wll_volume_instilled_l") in (None, "", [], {})
     ):
         if re.search(r"(?i)\b(?:lavage|washing)\b", counts_text) and not re.search(r"(?i)\bBAL\b", counts_text):
-            washing_location = bal_location_hint
+            washing_location = washing_location_hint
             if not washing_location:
                 washing_location = _first_nonempty_str(
                     raw.get("nav_target_segment"),
@@ -2314,15 +2336,14 @@ def _add_compat_flat_fields(raw: dict[str, Any]) -> dict[str, Any]:
     bal = procs.get("bal")
     if raw.get("wll_volume_instilled_l") in (None, "", [], {}) and raw.get("bal") in (None, "", [], {}) and (
         (isinstance(bal, dict) and bal.get("performed") is True)
-        or (bal_location_hint is not None)
-        or (counts_text and re.search(r"(?i)\bBAL\b", counts_text))
+        or has_explicit_bal_text
     ):
         bal_location = None
         if isinstance(bal, dict):
             bal_location = _first_nonempty_str(bal.get("location"))
-        if not bal_location and bal_location_hint:
-            bal_location = bal_location_hint
-        if not bal_location and counts_text:
+        if not bal_location and explicit_bal_location_hint:
+            bal_location = explicit_bal_location_hint
+        if not bal_location and has_explicit_bal_text and counts_text:
             match = re.search(r"(?i)\bBAL\b[^\n]{0,25}?\b([RL]B\d{1,2}|RUL|RML|RLL|LUL|LLL)\b", counts_text)
             if match:
                 bal_location = match.group(1).upper()

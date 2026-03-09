@@ -1,4 +1,4 @@
-Airway Inspection A flexible bronchoscope was introduced and a systematic airway inspection was performed.
+Bronchoscopic Access Bronchoscopic access was obtained{% if proc.target_airway %} to the {{ proc.target_airway }}{% else %} to the target airway{% endif %}.
 
 {% if proc.target_airway or proc.obstruction_pct is not none -%}
 Findings:{% if proc.target_airway %} The {{ proc.target_airway }} was identified{% endif %}{% if proc.obstruction_pct is not none %} and noted to be {{ proc.obstruction_pct }}% obstructed{% endif %}.

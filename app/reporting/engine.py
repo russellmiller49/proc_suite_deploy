@@ -1439,6 +1439,7 @@ _BIOPSY_GATE_PROC_TYPES = {
     "transbronchial_biopsy",
     "transbronchial_lung_biopsy",
     "transbronchial_cryobiopsy",
+    "transbronchial_needle_aspiration",
 }
 
 _BIOPSY_GATE_POSITIVE_PATTERNS: dict[str, str] = {
@@ -1457,6 +1458,14 @@ _BIOPSY_GATE_POSITIVE_PATTERNS: dict[str, str] = {
         r"|\bbx\b[^.\n]{0,20}\bx\s*\d{1,2}\b"
     ),
     "transbronchial_cryobiopsy": r"\b(?:transbronchial\s+cryo(?:biops(?:y|ies)?)?|cryobiops(?:y|ies)|cryo-?tbb)\b",
+    "transbronchial_needle_aspiration": (
+        r"\btransbronchial\s+needle\s+aspiration\b"
+        r"|\bconventional\s+TBNA\b"
+        r"|\bTBNA\b[^.\n]{0,20}\bx\s*\d{1,2}\b"
+        r"|\b\d+\s+(?:peripheral\s+)?TBNA\b"
+        r"|\b\d+\s+peripheral\s+needle\s+biops(?:y|ies)\b"
+        r"|\bTBNA\b[^.\n]{0,20}\band\b[^.\n]{0,20}\b(?:cryo(?:biops(?:y|ies)?)?|cryobiops(?:y|ies))\b"
+    ),
 }
 
 _BIOPSY_GATE_NEGATION_PATTERN = (
@@ -1479,6 +1488,11 @@ _CPT_LABELS = {
 
 def _has_positive_biopsy_evidence(note_text: str, proc_type: str) -> bool:
     pattern = _BIOPSY_GATE_POSITIVE_PATTERNS.get(proc_type)
+    if proc_type == "transbronchial_needle_aspiration" and re.search(
+        r"(?is)\bprocedure\s*\d+\s*:\s*transbronchial\s+biopsy\b.{0,200}?\bTBNA\s*passes?\s*:\s*\d+\b",
+        note_text,
+    ):
+        return False
     if pattern and re.search(pattern, note_text, flags=re.IGNORECASE):
         return True
 

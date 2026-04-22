@@ -389,7 +389,7 @@
           <div class="speech-panel-header">
             <div>
               <div class="summary-label">Speech Seed Input</div>
-              <div class="subtle">Record a short, procedure-only dictation. Audio stays in memory only unless you explicitly choose cloud fallback.</div>
+              <div class="subtle">Record a short, procedure-only dictation. Cloud transcription runs by default after you stop, and local Tiny fallback is only used if needed.</div>
             </div>
             <span id="speechSourceBadge" class="status-badge speech-badge hidden">No transcript</span>
           </div>
@@ -400,28 +400,16 @@
               <li>Dictate procedure details only.</li>
               <li>You will still review and redact the transcript before seeding.</li>
             </ul>
-            <div class="subtle">You will confirm non-PHI dictation the first time you start recording for each reporter note.</div>
-          </div>
-          <div class="speech-model-row">
-            <label class="speech-model-field" for="speechModelSelect">
-              <span class="summary-label">Local speech model</span>
-              <select id="speechModelSelect" class="question-select speech-model-select">
-                <option value="tiny">Tiny (recommended)</option>
-                <option value="base">Base (slower desktop option)</option>
-              </select>
-            </label>
-            <div id="speechModelHintText" class="subtle speech-model-hint">
-              Tiny is the recommended local model right now. It usually loads faster and has been more reliable in-browser.
-            </div>
+            <div class="subtle">You will confirm non-PHI dictation and cloud transcription the first time you start recording for each reporter note.</div>
           </div>
           <div class="builder-toolbar speech-actions">
             <button id="speechStartBtn" class="primary" type="button">Start dictation</button>
             <button id="speechStopBtn" class="secondary" type="button" disabled>Stop</button>
             <button id="speechDiscardBtn" class="secondary" type="button" disabled>Discard</button>
-            <button id="speechCloudFallbackBtn" class="secondary" type="button" disabled>Use Cloud Fallback</button>
+            <button id="speechCloudFallbackBtn" class="secondary" type="button" disabled>Use Local Tiny Fallback</button>
           </div>
           <div class="speech-status-line">
-            <span id="speechStatusText" class="subtle">Loading local speech support…</span>
+            <span id="speechStatusText" class="subtle">Cloud transcription ready. Record a short non-PHI dictation.</span>
             <span id="speechWarningText" class="subtle"></span>
           </div>
         </div>
@@ -464,9 +452,12 @@
 
       <dialog id="speechStartConfirmModal" class="modal">
         <div class="modal-content">
-          <h3>Confirm Non-PHI Dictation</h3>
+          <h3>Confirm Non-PHI Cloud Dictation</h3>
           <p class="speech-confirm-text">
             I confirm that I will not include patient names, MRN, DOB, phone, address, or exact dates in this dictation.
+          </p>
+          <p class="speech-confirm-text">
+            I understand that this non-PHI audio will be uploaded to the configured cloud transcription provider after I stop recording.
           </p>
           <p class="subtle">This is required once for each fresh reporter note before dictation starts.</p>
           <div class="modal-actions">

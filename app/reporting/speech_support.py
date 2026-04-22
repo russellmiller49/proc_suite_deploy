@@ -27,18 +27,40 @@ Return ONLY cleaned plain text.
 Hard rules:
 1. Correct only obvious transcription mistakes, punctuation, spacing, and broken medical terms.
 2. Do NOT add, infer, remove, or reorder clinical facts.
-3. Preserve negation, laterality, station identifiers, measurements, medication doses, counts, and procedure names exactly unless there is an obvious transcription artifact.
-4. Preserve bracketed tokens exactly as-is (examples: [REDACTED], [DATE: T+5 DAYS], [SYSTEM: ...], [unreadable]).
+3. Preserve negation, laterality, station identifiers, measurements, medication doses,
+   counts, and procedure names exactly unless there is an obvious transcription artifact.
+4. Preserve bracketed tokens exactly as-is
+   (examples: [REDACTED], [DATE: T+5 DAYS], [SYSTEM: ...], [unreadable]).
 5. If uncertain, keep the original token or phrase unchanged.
 6. Never fill in missing details or make ambiguous wording more specific than the input.
 7. Preserve section order and line breaks as much as possible.
 """
 
+_REPORTER_SPEECH_TRANSCRIBE_PROMPT: Final[str] = """
+This is a short de-identified interventional pulmonology procedure dictation.
+
+Prefer these domain terms when the audio supports them:
+Ion, Monarch, robotic bronchoscopy, bronchoscopy, EBUS, EBUS-guided staging, EBUS-TBNA,
+TBNA, TBBx, EBBx, ROSE, cone beam CT, fluoroscopy, cryobiopsy, cryobiopsies, forceps biopsy,
+mediastinal lymphadenopathy, granulomas, sarcoidosis, atypical cells,
+LUL, LLL, RUL, RML, RLL, station 4R, station 4L, station 7, station 11R, station 11L,
+ground glass opacity, lesion, mass, catheter, guide sheath, radial probe,
+22-gauge, 25-gauge, 1.1 mm, 1.8 cm, no complications.
+
+Return the most likely transcript without adding facts that are not supported by the audio.
+"""
+
 _POTENTIAL_PHI_PATTERNS: Final[tuple[re.Pattern[str], ...]] = (
-    re.compile(r"\b(?:patient|pt|mrn|medical\s+record|dob|date\s+of\s+birth|phone|address)\b\s*[:#-]", re.IGNORECASE),
+    re.compile(
+        r"\b(?:patient|pt|mrn|medical\s+record|dob|date\s+of\s+birth|phone|address)\b\s*[:#-]",
+        re.IGNORECASE,
+    ),
     re.compile(r"\b(?:19|20)\d{2}[/-](?:0?[1-9]|1[0-2])[/-](?:0?[1-9]|[12]\d|3[01])\b"),
     re.compile(r"\b(?:0?[1-9]|1[0-2])[/-](?:0?[1-9]|[12]\d|3[01])[/-](?:19|20)?\d{2}\b"),
-    re.compile(r"\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\s+\d{1,2},\s+(?:19|20)\d{2}\b", re.IGNORECASE),
+    re.compile(
+        r"\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\s+\d{1,2},\s+(?:19|20)\d{2}\b",
+        re.IGNORECASE,
+    ),
     re.compile(r"\b(?:\+?1[-.\s]?)?(?:\(\d{3}\)|\d{3})[-.\s]?\d{3}[-.\s]?\d{4}\b"),
 )
 
@@ -82,7 +104,11 @@ def _guard_failed(before: str, after: str) -> bool:
     before_tokens = _BRACKET_TOKEN_RE.findall(before)
     after_tokens = set(_BRACKET_TOKEN_RE.findall(after))
     for token in before_tokens:
-        if token.startswith("[REDACTED") or token.startswith("[DATE:") or token.startswith("[SYSTEM:"):
+        if (
+            token.startswith("[REDACTED")
+            or token.startswith("[DATE:")
+            or token.startswith("[SYSTEM:")
+        ):
             if token not in after_tokens:
                 return True
 
@@ -134,6 +160,11 @@ def _resolve_cleanup_model() -> str:
     return (os.getenv("REPORTER_SPEECH_CLEANUP_MODEL") or "gpt-5.4-mini").strip()
 
 
+def _resolve_transcribe_prompt() -> str:
+    override = (os.getenv("REPORTER_SPEECH_TRANSCRIBE_PROMPT") or "").strip()
+    return override or _REPORTER_SPEECH_TRANSCRIBE_PROMPT.strip()
+
+
 def _resolve_openai_api_key() -> str:
     return (os.getenv("OPENAI_API_KEY") or "").strip()
 
@@ -142,7 +173,11 @@ def _resolve_provider_is_openai() -> bool:
     return (os.getenv("LLM_PROVIDER") or "gemini").strip().lower() == "openai_compat"
 
 
-def _validate_audio_input(filename: str | None, content_type: str | None, audio_bytes: bytes) -> None:
+def _validate_audio_input(
+    filename: str | None,
+    content_type: str | None,
+    audio_bytes: bytes,
+) -> None:
     if not audio_bytes:
         raise ReporterSpeechUnavailable("Audio upload was empty")
 
@@ -198,17 +233,19 @@ async def transcribe_reporter_audio(
         raise ReporterSpeechUnavailable("Reporter speech support is disabled")
 
     if not _resolve_cloud_fallback_enabled():
-        raise ReporterSpeechUnavailable("Cloud fallback is disabled")
+        raise ReporterSpeechUnavailable("Cloud transcription is disabled")
 
     if not cloud_fallback_confirmed:
-        raise ReporterSpeechUnavailable("Cloud fallback requires explicit confirmation")
+        raise ReporterSpeechUnavailable("Cloud transcription requires explicit confirmation")
 
     if not _resolve_provider_is_openai():
-        raise ReporterSpeechUnavailable("Reporter speech fallback requires LLM_PROVIDER=openai_compat")
+        raise ReporterSpeechUnavailable(
+            "Reporter cloud transcription requires LLM_PROVIDER=openai_compat"
+        )
 
     api_key = _resolve_openai_api_key()
     if _truthy_env("OPENAI_OFFLINE") or not api_key:
-        raise ReporterSpeechUnavailable("Reporter speech fallback unavailable in offline mode")
+        raise ReporterSpeechUnavailable("Reporter cloud transcription unavailable in offline mode")
 
     _validate_audio_input(filename=filename, content_type=content_type, audio_bytes=audio_bytes)
 
@@ -227,6 +264,7 @@ async def transcribe_reporter_audio(
         "model": model,
         "language": "en",
         "response_format": "json",
+        "prompt": _resolve_transcribe_prompt(),
     }
 
     try:
@@ -241,7 +279,7 @@ async def transcribe_reporter_audio(
                 "error_type": type(exc).__name__,
             },
         )
-        raise ReporterSpeechUnavailable("Reporter speech fallback request failed") from exc
+        raise ReporterSpeechUnavailable("Reporter cloud transcription request failed") from exc
 
     if response.status_code >= 400:
         _logger.error(
@@ -252,22 +290,26 @@ async def transcribe_reporter_audio(
                 "status_code": response.status_code,
             },
         )
-        raise ReporterSpeechUnavailable("Reporter speech fallback was rejected by the transcription provider")
+        raise ReporterSpeechUnavailable(
+            "Reporter cloud transcription was rejected by the transcription provider"
+        )
 
     try:
         payload = response.json()
     except Exception as exc:  # noqa: BLE001
-        raise ReporterSpeechUnavailable("Reporter speech fallback returned an invalid response") from exc
+        raise ReporterSpeechUnavailable(
+            "Reporter cloud transcription returned an invalid response"
+        ) from exc
 
     transcript = str(payload.get("text") or "").strip()
     if not transcript:
-        raise ReporterSpeechUnavailable("Reporter speech fallback returned an empty transcript")
+        raise ReporterSpeechUnavailable("Reporter cloud transcription returned an empty transcript")
 
     return ReporterSpeechTranscriptionResult(
         transcript=transcript,
         provider="openai",
         model=model,
-        fallback_used=True,
+        fallback_used=False,
     )
 
 
@@ -276,7 +318,9 @@ def _resolve_cleanup_llm() -> tuple[OpenAILLM, str]:
         raise ReporterSpeechUnavailable("Reporter speech support is disabled")
 
     if not _resolve_provider_is_openai():
-        raise ReporterSpeechUnavailable("Reporter speech cleanup requires LLM_PROVIDER=openai_compat")
+        raise ReporterSpeechUnavailable(
+            "Reporter speech cleanup requires LLM_PROVIDER=openai_compat"
+        )
 
     api_key = _resolve_openai_api_key()
     if _truthy_env("OPENAI_OFFLINE") or not api_key:
@@ -305,7 +349,9 @@ def clean_scrubbed_reporter_transcript(
         raise ReporterSpeechUnsafeInput("Reporter speech cleanup requires already_scrubbed=true")
 
     if strict and contains_potential_phi(source):
-        raise ReporterSpeechUnsafeInput("Reporter speech cleanup rejected text that appears to contain PHI")
+        raise ReporterSpeechUnsafeInput(
+            "Reporter speech cleanup rejected text that appears to contain PHI"
+        )
 
     max_chars = _resolve_cleanup_max_chars()
     if len(source) > max_chars:

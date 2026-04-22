@@ -109,9 +109,12 @@ let speechCleaned = false;
 let speechIgnoreNextStop = false;
 let preservePhiStateOnNextSeedInput = false;
 let speechStartConfirmedForCurrentNote = false;
-let speechModelKey = loadStoredSpeechModelKey();
+let speechModelKey = REPORTER_SPEECH_DEFAULT_MODEL_KEY;
 let speechWorkerModelKey = speechModelKey;
 let speechWorkerModelLabel = getSpeechModelLabel(speechModelKey);
+let speechWorkerInitPromise = null;
+let speechWorkerInitResolve = null;
+let speechWorkerInitReject = null;
 
 // --- Client-side PHI redaction state (local worker) ---
 
@@ -216,22 +219,10 @@ function isLikelyMobileDictationDevice() {
 
 function renderSpeechModelHint() {
   if (!speechModelHintTextEl) return;
-  if (isLikelyMobileDictationDevice()) {
-    if (speechModelKey === "tiny") {
-      speechModelHintTextEl.textContent = "Tiny is recommended on phones and tablets, and it is selected now.";
-      return;
-    }
-    speechModelHintTextEl.textContent =
-      "Using a phone or tablet? Tiny is recommended because it usually loads and transcribes faster there.";
-    return;
-  }
-  if (speechModelKey === "base") {
-    speechModelHintTextEl.textContent =
-      "Base is larger and slower in-browser, and it does not always outperform Tiny on procedure dictation.";
-    return;
-  }
   speechModelHintTextEl.textContent =
-    "Tiny is the recommended local model right now. It usually loads faster and has been more reliable in-browser.";
+    isLikelyMobileDictationDevice()
+      ? "Tiny is kept as the local fallback because it is lighter on phones and tablets."
+      : "Tiny is kept as the local fallback because it has been the more reliable in-browser option.";
 }
 
 function syncSpeechModelControl() {
@@ -255,8 +246,12 @@ function renderSpeechSourceBadge() {
   let label = "";
   if (speechCleaned) {
     label = "cleaned";
+  } else if (speechSource === "speech_cloud") {
+    label = "cloud transcript";
+  } else if (speechSource === "speech_local_fallback") {
+    label = "local tiny fallback";
   } else if (speechFallbackUsed) {
-    label = "cloud fallback";
+    label = "fallback used";
   } else if (speechSource === "speech_local") {
     label = "local transcript";
   }
@@ -333,6 +328,9 @@ function resetSpeechState({ clearText = false } = {}) {
   speechLocalPending = false;
   speechCloudPending = false;
   speechPendingRequest = null;
+  speechWorkerInitPromise = null;
+  speechWorkerInitResolve = null;
+  speechWorkerInitReject = null;
   clearSpeechAudioBlob();
   speechSource = "";
   speechFallbackUsed = false;
@@ -908,11 +906,9 @@ function resolveSpeechIdleStatus() {
   if (speechRequestingAccess) return "Waiting for microphone permission…";
   const unsupportedReason = getSpeechRecordingUnsupportedReason();
   if (unsupportedReason) return unsupportedReason;
-  const modelLabel = speechWorkerReady ? speechWorkerModelLabel : getSpeechModelLabel(speechModelKey);
-  if (speechWorkerReady) return `Local speech support ready (${modelLabel}).`;
-  if (speechWorkerUnavailableReason) return `Local ${modelLabel} speech unavailable. Record only if you intend to use cloud fallback.`;
-  if (speechWorker) return `Loading local speech support (${modelLabel})…`;
-  return "Speech support unavailable.";
+  if (speechCloudPending) return "Uploading audio for cloud transcription…";
+  if (speechLocalPending) return `Preparing local ${speechWorkerModelLabel} fallback…`;
+  return "Cloud transcription ready. Record a short non-PHI dictation.";
 }
 
 function getSpeechTranscribeTimeoutMs(modelKey = speechWorkerModelKey) {
@@ -921,7 +917,18 @@ function getSpeechTranscribeTimeoutMs(modelKey = speechWorkerModelKey) {
 
 function resetSpeechWorkerAfterFailure() {
   if (speechPendingRequest) speechPendingRequest = null;
-  startSpeechWorker();
+  if (speechWorker) {
+    try {
+      speechWorker.terminate();
+    } catch {
+      // ignore
+    }
+  }
+  speechWorker = null;
+  speechWorkerReady = false;
+  speechWorkerInitPromise = null;
+  speechWorkerInitResolve = null;
+  speechWorkerInitReject = null;
 }
 
 function renderSpeechState() {
@@ -1027,6 +1034,12 @@ function attachSpeechWorkerHandlers(activeWorker) {
   activeWorker.addEventListener("error", (event) => {
     speechWorkerReady = false;
     speechWorkerUnavailableReason = event?.message || "Local speech worker failed to load";
+    if (speechWorkerInitReject) {
+      speechWorkerInitReject(new Error(speechWorkerUnavailableReason));
+      speechWorkerInitPromise = null;
+      speechWorkerInitResolve = null;
+      speechWorkerInitReject = null;
+    }
     if (speechPendingRequest) {
       const pending = speechPendingRequest;
       speechPendingRequest = null;
@@ -1038,6 +1051,12 @@ function attachSpeechWorkerHandlers(activeWorker) {
   });
 
   activeWorker.addEventListener("messageerror", () => {
+    if (speechWorkerInitReject) {
+      speechWorkerInitReject(new Error("Speech worker message error"));
+      speechWorkerInitPromise = null;
+      speechWorkerInitResolve = null;
+      speechWorkerInitReject = null;
+    }
     if (speechPendingRequest) {
       const pending = speechPendingRequest;
       speechPendingRequest = null;
@@ -1067,6 +1086,12 @@ function attachSpeechWorkerHandlers(activeWorker) {
       speechWorkerModelLabel = String(msg.modelLabel || getSpeechModelLabel(speechWorkerModelKey));
       speechWorkerReady = true;
       speechWorkerUnavailableReason = "";
+      if (speechWorkerInitResolve) {
+        speechWorkerInitResolve(true);
+        speechWorkerInitPromise = null;
+        speechWorkerInitResolve = null;
+        speechWorkerInitReject = null;
+      }
       setSpeechStatus(`Local speech support ready (${speechWorkerModelLabel}).`);
       setSpeechWarningText("");
       renderSpeechState();
@@ -1078,6 +1103,12 @@ function attachSpeechWorkerHandlers(activeWorker) {
       speechWorkerModelLabel = String(msg.modelLabel || getSpeechModelLabel(speechWorkerModelKey));
       speechWorkerReady = false;
       speechWorkerUnavailableReason = String(msg.message || "Local speech model assets are unavailable");
+      if (speechWorkerInitReject) {
+        speechWorkerInitReject(new Error(speechWorkerUnavailableReason));
+        speechWorkerInitPromise = null;
+        speechWorkerInitResolve = null;
+        speechWorkerInitReject = null;
+      }
       if (speechPendingRequest) {
         const pending = speechPendingRequest;
         speechPendingRequest = null;
@@ -1117,6 +1148,8 @@ function startSpeechWorker() {
     renderSpeechState();
     return;
   }
+  if (speechWorkerInitPromise) return speechWorkerInitPromise;
+  if (speechWorker && speechWorkerReady) return Promise.resolve(true);
 
   const selectedModel = getSpeechModelConfig(speechModelKey);
   speechWorkerModelKey = selectedModel.key;
@@ -1133,6 +1166,10 @@ function startSpeechWorker() {
   speechWorkerReady = false;
   speechWorkerUnavailableReason = "";
   speechPendingRequest = null;
+  speechWorkerInitPromise = new Promise((resolve, reject) => {
+    speechWorkerInitResolve = resolve;
+    speechWorkerInitReject = reject;
+  });
   try {
     speechWorker = new Worker(REPORTER_SPEECH_WORKER_PATH, { type: "module" });
     attachSpeechWorkerHandlers(speechWorker);
@@ -1143,16 +1180,29 @@ function startSpeechWorker() {
   } catch (error) {
     speechWorkerUnavailableReason = error?.message || "Local speech worker initialization failed";
     speechWorker = null;
+    if (speechWorkerInitReject) {
+      speechWorkerInitReject(new Error(speechWorkerUnavailableReason));
+      speechWorkerInitPromise = null;
+      speechWorkerInitResolve = null;
+      speechWorkerInitReject = null;
+    }
     setSpeechStatus(`Local ${selectedModel.label} speech unavailable.`);
     setSpeechWarningText(speechWorkerUnavailableReason);
     renderSpeechState();
   }
+  return speechWorkerInitPromise;
+}
+
+async function ensureSpeechWorkerReady() {
+  if (speechWorker && speechWorkerReady) return true;
+  if (speechWorkerUnavailableReason && !speechWorker) {
+    resetSpeechWorkerAfterFailure();
+  }
+  return startSpeechWorker();
 }
 
 async function requestLocalSpeechTranscript(blob) {
-  if (!speechWorker || !speechWorkerReady) {
-    throw new Error(speechWorkerUnavailableReason || "Local speech support is still loading");
-  }
+  await ensureSpeechWorkerReady();
   if (speechPendingRequest) {
     throw new Error("Speech transcription is already in progress");
   }
@@ -1178,7 +1228,7 @@ async function requestLocalSpeechTranscript(blob) {
         reject(
           new Error(
             `Local ${speechWorkerModelLabel} transcription timed out after ${Math.round(timeoutMs / 1000)} seconds. `
-            + "Try Tiny or use Cloud Fallback if the recording contains no PHI.",
+            + "The local Tiny worker will reload before the next fallback attempt.",
           ),
         );
       }, timeoutMs);
@@ -1224,33 +1274,40 @@ async function finalizeSpeechRecording(blob) {
   }
 
   if (!speechWorkerReady) {
-    if (speechWorkerUnavailableReason) {
-      setSpeechStatus(`Local ${getSpeechModelLabel(speechModelKey)} speech unavailable.`);
-      setSpeechWarningText(`${speechWorkerUnavailableReason} Use Cloud Fallback only if the recording contains no PHI.`);
-      showBanner("warning", "Recording captured. Local speech is unavailable, so only cloud fallback can transcribe it.");
-    } else {
-      setSpeechStatus(`Recording captured while local ${getSpeechModelLabel(speechModelKey)} speech support was still loading.`);
-      setSpeechWarningText("Wait for local speech support or use Cloud Fallback only if the recording contains no PHI.");
-      showBanner("warning", "Recording captured. Local speech is still loading.");
-    }
+    setSpeechStatus("Uploading audio for cloud transcription…");
+    setSpeechWarningText("Raw non-PHI audio leaves the browser during cloud transcription.");
     renderSpeechState();
-    return;
   }
 
   try {
-    const localResult = await requestLocalSpeechTranscript(blob);
-    replaceSeedTextFromSpeech(localResult.transcript, {
-      source: "speech_local",
+    const cloudResult = await requestCloudSpeechTranscript(blob);
+    replaceSeedTextFromSpeech(cloudResult.transcript, {
+      source: "speech_cloud",
       fallbackUsed: false,
       cleaned: false,
-      warnings: localResult.warnings,
+      warnings: cloudResult.warnings,
     });
-    setSpeechStatus(`Local ${speechWorkerModelLabel} transcript ready. Review and redact before seeding.`);
-    showBanner("success", "Local dictation transcript inserted. Run PHI detection and apply redactions before seeding.");
-  } catch (error) {
-    setSpeechStatus(`Local ${speechWorkerModelLabel} transcription failed.`);
-    setSpeechWarningText(`${error?.message || "Local transcription failed"} Use Cloud Fallback only if the recording contains no PHI.`);
-    showBanner("warning", "Local transcription failed. You can use Cloud Fallback if the recording contains no PHI.");
+    setSpeechStatus("Cloud transcript ready. Review, redact, then seed.");
+    showBanner(
+      "success",
+      "Cloud transcript inserted. Run PHI detection and apply redactions before seeding.",
+    );
+  } catch (cloudError) {
+    const cloudMessage = String(cloudError?.message || "Cloud transcription failed");
+    setSpeechStatus("Cloud transcription failed. Trying local Tiny fallback…");
+    setSpeechWarningText(cloudMessage);
+    renderSpeechState();
+    try {
+      await runLocalSpeechFallback({ automatic: true });
+    } catch (localError) {
+      const localMessage = String(localError?.message || "Local fallback failed");
+      setSpeechStatus("Speech transcription failed.");
+      setSpeechWarningText(`${cloudMessage} | ${localMessage}`);
+      showBanner(
+        "error",
+        "Cloud transcription failed, and local Tiny fallback also failed. Review the status text for details.",
+      );
+    }
   } finally {
     renderSpeechState();
   }
@@ -1260,7 +1317,7 @@ async function startSpeechDictation() {
   if (!speechStartConfirmedForCurrentNote) {
     if (openSpeechStartConfirmModal()) return;
     const confirmed = window.confirm(
-      "I confirm that I will not include patient names, MRN, DOB, phone, address, or exact dates in this dictation.",
+      "I confirm that I will not include patient names, MRN, DOB, phone, address, or exact dates in this dictation, and that this non-PHI audio will be sent to the configured cloud transcription provider.",
     );
     if (!confirmed) return;
     speechStartConfirmedForCurrentNote = true;
@@ -1384,25 +1441,19 @@ function discardSpeechTranscript() {
   showBanner("success", "Speech recording discarded.");
 }
 
-async function runCloudSpeechFallback() {
-  if (!speechLastRecordingBlob) {
-    showBanner("warning", "Record audio first before using cloud fallback.");
-    return;
+async function requestCloudSpeechTranscript(blob) {
+  if (!blob || !blob.size) {
+    throw new Error("Record audio first before transcribing.");
   }
 
-  const confirmed = window.confirm(
-    "Cloud fallback will upload raw audio to the server transcription provider. Continue only if the recording contains no PHI.",
-  );
-  if (!confirmed) return;
-
   speechCloudPending = true;
-  setSpeechStatus("Uploading audio for cloud fallback…");
-  setSpeechWarningText("Raw audio leaves the browser during cloud fallback.");
+  setSpeechStatus("Uploading audio for cloud transcription…");
+  setSpeechWarningText("Raw non-PHI audio leaves the browser during cloud transcription.");
   renderSpeechState();
 
   try {
     const formData = new FormData();
-    formData.append("audio_file", speechLastRecordingBlob, buildSpeechUploadFilename(speechLastRecordingBlob));
+    formData.append("audio_file", blob, buildSpeechUploadFilename(blob));
     formData.append("source", "reporter_builder");
     formData.append("cloud_fallback_confirmed", "true");
 
@@ -1413,23 +1464,35 @@ async function runCloudSpeechFallback() {
       ...buildSpeechRepairWarnings(repaired.replacements),
     ];
     const transcript = String(repaired.text || "").trim();
-    if (!transcript) throw new Error("Cloud fallback returned an empty transcript");
-
-    replaceSeedTextFromSpeech(transcript, {
-      source: "speech_cloud_fallback",
-      fallbackUsed: true,
-      cleaned: false,
-      warnings,
-    });
-    setSpeechStatus("Cloud fallback transcript ready. Review, redact, then seed.");
-    showBanner(
-      "warning",
-      "Cloud fallback transcript inserted. Review carefully, then run PHI detection and apply redactions before seeding.",
-    );
+    if (!transcript) throw new Error("Cloud transcription returned an empty transcript");
+    return { transcript, warnings };
   } finally {
     speechCloudPending = false;
     renderSpeechState();
   }
+}
+
+async function runLocalSpeechFallback({ automatic = false } = {}) {
+  if (!speechLastRecordingBlob) {
+    if (!automatic) showBanner("warning", "Record audio first before using local fallback.");
+    return null;
+  }
+
+  const localResult = await requestLocalSpeechTranscript(speechLastRecordingBlob);
+  replaceSeedTextFromSpeech(localResult.transcript, {
+    source: "speech_local_fallback",
+    fallbackUsed: true,
+    cleaned: false,
+    warnings: localResult.warnings,
+  });
+  setSpeechStatus("Local Tiny fallback transcript ready. Review, redact, then seed.");
+  showBanner(
+    automatic ? "warning" : "success",
+    automatic
+      ? "Cloud transcription was unavailable, so local Tiny fallback was used."
+      : "Local Tiny fallback transcript inserted. Run PHI detection and apply redactions before seeding.",
+  );
+  return localResult;
 }
 
 async function cleanSpeechTranscript({ automatic = false } = {}) {
@@ -2476,10 +2539,10 @@ if (speechDiscardBtn) {
 }
 if (speechCloudFallbackBtn) {
   speechCloudFallbackBtn.addEventListener("click", () => {
-    runCloudSpeechFallback().catch((error) => {
-      showBanner("error", error?.message || "Cloud fallback transcription failed.");
-      setSpeechStatus("Cloud fallback failed.");
-      setSpeechWarningText(error?.message || "Cloud fallback transcription failed");
+    runLocalSpeechFallback().catch((error) => {
+      showBanner("error", error?.message || "Local Tiny fallback transcription failed.");
+      setSpeechStatus("Local Tiny fallback failed.");
+      setSpeechWarningText(error?.message || "Local Tiny fallback transcription failed");
       renderSpeechState();
     });
   });
@@ -2567,7 +2630,6 @@ if (phiConfirmAckEl) {
 if (speechStartBtn) {
   applySpeechModelSelection(speechModelKey, { persist: false });
   setSpeechStatus(resolveSpeechIdleStatus());
-  startSpeechWorker();
 }
 
 if (phiRunBtn) {

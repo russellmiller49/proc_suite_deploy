@@ -242,7 +242,11 @@ const PROCEDURE_AND_DEVICE_RULES = [
 
   { label: "term_bronchoscope", regex: /\bbroncho\s+scope\b/gi, replacement: "bronchoscope" },
   { label: "term_bronchoscopic", regex: /\bbroncho\s+scopic\b/gi, replacement: "bronchoscopic" },
-  { label: "term_bronchoscopy", regex: /\b(?:broncho\s+scopy|bronco\s+scopy|bronchosby|bronchoski|broncoscopy)\b/gi, replacement: "bronchoscopy" },
+  {
+    label: "term_bronchoscopy",
+    regex: /\b(?:broncho\s+scopy|bronco\s+scopy|bronchosby|bronchoski|broncoscopy|run\s+cosby)\b/gi,
+    replacement: "bronchoscopy",
+  },
 
   { label: "proc_cryobiopsies", regex: /\bcryo(?:\s*|-)?(?:biopsies|biospies|bopsies|opsies|oopsies|volopsies)\b/gi, replacement: "cryobiopsies" },
   { label: "proc_cryobiopsy", regex: /\bcryo(?:\s*|-)?(?:biopsy|biospy|bopsy|opsy|oopsy|volopsy)\b/gi, replacement: "cryobiopsy" },
@@ -261,6 +265,7 @@ const PROCEDURE_AND_DEVICE_RULES = [
   { label: "term_cone_beam", regex: /\b(?:comb|combo|combi)\s+beam\b/gi, replacement: "cone beam" },
   { label: "term_conebeam", regex: /\bcone\s+beam\b/gi, replacement: "cone beam" },
   { label: "term_3d_reconstruction", regex: /\b3\s*d\s+reconstruction\b/gi, replacement: "3D reconstruction" },
+  { label: "term_ground_glass_opacity", regex: /\bground\s+glass\s+capacity\b/gi, replacement: "ground glass opacity" },
 
   {
     label: "robotic_ion_phrase",
@@ -327,6 +332,11 @@ const MEDICATION_AND_UNIT_RULES = [
     label: "unit_ml",
     regex: /\b(\d+(?:\.\d+)?)\s*(?:cc|m\s*l|milliliters?|millilitres?|mils?)\b/gi,
     replacement: (_match, volume) => `${volume} mL`,
+  },
+  {
+    label: "unit_cm",
+    regex: /\b(\d+(?:\.\d+)?)\s*[-\s]*(?:seminer|centimeters?|centimetres?)\b/gi,
+    replacement: (_match, value) => `${value} cm`,
   },
   {
     label: "unit_gauge_with_device",

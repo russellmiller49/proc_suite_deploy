@@ -406,12 +406,12 @@
             <label class="speech-model-field" for="speechModelSelect">
               <span class="summary-label">Local speech model</span>
               <select id="speechModelSelect" class="question-select speech-model-select">
-                <option value="base">Base (default)</option>
-                <option value="tiny">Tiny (recommended on mobile)</option>
+                <option value="tiny">Tiny (recommended)</option>
+                <option value="base">Base (slower desktop option)</option>
               </select>
             </label>
             <div id="speechModelHintText" class="subtle speech-model-hint">
-              Base is the default for better accuracy. If you are dictating on a phone or tablet, Tiny usually starts faster.
+              Tiny is the recommended local model right now. It usually loads faster and has been more reliable in-browser.
             </div>
           </div>
           <div class="builder-toolbar speech-actions">

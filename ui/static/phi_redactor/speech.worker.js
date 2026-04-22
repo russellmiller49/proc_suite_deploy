@@ -15,7 +15,7 @@ const SPEECH_MODELS = Object.freeze({
     bundleId: "speech_whisper_tiny_en",
   }),
 });
-const DEFAULT_MODEL_KEY = "base";
+const DEFAULT_MODEL_KEY = "tiny";
 const MODEL_BASE_URL = new URL("./vendor/", import.meta.url).toString();
 const ONNX_WASM_BASE_URL = new URL("./vendor/transformers/", import.meta.url).toString();
 const ONNX_WASM_REQUIRED_FILES = [
@@ -37,6 +37,20 @@ let modelPromise = null;
 let assetsVerified = false;
 let assetsVerifiedBundleId = "";
 let activeModel = SPEECH_MODELS[DEFAULT_MODEL_KEY];
+let lastStatusMessage = "";
+
+function emitStatus(message) {
+  const text = String(message || "").trim();
+  if (!text || text === lastStatusMessage) return;
+  lastStatusMessage = text;
+  self.postMessage({
+    type: "status",
+    modelKey: activeModel.key,
+    model: activeModel.bundleId,
+    modelLabel: activeModel.label,
+    message: text,
+  });
+}
 
 function resolveSpeechModel(modelKey) {
   return SPEECH_MODELS[String(modelKey || "").trim()] || SPEECH_MODELS[DEFAULT_MODEL_KEY];
@@ -48,6 +62,7 @@ function setActiveSpeechModel(modelKey) {
     modelPromise = null;
     assetsVerified = false;
     assetsVerifiedBundleId = "";
+    lastStatusMessage = "";
   }
   activeModel = nextModel;
   return nextModel;
@@ -59,6 +74,7 @@ function buildModelConfigUrl(model) {
 
 async function verifyAssets(model = activeModel) {
   if (assetsVerified && assetsVerifiedBundleId === model.bundleId) return true;
+  emitStatus(`Checking local ${model.label} speech assets…`);
   const modelResponse = await fetch(buildModelConfigUrl(model), { cache: "no-store" });
   if (!modelResponse.ok) {
     throw new Error(
@@ -78,12 +94,37 @@ async function verifyAssets(model = activeModel) {
   return true;
 }
 
-async function getSpeechPipeline(model = activeModel) {
+function buildProgressMessage(progress, model) {
+  const status = String(progress?.status || "").trim().toLowerCase();
+  if (!status) return "";
+  if (status === "initiate") return `Loading local ${model.label} model files…`;
+  if (status === "download") return `Downloading local ${model.label} model files…`;
+  if (status === "progress") {
+    const percent = Number(progress?.progress);
+    if (Number.isFinite(percent) && percent > 0) {
+      return `Loading local ${model.label} model… ${Math.round(percent)}%`;
+    }
+    return `Loading local ${model.label} model…`;
+  }
+  if (status === "done") return `Finishing local ${model.label} model load…`;
+  return "";
+}
+
+async function getSpeechPipeline(model = activeModel, { warmup = false } = {}) {
   await verifyAssets(model);
   if (!modelPromise) {
+    emitStatus(
+      warmup
+        ? `Preparing local ${model.label} speech model…`
+        : `Loading local ${model.label} speech model…`,
+    );
     modelPromise = pipeline(TASK, model.bundleId, {
       device: "wasm",
       local_files_only: true,
+      progress_callback: (progress) => {
+        const message = buildProgressMessage(progress, model);
+        if (message) emitStatus(message);
+      },
     });
   }
   return modelPromise;
@@ -101,7 +142,7 @@ self.onmessage = async (event) => {
   if (msg.type === "init") {
     const model = setActiveSpeechModel(msg.modelKey);
     try {
-      await verifyAssets(model);
+      await getSpeechPipeline(model, { warmup: true });
       self.postMessage({
         type: "ready",
         modelKey: model.key,
@@ -124,6 +165,7 @@ self.onmessage = async (event) => {
 
   const requestId = String(msg.requestId || "");
   try {
+    emitStatus(`Transcribing locally with ${activeModel.label}…`);
     const speechPipeline = await getSpeechPipeline(activeModel);
     const audio = new Float32Array(msg.audio || []);
     const result = await speechPipeline(audio, {
@@ -132,6 +174,7 @@ self.onmessage = async (event) => {
       return_timestamps: false,
     });
     const rawTranscript = String(result?.text || "").trim();
+    emitStatus(`Applying local ${activeModel.label} transcript repairs…`);
     const repaired = repairSpeechTranscript(rawTranscript);
     self.postMessage({
       type: "transcription_result",

@@ -73,7 +73,11 @@ const REPORTER_SPEECH_MAX_SECONDS = 60;
 const REPORTER_SPEECH_SAMPLE_RATE = 16000;
 const REPORTER_SPEECH_WORKER_PATH = new URL("./speech.worker.js", import.meta.url).toString();
 const REPORTER_SPEECH_MODEL_STORAGE_KEY = "ps.reporter_speech_model_v1";
-const REPORTER_SPEECH_DEFAULT_MODEL_KEY = "base";
+const REPORTER_SPEECH_DEFAULT_MODEL_KEY = "tiny";
+const REPORTER_SPEECH_TRANSCRIBE_TIMEOUT_MS = Object.freeze({
+  tiny: 45_000,
+  base: 90_000,
+});
 const REPORTER_SPEECH_MODELS = Object.freeze({
   base: Object.freeze({
     key: "base",
@@ -221,13 +225,13 @@ function renderSpeechModelHint() {
       "Using a phone or tablet? Tiny is recommended because it usually loads and transcribes faster there.";
     return;
   }
-  if (speechModelKey === "tiny") {
+  if (speechModelKey === "base") {
     speechModelHintTextEl.textContent =
-      "Tiny uses less local memory and can help on slower devices. Switch back to Base if you want the most accurate local model.";
+      "Base is larger and slower in-browser, and it does not always outperform Tiny on procedure dictation.";
     return;
   }
   speechModelHintTextEl.textContent =
-    "Base is the default for better accuracy. Tiny is still available if you want a lighter local model on mobile devices.";
+    "Tiny is the recommended local model right now. It usually loads faster and has been more reliable in-browser.";
 }
 
 function syncSpeechModelControl() {
@@ -911,6 +915,15 @@ function resolveSpeechIdleStatus() {
   return "Speech support unavailable.";
 }
 
+function getSpeechTranscribeTimeoutMs(modelKey = speechWorkerModelKey) {
+  return REPORTER_SPEECH_TRANSCRIBE_TIMEOUT_MS[normalizeSpeechModelKey(modelKey)] || 60_000;
+}
+
+function resetSpeechWorkerAfterFailure() {
+  if (speechPendingRequest) speechPendingRequest = null;
+  startSpeechWorker();
+}
+
 function renderSpeechState() {
   renderSpeechSourceBadge();
   updateControls();
@@ -1041,6 +1054,14 @@ function attachSpeechWorkerHandlers(activeWorker) {
     const msg = event?.data || {};
     if (!msg || typeof msg.type !== "string") return;
 
+    if (msg.type === "status") {
+      speechWorkerModelKey = normalizeSpeechModelKey(msg.modelKey || speechModelKey);
+      speechWorkerModelLabel = String(msg.modelLabel || getSpeechModelLabel(speechWorkerModelKey));
+      setSpeechStatus(String(msg.message || resolveSpeechIdleStatus()));
+      renderSpeechState();
+      return;
+    }
+
     if (msg.type === "ready") {
       speechWorkerModelKey = normalizeSpeechModelKey(msg.modelKey || speechModelKey);
       speechWorkerModelLabel = String(msg.modelLabel || getSpeechModelLabel(speechWorkerModelKey));
@@ -1146,9 +1167,21 @@ async function requestLocalSpeechTranscript(blob) {
     if (!audio.length) throw new Error("Unable to decode recorded audio");
 
     const requestId = `speech-${Date.now()}-${++speechRequestCounter}`;
+    const timeoutMs = getSpeechTranscribeTimeoutMs(speechWorkerModelKey);
     const response = await new Promise((resolve, reject) => {
       speechPendingRequest = { requestId, resolve, reject };
       speechWorker.postMessage({ type: "transcribe", requestId, audio }, [audio.buffer]);
+      window.setTimeout(() => {
+        if (!speechPendingRequest || speechPendingRequest.requestId !== requestId) return;
+        speechPendingRequest = null;
+        resetSpeechWorkerAfterFailure();
+        reject(
+          new Error(
+            `Local ${speechWorkerModelLabel} transcription timed out after ${Math.round(timeoutMs / 1000)} seconds. `
+            + "Try Tiny or use Cloud Fallback if the recording contains no PHI.",
+          ),
+        );
+      }, timeoutMs);
     });
     const transcript = String(response?.transcript || "").trim();
     if (!transcript) throw new Error("Local speech transcription returned an empty transcript");
@@ -1660,9 +1693,12 @@ function updateControls() {
 
   if (speechStartBtn) {
     const speechUnsupportedReason = getSpeechRecordingUnsupportedReason();
-    speechStartBtn.disabled = state.busy || speechBusy || Boolean(speechUnsupportedReason);
+    const speechWorkerLoading = Boolean(speechWorker) && !speechWorkerReady && !speechWorkerUnavailableReason;
+    speechStartBtn.disabled = state.busy || speechBusy || Boolean(speechUnsupportedReason) || speechWorkerLoading;
     if (speechUnsupportedReason) {
       speechStartBtn.title = speechUnsupportedReason;
+    } else if (speechWorkerLoading) {
+      speechStartBtn.title = `Wait for the local ${getSpeechModelLabel(speechModelKey)} model to finish loading.`;
     } else {
       speechStartBtn.title = "";
     }

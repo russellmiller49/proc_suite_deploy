@@ -95,12 +95,18 @@ class NERToRegistryMapper:
             linear_ebus_dict["node_events"] = [
                 {
                     "station": ne.station,
+                    "target_text": ne.target_text,
                     "action": ne.action,
                     "outcome": ne.outcome,
+                    "passes": ne.passes,
+                    "pass_count": ne.pass_count,
+                    "rose_result": ne.rose_result,
                     "evidence_quote": ne.evidence_quote,
                 }
                 for ne in station_result.node_events
             ]
+            if station_result.non_station_targets:
+                linear_ebus_dict["targets_sampled"] = station_result.non_station_targets
             record_dict["procedures_performed"]["linear_ebus"] = linear_ebus_dict
 
             # Track evidence

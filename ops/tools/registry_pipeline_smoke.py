@@ -127,6 +127,24 @@ def _apply_seed_uplift(
             record_data["established_tracheostomy_route"] = True
             uplifted.append("established_tracheostomy_route")
 
+    seed_equipment = seed.get("equipment")
+    if isinstance(seed_equipment, dict) and seed_equipment:
+        record_equipment = record_data.get("equipment") or {}
+        if not isinstance(record_equipment, dict):
+            record_equipment = {}
+        for key, value in seed_equipment.items():
+            if value in (None, "", [], {}):
+                continue
+            if key == "navigation_platform":
+                if not record_equipment.get(key):
+                    record_equipment[key] = value
+                    uplifted.append(f"equipment.{key}")
+            elif value is True and record_equipment.get(key) is not True:
+                record_equipment[key] = True
+                uplifted.append(f"equipment.{key}")
+        if record_equipment:
+            record_data["equipment"] = record_equipment
+
     if apply_navigation_fiducials(record_data, masked_note_text):
         uplifted.append("granular_data.navigation_targets[*].fiducial_marker_placed")
 

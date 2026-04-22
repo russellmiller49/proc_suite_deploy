@@ -131,10 +131,46 @@ _TIL_METHOD_FLUORO_RE = re.compile(r"(?i)\bfluor(?:oscopy|o)\b")
 _TIL_METHOD_REBUS_RE = re.compile(r"(?i)\b(?:radial\s+ebus|r-?ebus|rebus)\b")
 
 _INLINE_TARGET_RE = re.compile(
-    r"\bTarget(?:\s+Lesion)?\s*[:\-]\s*(?P<loc>[^\n\r]+)",
+    r"(?im)^\s*Target(?:\s+Lesion)?\s*[:\-]\s*(?P<loc>[^\n\r]+)",
     re.IGNORECASE | re.MULTILINE,
 )
+_INLINE_NAV_WORKFLOW_TARGET_RE = re.compile(
+    r"(?im)\b(?:computer-assisted\s+)?(?:navigational|robotic|electromagnetic)\s+bronchoscopy\b"
+    r"[^\n]{0,220}?\bto\s+(?P<loc>"
+    r"(?:(?:the|a|an)\s+)?"
+    r"(?:RUL|RML|RLL|LUL|LLL|LINGULA|"
+    r"right\s+upper\s+lobe|right\s+middle\s+lobe|right\s+lower\s+lobe|"
+    r"left\s+upper\s+lobe|left\s+lower\s+lobe)"
+    r"[^\n,.;]{0,80}?"
+    r"(?:\b(?:peripheral\s+target|target|lesion|nodule|mass)\b)?"
+    r")"
+)
 
+_PROCEDURAL_TARGET_CONFIRMED_RE = re.compile(
+    r"(?is)\btarget\s+confirmed\s+(?P<loc>"
+    r"(?:LEFT|RIGHT)\s+(?:UPPER|MIDDLE|LOWER)\s+LOBE"
+    r"(?:\s*,\s*[A-Za-z0-9+/\- ]{1,80}?(?:segment|target|lesion|nodule))?"
+    r"(?:\s*\([^)]+\))?"
+    r")"
+)
+_TABLE_TARGET_HEADER_RE = re.compile(r"(?im)^\s*Target\t(?:Tool|Procedure|Sampling|Passes|Notes)\b")
+_TABLE_TARGET_ROW_RE = re.compile(
+    r"(?im)^\s*(?P<loc>"
+    r"(?:RUL|RML|RLL|LUL|LLL|LINGULA|"
+    r"right\s+upper\s+lobe|right\s+middle\s+lobe|right\s+lower\s+lobe|"
+    r"left\s+upper\s+lobe|left\s+lower\s+lobe)"
+    r"(?:[^\t\n]{0,40}?\b(?:nodule|lesion|mass|target))?"
+    r")\t"
+)
+_BRIEF_TARGET_PHRASE_RE = re.compile(
+    r"(?i)\b(?P<loc>"
+    r"(?:PET-avid\s+|peripheral\s+)?"
+    r"(?:RUL|RML|RLL|LUL|LLL|LINGULA|"
+    r"right\s+upper\s+lobe|right\s+middle\s+lobe|right\s+lower\s+lobe|"
+    r"left\s+upper\s+lobe|left\s+lower\s+lobe)"
+    r"(?:\s+[A-Za-z-]+){0,2}\s+(?:nodule|lesion|mass|target)"
+    r")\b"
+)
 _FIDUCIAL_SENTENCE_RE = re.compile(r"(?i)\b(fiducial(?:\s+marker)?s?\b[^\n]{0,260})")
 _FIDUCIAL_ACTION_RE = re.compile(r"(?i)\b(?:plac(?:ed|ement)|deploy\w*|position\w*|insert\w*)\b")
 _FIDUCIAL_EXPLICIT_NEG_RE = re.compile(
@@ -430,6 +466,27 @@ def _truncate_location(value: str, *, max_len: int = 100) -> str:
     return clipped
 
 
+def _canonicalize_inline_location(raw_loc_full: str) -> str:
+    raw = _truncate_location(raw_loc_full)
+    if not raw:
+        return ""
+
+    lobe = _infer_lobe_from_text(raw_loc_full)
+    if not lobe:
+        return raw
+
+    if re.search(r"(?i)\b[LR]B\d{1,2}\b|\bsegment\b", raw_loc_full):
+        return raw
+
+    if re.search(
+        r"(?i)\b(?:peripheral\s+target|target|target\s+lesion|lesion|nodule|mass|apicoposterior|anterior|posterior|superior|inferior|medial|lateral)\b",
+        raw_loc_full,
+    ):
+        return lobe
+
+    return raw
+
+
 def _maybe_unescape_newlines(text: str) -> str:
     """Convert literal '\\n'/'\\r' sequences into real newlines when the note looks escaped."""
     raw = text or ""
@@ -484,6 +541,48 @@ def _extract_rose_result(text: str) -> str | None:
     return None
 
 
+def _canonicalize_procedural_target_location(raw_loc: str) -> str:
+    loc = re.sub(r"\s+", " ", raw_loc or "").strip(" .;:-")
+    if not loc:
+        return ""
+
+    loc = re.sub(r"(?i)\[sic\]", "", loc)
+    replacements = {
+        "LEFT UPPER LOBE": "LUL",
+        "LEFT LOWER LOBE": "LLL",
+        "RIGHT UPPER LOBE": "RUL",
+        "RIGHT MIDDLE LOBE": "RML",
+        "RIGHT LOWER LOBE": "RLL",
+    }
+    for phrase, abbrev in replacements.items():
+        loc = re.sub(rf"(?i)\b{phrase}\b", abbrev, loc)
+
+    loc = re.sub(r"(?i)\b(RUL|RML|RLL|LUL|LLL|Lingula)\s*,\s*", r"\1 ", loc)
+    loc = re.sub(r"(?i)\b(?:target|lesion|nodule)\b$", "", loc).strip(" ,;-")
+    loc = re.sub(r"\s+", " ", loc).strip(" ,;-")
+    return _truncate_location(loc)
+
+
+def _canonicalize_brief_target_location(raw_loc: str) -> str:
+    loc = re.sub(r"\s+", " ", raw_loc or "").strip(" .;:-")
+    if not loc:
+        return ""
+
+    replacements = {
+        "LEFT UPPER LOBE": "LUL",
+        "LEFT LOWER LOBE": "LLL",
+        "RIGHT UPPER LOBE": "RUL",
+        "RIGHT MIDDLE LOBE": "RML",
+        "RIGHT LOWER LOBE": "RLL",
+        "LINGULA": "Lingula",
+    }
+    for phrase, abbrev in replacements.items():
+        loc = re.sub(rf"(?i)\b{phrase}\b", abbrev, loc)
+
+    loc = re.sub(r"\s+", " ", loc).strip(" ,;-")
+    return _truncate_location(loc)
+
+
 def _fiducial_in_section(section_text: str) -> tuple[bool, str | None, tuple[int, int] | None]:
     """Return (placed, details, local_span) for fiducial placement language.
 
@@ -526,16 +625,27 @@ def extract_navigation_targets(note_text: str) -> list[dict[str, Any]]:
         # Fallback: support inline patterns like "Target: 20mm nodule in LLL" without
         # relying on explicit "... LOBE TARGET" section headings.
         targets: list[dict[str, Any]] = []
-        for match in _INLINE_TARGET_RE.finditer(scan_text):
+        seen_inline_locations: set[str] = set()
+        inline_matches = list(_INLINE_TARGET_RE.finditer(scan_text))
+        inline_matches.extend(_INLINE_NAV_WORKFLOW_TARGET_RE.finditer(scan_text))
+        inline_matches.sort(key=lambda match: match.start())
+        for match in inline_matches:
             raw_loc_full_raw = _trim_at_stop_words(match.group("loc") or "")
             leading_trim = len(raw_loc_full_raw) - len(raw_loc_full_raw.lstrip())
             raw_loc_full = raw_loc_full_raw.strip()
             loc_offset = match.start("loc") + leading_trim
-            raw_loc = _truncate_location(raw_loc_full)
+            if match.re is _INLINE_TARGET_RE:
+                raw_loc = _truncate_location(raw_loc_full)
+            else:
+                raw_loc = _canonicalize_inline_location(raw_loc_full)
             if not raw_loc:
                 continue
             if len(raw_loc) <= 2:
                 continue
+            raw_loc_key = raw_loc.lower()
+            if raw_loc_key in seen_inline_locations:
+                continue
+            seen_inline_locations.add(raw_loc_key)
 
             target: dict[str, Any] = {
                 "target_number": len(targets) + 1,
@@ -764,6 +874,60 @@ def extract_navigation_targets(note_text: str) -> list[dict[str, Any]]:
 
         if targets:
             return targets
+
+        table_header = _TABLE_TARGET_HEADER_RE.search(scan_text)
+        if table_header:
+            table_text = scan_text[table_header.end() :]
+            unique_locations: list[str] = []
+            seen_locations: set[str] = set()
+            for row_match in _TABLE_TARGET_ROW_RE.finditer(table_text):
+                location_text = _canonicalize_brief_target_location(row_match.group("loc") or "")
+                if not location_text:
+                    continue
+                location_key = location_text.lower()
+                if location_key in seen_locations:
+                    continue
+                seen_locations.add(location_key)
+                unique_locations.append(location_text)
+            if len(unique_locations) == 1:
+                location_text = unique_locations[0]
+                target: dict[str, Any] = {
+                    "target_number": 1,
+                    "target_location_text": location_text,
+                }
+                lobe = _infer_lobe_from_text(location_text)
+                if lobe:
+                    target["target_lobe"] = lobe
+                return [target]
+
+        confirmed_target = _PROCEDURAL_TARGET_CONFIRMED_RE.search(scan_text)
+        if confirmed_target:
+            location_text = _canonicalize_procedural_target_location(confirmed_target.group("loc") or "")
+            if location_text:
+                target: dict[str, Any] = {
+                    "target_number": 1,
+                    "target_location_text": location_text,
+                }
+                lobe = _infer_lobe_from_text(location_text)
+                if lobe:
+                    target["target_lobe"] = lobe
+                segment_match = re.search(r"(?i)\b([A-Za-z][A-Za-z0-9+/\- ]{1,80}?segment)\b", location_text)
+                if segment_match:
+                    target["target_segment"] = segment_match.group(1).strip()
+                return [target]
+
+        brief_target = _BRIEF_TARGET_PHRASE_RE.search(scan_text)
+        if brief_target:
+            location_text = _canonicalize_brief_target_location(brief_target.group("loc") or "")
+            if location_text:
+                target = {
+                    "target_number": 1,
+                    "target_location_text": location_text,
+                }
+                lobe = _infer_lobe_from_text(location_text)
+                if lobe:
+                    target["target_lobe"] = lobe
+                return [target]
 
         # Fallback: some templates use navigation prose ("... used to engage the <segment> of RLL (RB6)")
         # without explicit "... TARGET" headings or inline "Target:" markers. Treat each distinct "engage"

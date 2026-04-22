@@ -111,6 +111,81 @@
         font-size: 14px;
       }
 
+      .speech-panel {
+        border: 1px solid var(--border-color);
+        border-radius: var(--radius-md);
+        background: var(--bg-input);
+        padding: 12px;
+        margin-bottom: 12px;
+      }
+
+      .speech-panel-header {
+        display: flex;
+        justify-content: space-between;
+        gap: 10px;
+        align-items: flex-start;
+        margin-bottom: 10px;
+      }
+
+      .speech-warning-panel {
+        border-left: 3px solid var(--warning);
+        background: var(--warning-light);
+        border-radius: var(--radius-sm);
+        padding: 10px 12px;
+      }
+
+      .speech-warning-list {
+        margin: 8px 0 10px 18px;
+        color: var(--text-secondary);
+      }
+
+      .speech-warning-list li {
+        margin-bottom: 4px;
+      }
+
+      .speech-status-line {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        align-items: center;
+        margin-top: 10px;
+      }
+
+      .speech-model-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        align-items: flex-end;
+        margin-top: 12px;
+      }
+
+      .speech-model-field {
+        min-width: 220px;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+
+      .speech-model-select {
+        min-width: 220px;
+      }
+
+      .speech-model-hint {
+        max-width: 520px;
+        line-height: 1.4;
+      }
+
+      .speech-badge {
+        background: var(--primary-light);
+        color: var(--primary);
+      }
+
+      .speech-confirm-text {
+        margin: 0;
+        color: var(--text-secondary);
+        line-height: 1.5;
+      }
+
       .builder-list {
         margin: 0;
         padding-left: 18px;
@@ -119,6 +194,11 @@
 
       .builder-list li {
         margin-bottom: 4px;
+      }
+
+      .blocker-list {
+        color: var(--danger);
+        font-weight: 600;
       }
 
       .question-group {
@@ -305,6 +385,46 @@
 
       <section class="content-card">
         <h3>1. Seed From Text</h3>
+        <div class="speech-panel">
+          <div class="speech-panel-header">
+            <div>
+              <div class="summary-label">Speech Seed Input</div>
+              <div class="subtle">Record a short, procedure-only dictation. Audio stays in memory only unless you explicitly choose cloud fallback.</div>
+            </div>
+            <span id="speechSourceBadge" class="status-badge speech-badge hidden">No transcript</span>
+          </div>
+          <div class="speech-warning-panel">
+            <strong>Before recording</strong>
+            <ul class="speech-warning-list">
+              <li>Do not speak patient names, MRN, DOB, phone, address, or exact dates.</li>
+              <li>Dictate procedure details only.</li>
+              <li>You will still review and redact the transcript before seeding.</li>
+            </ul>
+            <div class="subtle">You will confirm non-PHI dictation the first time you start recording for each reporter note.</div>
+          </div>
+          <div class="speech-model-row">
+            <label class="speech-model-field" for="speechModelSelect">
+              <span class="summary-label">Local speech model</span>
+              <select id="speechModelSelect" class="question-select speech-model-select">
+                <option value="base">Base (default)</option>
+                <option value="tiny">Tiny (recommended on mobile)</option>
+              </select>
+            </label>
+            <div id="speechModelHintText" class="subtle speech-model-hint">
+              Base is the default for better accuracy. If you are dictating on a phone or tablet, Tiny usually starts faster.
+            </div>
+          </div>
+          <div class="builder-toolbar speech-actions">
+            <button id="speechStartBtn" class="primary" type="button">Start dictation</button>
+            <button id="speechStopBtn" class="secondary" type="button" disabled>Stop</button>
+            <button id="speechDiscardBtn" class="secondary" type="button" disabled>Discard</button>
+            <button id="speechCloudFallbackBtn" class="secondary" type="button" disabled>Use Cloud Fallback</button>
+          </div>
+          <div class="speech-status-line">
+            <span id="speechStatusText" class="subtle">Loading local speech support…</span>
+            <span id="speechWarningText" class="subtle"></span>
+          </div>
+        </div>
         <label class="subtle" for="seedText">
           Procedure details (use scrubbed text when possible)
         </label>
@@ -341,6 +461,20 @@
         </div>
         <div id="actionBanner" class="status-banner hidden"></div>
       </section>
+
+      <dialog id="speechStartConfirmModal" class="modal">
+        <div class="modal-content">
+          <h3>Confirm Non-PHI Dictation</h3>
+          <p class="speech-confirm-text">
+            I confirm that I will not include patient names, MRN, DOB, phone, address, or exact dates in this dictation.
+          </p>
+          <p class="subtle">This is required once for each fresh reporter note before dictation starts.</p>
+          <div class="modal-actions">
+            <button id="speechStartCancelBtn" class="secondary" type="button">Cancel</button>
+            <button id="speechStartConfirmBtn" class="primary" type="button">Confirm and Start Dictation</button>
+          </div>
+        </div>
+      </dialog>
 
       <section class="content-card hidden" id="completenessPromptsCard">
         <h3>1b. Suggested Missing Fields (Completeness)</h3>

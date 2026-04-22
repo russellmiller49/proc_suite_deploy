@@ -36,12 +36,35 @@ def apply_navigation_target_heuristics(
     )
 
     parsed_targets = extract_navigation_targets(text)
-    target_lines = [
-        line
-        for line in text.splitlines()
-        if re.search(r"(?i)target lesion", line)
-        or re.search(r"(?i)^\s*target\s*\d{1,2}\s*[:\\-]", line)
-    ]
+    def _looks_like_target_location_line(line: str) -> bool:
+        raw = (line or "").strip()
+        if not raw:
+            return False
+        if re.search(r"(?i)^\s*target\s*\d{1,2}\s*[:\\-]", raw):
+            return True
+        if re.search(
+            r"(?i)\b(?:computer-assisted\s+)?(?:navigational|robotic|electromagnetic)\s+bronchoscopy\b",
+            raw,
+        ) and re.search(
+            r"(?i)\b(?:RUL|RML|RLL|LUL|LLL|LINGULA|RIGHT\s+UPPER|RIGHT\s+MIDDLE|RIGHT\s+LOWER|LEFT\s+UPPER|LEFT\s+LOWER|[LR]B\d{1,2}|segment)\b",
+            raw,
+        ):
+            return True
+        if not re.search(r"(?i)\btarget lesion\b", raw):
+            return False
+        if not re.search(
+            r"(?i)\b(?:RUL|RML|RLL|LUL|LLL|LINGULA|RIGHT\s+UPPER|RIGHT\s+MIDDLE|RIGHT\s+LOWER|LEFT\s+UPPER|LEFT\s+LOWER|[LR]B\d{1,2}|segment)\b",
+            raw,
+        ):
+            return False
+        if re.search(
+            r"(?i)\b(?:tbna|forceps|transbronchial|cryobiops(?:y|ies)|bal|aspirat(?:e|ion)|sample)\b",
+            raw,
+        ):
+            return False
+        return True
+
+    target_lines = [line for line in text.splitlines() if _looks_like_target_location_line(line)]
     if not parsed_targets and not target_lines:
         return record_in, []
 

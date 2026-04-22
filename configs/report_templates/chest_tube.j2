@@ -2,6 +2,14 @@
 {% set _guidance_lower = _guidance | lower %}
 {% set _has_ultrasound_findings = proc.effusion_volume or proc.effusion_echogenicity or proc.loculations or proc.diaphragm_motion or proc.lung_sliding_pre or proc.lung_sliding_post or proc.lung_consolidation or proc.pleura_description %}
 {% set _has_chest_ultrasound = ("ultrasound" in _guidance_lower) or _has_ultrasound_findings %}
+{% set _hint_upper = (free_text_hint | default("")) | upper %}
+{% set _fibrinolytic_only = (proc.fibrinolytic_agents or proc.tpa_dose_mg is not none or proc.dnase_dose_mg is not none) and (("32561" in _hint_upper) or ("32562" in _hint_upper) or ("DOSE NUMBER" in _hint_upper) or ("DOSE #" in _hint_upper) or ("SUBSEQUENT" in _hint_upper) or ("INSTILLATION" in _hint_upper) or ("RIGHT-SIDED TUBE" in _hint_upper) or ("LEFT-SIDED TUBE" in _hint_upper) or ("EXISTING" in _hint_upper) or ("VIA THE TUBE" in _hint_upper) or ("FIBRINOLYTIC" in _hint_upper and "ULTRASOUND" in _hint_upper)) and ("INSERT" not in _hint_upper) and ("PLACEMENT" not in _hint_upper) %}
+{% if _fibrinolytic_only %}
+{% if _has_chest_ultrasound %}Thoracic ultrasound of the {{ proc.side }} hemithorax was documented prior to fibrinolytic instillation.{% elif _guidance %}{{ _guidance }} guidance was documented prior to fibrinolytic instillation.{% else %}Pleural drain position was confirmed prior to fibrinolytic instillation.{% endif %}
+Intrapleural fibrinolytic therapy was instilled through the existing pleural drain{% if proc.fibrinolytic_agents %} using {{ proc.fibrinolytic_agents | join(' + ') }}{% endif %}{% if proc.tpa_dose_mg is not none %} (tPA {{ proc.tpa_dose_mg }} mg{% if proc.dnase_dose_mg is not none %}, DNase {{ proc.dnase_dose_mg }} mg{% endif %}){% elif proc.dnase_dose_mg is not none %} (DNase {{ proc.dnase_dose_mg }} mg){% endif %}{% if proc.fibrinolytic_schedule %}, schedule {{ proc.fibrinolytic_schedule }}{% endif %}{% if proc.fibrinolytic_number_of_doses is not none %}, dose number {{ proc.fibrinolytic_number_of_doses }}{% endif %}{% if proc.fibrinolytic_indication %}; indication: {{ proc.fibrinolytic_indication }}{% endif %}.
+{% if proc.fluid_removed_ml is not none %}Pleural fluid return was documented at {{ proc.fluid_removed_ml }} mL{% if proc.fluid_appearance %} of {{ proc.fluid_appearance|lower }} fluid{% endif %}.{% endif %}
+{% if proc.cxr_ordered %}A post-procedure chest x-ray was ordered.{% endif %}
+{% else %}
 After {% if _has_chest_ultrasound %}chest ultrasound documentation{% if _guidance and "ultrasound" not in _guidance_lower %} with {{ _guidance_lower }} guidance{% endif %}{% else %}sterile preparation and site confirmation{% endif %}, the {{ proc.side }} chest was prepped and draped in sterile fashion.
 A thoracostomy tube was inserted into the {{ proc.intercostal_space }} intercostal space along the {{ proc.entry_line }} using the Seldinger technique and connected to a drainage system.
 Placement was confirmed and secured.{% if proc.fluid_removed_ml is not none %} Return of {{ proc.fluid_removed_ml }} mL of{% if proc.fluid_appearance %} {{ proc.fluid_appearance|lower }}{% else %} fluid{% endif %}.{% endif %}
@@ -13,14 +21,16 @@ Intrapleural fibrinolytic therapy was documented{% if proc.fibrinolytic_agents %
 Chemical pleurodesis was performed{% if proc.pleurodesis_agent %} with {{ proc.pleurodesis_agent }}{% endif %}{% if proc.pleurodesis_dose %} (dose {{ proc.pleurodesis_dose }}){% endif %}{% if proc.pleurodesis_method %} using {{ proc.pleurodesis_method }}{% endif %}.
 {% endif %}
 {% if proc.cxr_ordered %}A post-procedure chest x-ray was ordered.{% endif %}
+{% endif %}
 {% if proc.effusion_volume or proc.effusion_echogenicity or proc.loculations or proc.diaphragm_motion or proc.lung_sliding_pre or proc.lung_sliding_post or proc.lung_consolidation or proc.pleura_description %}CHEST ULTRASOUND FINDINGS:
 Hemithorax: {{ proc.side|title }}
-{% if proc.effusion_volume %}Pleural Effusion Volume: {{ proc.effusion_volume }}{% endif %}
-{% if proc.effusion_echogenicity %}Echogenicity: {{ proc.effusion_echogenicity }}{% endif %}
-{% if proc.loculations %}Loculations: {{ proc.loculations }}{% endif %}
-{% if proc.diaphragm_motion %}Diaphragmatic Motion: {{ proc.diaphragm_motion }}{% endif %}
-{% if proc.lung_sliding_pre %}Lung sliding before procedure: {{ proc.lung_sliding_pre }}{% endif %}
-{% if proc.lung_sliding_post %}Lung sliding post procedure: {{ proc.lung_sliding_post }}{% endif %}
-{% if proc.lung_consolidation %}Lung consolidation/atelectasis: {{ proc.lung_consolidation }}{% endif %}
-{% if proc.pleura_description %}Pleura: {{ proc.pleura_description }}{% endif %}{% endif %}
+{% if proc.effusion_volume %}Pleural Effusion Volume: {{ proc.effusion_volume }}
+{% endif %}{% if proc.effusion_echogenicity %}Echogenicity: {{ proc.effusion_echogenicity }}
+{% endif %}{% if proc.loculations %}Loculations: {{ proc.loculations }}
+{% endif %}{% if proc.diaphragm_motion %}Diaphragmatic Motion: {{ proc.diaphragm_motion }}
+{% endif %}{% if proc.lung_sliding_pre %}Lung sliding before procedure: {{ proc.lung_sliding_pre }}
+{% endif %}{% if proc.lung_sliding_post %}Lung sliding post procedure: {{ proc.lung_sliding_post }}
+{% endif %}{% if proc.lung_consolidation %}Lung consolidation/atelectasis: {{ proc.lung_consolidation }}
+{% endif %}{% if proc.pleura_description %}Pleura: {{ proc.pleura_description }}
+{% endif %}{% endif %}
 The patient tolerated the procedure well without immediate complications.

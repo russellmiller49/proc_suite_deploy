@@ -741,8 +741,9 @@ def extract_linear_ebus_stations_detail(note_text: str) -> list[dict[str, Any]]:
             continue
 
         first_line = section.splitlines()[0].strip() if section.splitlines() else ""
+        station_line = _SITE_BLOCK_HEADER_RE.sub("", first_line, count=1).strip()
         station_token: str | None = None
-        for m_station in _SITE_STATION_TOKEN_RE.finditer(first_line):
+        for m_station in _SITE_STATION_TOKEN_RE.finditer(station_line):
             token = (m_station.group(1) or "").strip()
             if token:
                 station_token = token

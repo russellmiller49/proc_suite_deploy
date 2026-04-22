@@ -266,10 +266,24 @@ def parse_dilation_sizes_mm(text: str) -> list[int]:
         values = [int(v) for v in re.findall(r"\d{1,2}", match.group(1))]
         return [v for v in values if v > 0]
 
-    if re.search(r"(?i)\bdilat", text) and re.search(r"(?i)\bdilator", text):
-        values = [int(v) for v in re.findall(r"(?i)\b(\d{1,2})\s*mm\b", text)]
-        return [v for v in values if v > 0]
-    return []
+    values: list[int] = []
+    for pattern in (
+        r"(?i)\b(?:balloon\s+)?dilat(?:ion|e|ed)?\b[^\n]{0,40}?(\d{1,2})\s*mm\b",
+        r"(?i)(?<![x×]\s)(?<![x×])\b(\d{1,2})\s*mm\b[^\n]{0,24}\bballoon\b",
+        r"(?i)(?<![x×]\s)(?<![x×])\b(\d{1,2})\s*mm\b[^\n]{0,24}\bdilat(?:ion|e|ed)?\b",
+    ):
+        for match in re.finditer(pattern, text):
+            item = match.group(1)
+            try:
+                value = int(item)
+            except Exception:
+                continue
+            suffix = text[match.start(1) : min(len(text), match.end(1) + 20)]
+            if re.search(r"(?i)\b\d{1,2}\s*mm\s*[x×]\s*\d{1,3}\s*mm\b", suffix):
+                continue
+            if value > 0 and value not in values:
+                values.append(value)
+    return values
 
 
 def parse_post_dilation_diameter_mm(text: str) -> int | None:

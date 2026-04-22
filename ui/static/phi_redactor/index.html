@@ -133,23 +133,27 @@
           </div>
         </div>
 
-        <div id="pdfExtractSummary" class="subtle pdf-upload-summary">
-          Input options: paste note text directly, or upload a PDF for layout-aware local extraction with safety gating before PHI detection.
-        </div>
-        <div id="cameraScanSummary" class="subtle pdf-upload-summary camera-upload-summary hidden"></div>
+        <div class="editor-support-stack">
+          <div id="pdfExtractSummary" class="subtle pdf-upload-summary">
+            Input options: paste note text directly, or upload a PDF for layout-aware local extraction with safety gating before PHI detection.
+          </div>
+          <div id="cameraScanSummary" class="subtle pdf-upload-summary camera-upload-summary hidden"></div>
 
-	        <div class="warning">
+	        <div class="warning warning--policy">
 	          <strong>PHI Policy:</strong> This page runs detection locally in your browser.
 	          Apply redactions before submitting. The server receives only scrubbed text.
 	        </div>
-        <div id="classicModeNotice" class="warning classic-mode-note hidden">
-          <strong>Classic mode:</strong> Vault disabled (reduced local protections).
-        </div>
+          <div id="classicModeNotice" class="warning classic-mode-note hidden">
+            <strong>Classic mode:</strong> Vault disabled (reduced local protections).
+          </div>
 
-	        <div class="warning" style="margin: 10px 16px;">
-	          <strong>Zero-Knowledge Timeline:</strong> Event chronology is now managed in <strong>Local Vault</strong>.
-	          Use <strong>Add Event</strong> from an unlocked case. Absolute dates remain client-side and are converted to
-          relative day offsets before append.
+	        <div class="warning warning--timeline">
+	          <strong>Zero-Knowledge Timeline:</strong>
+            <span>
+              Event chronology is now managed in <strong>Local Vault</strong>. Use <strong>Add Event</strong> from an unlocked case.
+              Absolute dates remain client-side and are converted to relative day offsets before append.
+            </span>
+          </div>
         </div>
 
         <div id="editor" class="editor">

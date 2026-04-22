@@ -8,6 +8,8 @@ from pathlib import Path
 from typing import Any, Callable
 
 from app.common.path_redaction import repo_relative_path, sanitize_path_fields
+from app.registry.deterministic_extractors import extract_tbna_conventional
+from app.reporting.quality_gate import BLOCKER_CODES
 from ml.scripts.generate_reporter_gold_dataset import (
     CRITICAL_FLAG_EXACT,
     CRITICAL_FLAG_PREFIXES,
@@ -152,6 +154,14 @@ def extract_flags_and_cpt(note_text: str, registry_service: Any) -> tuple[set[st
     result = registry_service.extract_fields_extraction_first(note_text)
     record_data = result.record.model_dump(exclude_none=True)
     flags = collect_performed_flags(record_data)
+    peripheral_tbna_flag = "procedures_performed.peripheral_tbna.performed"
+    if peripheral_tbna_flag in flags:
+        deterministic_tbna = extract_tbna_conventional(note_text)
+        deterministic_has_peripheral = bool(
+            (deterministic_tbna.get("peripheral_tbna") or {}).get("performed") is True
+        )
+        if not deterministic_has_peripheral:
+            flags.discard(peripheral_tbna_flag)
     cpt = {str(code) for code in (result.cpt_codes or [])}
     return flags, cpt
 
@@ -242,6 +252,11 @@ def evaluate_seed_path(
     critical_extra_cases = 0
     forbidden_artifact_cases = 0
     strict_fallback_cases = 0
+    blocker_cases = 0
+    complication_contradiction_cases = 0
+    unsupported_invasive_add_cases = 0
+    anatomy_mismatch_cases = 0
+    generic_pathology_plan_cases = 0
 
     for row in rows:
         try:
@@ -287,9 +302,23 @@ def evaluate_seed_path(
                 aggregate_drop_reasons[key] = int(aggregate_drop_reasons.get(key, 0)) + int(reason_counts.get(key, 0))
 
             quality_flag_codes = []
+            has_blocker = False
             for item in case_out.quality_flags or []:
                 if isinstance(item, dict) and item.get("code"):
-                    quality_flag_codes.append(str(item["code"]))
+                    code = str(item["code"])
+                    quality_flag_codes.append(code)
+                    if code in BLOCKER_CODES:
+                        has_blocker = True
+            if has_blocker:
+                blocker_cases += 1
+            if "COMPLICATIONS_NONE_CONTRADICTION" in quality_flag_codes:
+                complication_contradiction_cases += 1
+            if "UNSUPPORTED_INVASIVE_PROCEDURE_ADDED" in quality_flag_codes:
+                unsupported_invasive_add_cases += 1
+            if "ANATOMY_SITE_DRIFT" in quality_flag_codes:
+                anatomy_mismatch_cases += 1
+            if "SPECIMEN_PLAN_MISMATCH" in quality_flag_codes:
+                generic_pathology_plan_cases += 1
 
             per_case.append(
                 {
@@ -364,6 +393,11 @@ def evaluate_seed_path(
         "critical_extra_flag_rate": round((critical_extra_cases / successful) if successful else 0.0, 4),
         "strict_render_fallback_rate": round((strict_fallback_cases / successful) if successful else 0.0, 4),
         "forbidden_artifact_case_rate": round((forbidden_artifact_cases / successful) if successful else 0.0, 4),
+        "blocker_rate": round((blocker_cases / successful) if successful else 0.0, 4),
+        "complication_contradiction_rate": round((complication_contradiction_cases / successful) if successful else 0.0, 4),
+        "unsupported_procedure_add_rate": round((unsupported_invasive_add_cases / successful) if successful else 0.0, 4),
+        "anatomy_mismatch_rate": round((anatomy_mismatch_cases / successful) if successful else 0.0, 4),
+        "generic_pathology_plan_rate": round((generic_pathology_plan_cases / successful) if successful else 0.0, 4),
         "avg_seed_warning_count": round(_avg(seed_warning_counts), 4),
         "avg_accepted_findings": round(_avg(accepted_counts), 4),
         "avg_dropped_findings": round(_avg(dropped_counts), 4),

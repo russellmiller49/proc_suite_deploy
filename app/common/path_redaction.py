@@ -1,10 +1,54 @@
 from __future__ import annotations
 
 from pathlib import Path
+import re
 from typing import Any
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+_REPO_TOP_LEVEL_NAMES = {child.name for child in REPO_ROOT.iterdir() if child.name and not child.name.startswith(".")}
+
+
+def _normalize_name(value: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "", value.lower())
+
+
+def _repo_root_aliases() -> set[str]:
+    normalized = _normalize_name(REPO_ROOT.name)
+    aliases = {normalized}
+    if normalized.startswith("proc"):
+        aliases.add("procedure" + normalized[len("proc") :])
+    if normalized.startswith("procedure"):
+        aliases.add("proc" + normalized[len("procedure") :])
+    return aliases
+
+
+_REPO_ROOT_ALIASES = _repo_root_aliases()
+
+
+def _looks_like_repo_root_segment(segment: str) -> bool:
+    normalized = _normalize_name(segment)
+    if not normalized:
+        return False
+    if normalized in _REPO_ROOT_ALIASES:
+        return True
+    return ("proc" in normalized or "procedure" in normalized) and "suite" in normalized
+
+
+def _strip_machine_local_repo_prefix(raw: str) -> str | None:
+    normalized = raw.replace("\\", "/")
+    parts = [part for part in normalized.split("/") if part]
+    if len(parts) < 2:
+        return None
+
+    for index in range(1, len(parts)):
+        if parts[index] not in _REPO_TOP_LEVEL_NAMES:
+            continue
+        if not _looks_like_repo_root_segment(parts[index - 1]):
+            continue
+        return Path(*parts[index:]).as_posix()
+
+    return None
 
 
 def repo_relative_path(value: str | Path | None) -> str | None:
@@ -19,7 +63,7 @@ def repo_relative_path(value: str | Path | None) -> str | None:
         try:
             return path.resolve(strict=False).relative_to(REPO_ROOT).as_posix()
         except ValueError:
-            return None
+            return _strip_machine_local_repo_prefix(raw)
 
     return path.as_posix()
 

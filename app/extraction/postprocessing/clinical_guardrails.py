@@ -136,6 +136,29 @@ _CHEST_TUBE_DATE_OF_INSERTION_RE = re.compile(
     r"\bdate\s+of\s+(?:the\s+)?(?:chest\s+tube(?:\s*/\s*(?:tpc|ipc))?|tpc|ipc)\s+insertion\b",
     re.IGNORECASE,
 )
+_ABLATION_TERM_RE = re.compile(
+    r"(?i)\b(?:ablation|microwave|mwa|radiofrequency|rfa|cryoablation|cryo\s*ablation)\b"
+)
+_PERCUTANEOUS_ABLATION_CONTEXT_RE = re.compile(
+    r"(?i)\b(?:ct[-\s]?guided|computed\s+tomography|transthoracic|percutaneous|coaxial|chest\s+wall|"
+    r"pleural[-\s]?based|microwave\s+antenna|ablation\s+antenna|ablation\s+probe)\b"
+)
+_BRONCHOSCOPIC_ABLATION_CONTEXT_RE = re.compile(
+    r"(?i)\b(?:bronchoscop|bronchoscope|navigation|navigational|robotic|ion\b|monarch|galaxy|"
+    r"radial\s+(?:ebus|probe)|tool[-\s]?in[-\s]?lesion|working\s+channel|cbct|cone\s*beam)\b"
+)
+_ROUTINE_HEMOSTASIS_INTERVENTION_RE = re.compile(
+    r"(?i)\b(?:suction(?:ed|ing)?|wedge(?:d|ing)?|bronchoscope\s+wedged|(?:cold|iced)\s+saline|"
+    r"ice\s+saline|(?:endobronchial\s+)?epi(?:nephrine)?|direct\s+pressure|compression)\b"
+)
+_ROUTINE_HEMOSTASIS_RESOLUTION_RE = re.compile(
+    r"(?i)\b(?:hemostasis\s+(?:was\s+)?(?:achieved|confirmed)|bleeding\s+(?:resolved|ceased|controlled)|"
+    r"no\s+active\s+bleeding|(?:no|without)\s+(?:clinically\s+)?significant\s+bleeding)\b"
+)
+_ROUTINE_HEMOSTASIS_ESCALATION_RE = re.compile(
+    r"(?i)\b(?:balloon\s+tamponade|tamponade|fogarty|endobronchial\s+blocker|arndt|transfus(?:ion|ed)|"
+    r"prbc|emboliz(?:ation|ed)|surg(?:ery|ical)|protamine|abort(?:ed|ing)|terminate(?:d|ing))\b"
+)
 
 _CHECKBOX_TOKEN_RE = re.compile(
     r"(?im)(?<!\d)(?P<val>[01])\s*[^\w\n]{0,6}\s*(?P<label>[A-Za-z][A-Za-z /()_-]{0,80})"
@@ -149,6 +172,25 @@ _PLEURODESIS_CUE_RE = re.compile(
 )
 _ATTRIBUTED_NOTE_PREFIX_RE = re.compile(
     r"(?i)\b(?:see|refer(?:\s+to)?|referred\s+to|per|as\s+per)\b[^.\n]{0,120}\b(?:dr\.?|doctor|note|op\s*note|operative\s+note|surgery\s+note|report)\b"
+)
+_NEGATION_PREFIX_RE = re.compile(
+    r"(?i)\b(?:no|not|without|denies|negative\s+for)\b[^.\n]{0,60}$"
+)
+_HIGH_GRADE_BLEEDING_CUE_RE = re.compile(
+    r"(?i)\b(?:moderate|significant|severe|massive|brisk|active)\s+bleeding\b|\bhemorrhag(?:e|ic)\b"
+)
+_NEGATED_ENDOBRONCHIAL_DISEASE_RE = re.compile(
+    r"(?i)\b(?:airways?\s+(?:otherwise\s+)?)?(?:with\s+)?(?:no|without)\s+(?:focal\s+|visible\s+|obvious\s+)?"
+    r"endobronchial\s+(?:lesions?|tumou?rs?|mass(?:es)?|abnormalit(?:y|ies)|disease)\b"
+)
+_NEGATED_BRUSHINGS_RE = re.compile(
+    r"(?i)\b(?:cytology\s+)?brushings?\b[^.\n]{0,80}\b(?:were\s+)?(?:not\s+(?:obtained|performed|done|taken|collected)|deferred|declined)\b"
+)
+_NEGATED_ENDOBRONCHIAL_BIOPSY_RE = re.compile(
+    r"(?i)\bendobronchial\s+biops(?:y|ies)\b[^.\n]{0,80}\b(?:were\s+)?(?:not\s+(?:obtained|performed|done|taken|collected)|deferred|declined)\b"
+)
+_NONINFORMATIVE_AIRWAY_FINDING_RE = re.compile(
+    r"(?i)^(?:airways?|airway|tracheobronchial\s+tree)(?:\s+otherwise)?(?:\s+(?:normal|clear|unremarkable|inspected(?:\s+to\s+segmental\s+bronchi)?))?$"
 )
 
 
@@ -642,16 +684,49 @@ class ClinicalGuardrails:
                     )
                     changed = True
 
+        thermal_ablation = procedures.get("thermal_ablation") if isinstance(procedures, dict) else None
+        if isinstance(thermal_ablation, dict) and thermal_ablation.get("performed") is True:
+            ttube_exchange_context = bool(
+                re.search(r"(?i)\b(?:montgomery\s+)?t[- ]?tube\b", note_text or "")
+                and re.search(
+                    r"(?i)\b(?:exchange|exchanged|old\b[^.\n]{0,120}\bremoved|new\b[^.\n]{0,120}\b(?:inserted|folded|repositioned)|sidearm\s+exteriorized)\b",
+                    note_text or "",
+                )
+            )
+            standby_laser_only = bool(
+                re.search(
+                    r"(?i)\blaser\b[^.\n]{0,80}\b(?:on\s+standby|standby|stand-by|available\s+if\s+needed|if\s+needed)\b"
+                    r"|\b(?:on\s+standby|standby|stand-by|available\s+if\s+needed|if\s+needed)\b[^.\n]{0,80}\blaser\b",
+                    note_text or "",
+                )
+            ) and not bool(
+                re.search(
+                    r"(?i)\blaser\b[^.\n]{0,120}\b(?:performed|used|applied|treated|radial\s+incisions?|coagulat|hemostas|ablat|destruct)\b"
+                    r"|\b(?:performed|used|applied|treated|radial\s+incisions?|coagulat|hemostas|ablat|destruct)\b[^.\n]{0,120}\blaser\b",
+                    note_text or "",
+                )
+            )
+            if ttube_exchange_context and standby_laser_only:
+                if self._set_procedure_performed(record_data, "thermal_ablation", False):
+                    warnings.append("Thermal ablation cleared: Montgomery T-tube exchange note documents laser on standby only.")
+                    changed = True
+
+        brushings = procedures.get("brushings") if isinstance(procedures, dict) else None
+        if isinstance(brushings, dict) and brushings.get("performed") is True:
+            if _NEGATED_BRUSHINGS_RE.search(note_text or ""):
+                if self._set_procedure_performed(record_data, "brushings", False):
+                    warnings.append("Brushings cleared: note explicitly says brushings were not obtained.")
+                    changed = True
+
         # Endobronchial biopsy false positives in peripheral cases.
         endobronchial_biopsy = (
             procedures.get("endobronchial_biopsy") if isinstance(procedures, dict) else None
         )
         if isinstance(endobronchial_biopsy, dict) and endobronchial_biopsy.get("performed") is True:
-            no_endobronchial_lesions = bool(
-                re.search(r"\bno\s+endobronchial\s+lesions?\b", text_lower, re.IGNORECASE)
-            )
+            no_endobronchial_lesions = bool(_NEGATED_ENDOBRONCHIAL_DISEASE_RE.search(note_text or ""))
             explicit_endobronchial_biopsy = bool(
                 re.search(r"\bendobronchial\s+biops(?:y|ies)\b|\bebbx\b", text_lower, re.IGNORECASE)
+                and not _NEGATED_ENDOBRONCHIAL_BIOPSY_RE.search(note_text or "")
             )
             explicit_airway_biopsy_context = bool(
                 re.search(
@@ -673,10 +748,16 @@ class ClinicalGuardrails:
                 )
             )
 
-            if no_endobronchial_lesions and peripheral_case and not explicit_endobronchial_biopsy:
+            if _NEGATED_ENDOBRONCHIAL_BIOPSY_RE.search(note_text or ""):
                 if self._set_procedure_performed(record_data, "endobronchial_biopsy", False):
                     warnings.append(
-                        "Endobronchial biopsy excluded due to peripheral case + 'no endobronchial lesions' context."
+                        "Endobronchial biopsy cleared: note explicitly says endobronchial biopsies were not obtained."
+                    )
+                    changed = True
+            elif no_endobronchial_lesions and peripheral_case and not explicit_endobronchial_biopsy:
+                if self._set_procedure_performed(record_data, "endobronchial_biopsy", False):
+                    warnings.append(
+                        "Endobronchial biopsy excluded due to peripheral case + negated endobronchial-disease context."
                     )
                     changed = True
             elif peripheral_case and not explicit_endobronchial_biopsy and not explicit_airway_biopsy_context:
@@ -690,13 +771,41 @@ class ClinicalGuardrails:
             procedures.get("diagnostic_bronchoscopy") if isinstance(procedures, dict) else None
         )
         if isinstance(diagnostic_bronchoscopy, dict):
-            no_endobronchial_disease = bool(
-                re.search(
-                    r"\bno\s+endobronchial\s+(?:lesions?|tumou?rs?|mass(?:es)?)\b",
+            ttube_maintenance_context = bool(
+                re.search(r"(?i)\b(?:montgomery\s+)?t[- ]?tube\b|\bsidearm\b", note_text or "")
+                and re.search(
+                    r"(?i)\b(?:mucus|mucous|mucoid|secretions?|plug|lavage|patency|clearance)\b",
                     note_text or "",
-                    re.IGNORECASE,
                 )
             )
+            history_only_stenosis = bool(
+                re.search(r"(?i)\bpre[-\s]?procedure\s+diagnosis\b[^.\n]{0,200}\b(?:stenosis|stricture)\b", note_text or "")
+                or re.search(r"(?i)\bpost-intubation\s+subglottic\s+stenosis\b", note_text or "")
+            )
+            active_stenosis_finding = bool(
+                re.search(
+                    r"(?i)\b(?:stenosis|stricture)\b[^.\n]{0,120}\b(?:seen|noted|visualized|identified|dilated|treated|obstruct|tight|severe|moderate|web)\b"
+                    r"|\b(?:seen|noted|visualized|identified|dilated|treated)\b[^.\n]{0,120}\b(?:stenosis|stricture)\b",
+                    note_text or "",
+                )
+            )
+            abnormalities = diagnostic_bronchoscopy.get("airway_abnormalities")
+            if (
+                ttube_maintenance_context
+                and history_only_stenosis
+                and not active_stenosis_finding
+                and isinstance(abnormalities, list)
+                and "Stenosis" in abnormalities
+            ):
+                filtered_abnormalities = [item for item in abnormalities if str(item) != "Stenosis"]
+                if filtered_abnormalities != abnormalities:
+                    diagnostic_bronchoscopy["airway_abnormalities"] = filtered_abnormalities
+                    warnings.append(
+                        "Diagnostic bronchoscopy findings corrected: cleared history-only stenosis from T-tube maintenance note."
+                    )
+                    changed = True
+
+            no_endobronchial_disease = bool(_NEGATED_ENDOBRONCHIAL_DISEASE_RE.search(note_text or ""))
             explicit_positive_endobronchial_disease = bool(
                 re.search(
                     r"(?i)\b(?:there\s+(?:was|were)|found|noted|seen|visualized)\b[^.\n]{0,120}\bendobronchial\b[^.\n]{0,120}\b(?:lesion|tumou?r|mass)\b"
@@ -706,14 +815,18 @@ class ClinicalGuardrails:
             )
             if no_endobronchial_disease and not explicit_positive_endobronchial_disease:
                 abnormalities = diagnostic_bronchoscopy.get("airway_abnormalities")
-                if isinstance(abnormalities, list) and "Endobronchial lesion" in abnormalities:
-                    diagnostic_bronchoscopy["airway_abnormalities"] = [
-                        item for item in abnormalities if item != "Endobronchial lesion"
+                if isinstance(abnormalities, list):
+                    filtered_abnormalities = [
+                        item
+                        for item in abnormalities
+                        if not re.search(r"(?i)\b(?:endobronch|lesion|mass|tumou?r)\b", str(item))
                     ]
-                    warnings.append(
-                        "Diagnostic bronchoscopy findings corrected: cleared false endobronchial lesion from negated narrative."
-                    )
-                    changed = True
+                    if filtered_abnormalities != abnormalities:
+                        diagnostic_bronchoscopy["airway_abnormalities"] = filtered_abnormalities
+                        warnings.append(
+                            "Diagnostic bronchoscopy findings corrected: cleared false endobronchial lesion from negated narrative."
+                        )
+                        changed = True
 
                 findings = diagnostic_bronchoscopy.get("inspection_findings")
                 if isinstance(findings, str) and findings.strip():
@@ -722,11 +835,15 @@ class ClinicalGuardrails:
                         part = (raw_part or "").strip(" .;:-")
                         if not part:
                             continue
+                        part = self._strip_negated_endobronchial_fragment(part)
+                        if not part:
+                            continue
                         part_lower = part.lower()
                         if (
                             "endobronch" in part_lower
-                            or part_lower in {"lesion", "lesions", "mass", "tumor", "tumour"}
+                            or re.search(r"(?i)\b(?:lesion|mass|tumou?r)\b", part)
                             or re.fullmatch(r"(?i)(?:endobronchial\s+)?(?:lesion|mass|tumou?r)s?", part)
+                            or _NONINFORMATIVE_AIRWAY_FINDING_RE.fullmatch(part)
                         ):
                             continue
                         parts.append(part)
@@ -878,6 +995,23 @@ class ClinicalGuardrails:
             pleural["pleural_biopsy"] = pleural_biopsy
             record_data["pleural_procedures"] = pleural
 
+        peripheral_ablation = procedures.get("peripheral_ablation") if isinstance(procedures, dict) else None
+        percutaneous_ablation_context = bool(
+            _ABLATION_TERM_RE.search(note_text or "")
+            and _PERCUTANEOUS_ABLATION_CONTEXT_RE.search(note_text or "")
+            and not _BRONCHOSCOPIC_ABLATION_CONTEXT_RE.search(note_text or "")
+        )
+        if (
+            isinstance(peripheral_ablation, dict)
+            and peripheral_ablation.get("performed") is True
+            and percutaneous_ablation_context
+        ):
+            if self._set_procedure_performed(record_data, "peripheral_ablation", False):
+                warnings.append(
+                    "Peripheral ablation cleared: note describes CT-guided/percutaneous transthoracic ablation rather than bronchoscopic ablation."
+                )
+                changed = True
+
         explicit_washings = re.search(
             r"(?i)\b(?:bronchial\s+wash(?:ings?)?|washings?)\b",
             note_text or "",
@@ -993,17 +1127,21 @@ class ClinicalGuardrails:
             low_grade_bleeding_only = bool(
                 re.search(
                     r"(?i)\b(?:minor|minimal|mild|trace|scant|contact|blood-tinged)\b(?:\s+\w+){0,2}\s+(?:bleeding|oozing|hemorrhag(?:e|ic))\b"
-                    r"|\bminor\s+oozing\b|\bmild\s+oozing\b|\boo?zing\b",
+                    r"|\bminor\s+oozing\b|\bmild\s+oozing\b|\boo?zing\b"
+                    r"|\b(?:small|trace|minimal)\s+amount\s+of\s+(?:bleeding|oozing)\b"
+                    r"|\b(?:no|without)\s+(?:clinically\s+)?significant\s+bleeding\b",
                     note_text or "",
                 )
             )
-            high_grade_bleeding = bool(
-                re.search(
-                    r"(?i)\b(?:moderate|significant|severe|massive|brisk|active)\s+bleeding\b|\bhemorrhag(?:e|ic)\b",
-                    note_text or "",
-                )
+            high_grade_bleeding = self._has_unnegated_match(_HIGH_GRADE_BLEEDING_CUE_RE, note_text or "")
+            routine_hemostasis_only = bool(
+                low_grade_bleeding_only
+                and not high_grade_bleeding
+                and _ROUTINE_HEMOSTASIS_INTERVENTION_RE.search(note_text or "")
+                and _ROUTINE_HEMOSTASIS_RESOLUTION_RE.search(note_text or "")
+                and not _ROUTINE_HEMOSTASIS_ESCALATION_RE.search(note_text or "")
             )
-            if complications_none and low_grade_bleeding_only and not high_grade_bleeding:
+            if (complications_none and low_grade_bleeding_only and not high_grade_bleeding) or routine_hemostasis_only:
                 bleeding = complications.get("bleeding")
                 local_changed = False
                 if isinstance(bleeding, dict):
@@ -1048,9 +1186,14 @@ class ClinicalGuardrails:
 
                 if local_changed:
                     record_data["complications"] = complications
-                    warnings.append(
-                        "Low-grade bleeding complication cleared: note documents minor/minimal oozing with Complications: None."
-                    )
+                    if routine_hemostasis_only and not complications_none:
+                        warnings.append(
+                            "Low-grade bleeding complication cleared: note documents routine hemostasis without a true complication."
+                        )
+                    else:
+                        warnings.append(
+                            "Low-grade bleeding complication cleared: note documents minor/minimal oozing with Complications: None."
+                        )
                     changed = True
 
         # IPC vs chest tube disambiguation.
@@ -1355,6 +1498,25 @@ class ClinicalGuardrails:
         if not isinstance(blvr, dict) or blvr.get("performed") is not True:
             return warnings, changed
 
+        trach_exchange_context = bool(
+            re.search(
+                r"(?i)\btrach(?:eostomy)?\b[^.\n]{0,100}\b(?:change|exchange|tube\s+change|tube\s+exchange|stoma)\b"
+                r"|\bstoma\b[^.\n]{0,100}\btrach(?:eostomy)?\b",
+                note_text,
+            )
+        )
+        explicit_blvr_context = bool(
+            re.search(
+                r"(?i)\b(?:zephyr|spiration|chartis|endobronchial\s+valve|bronchial\s+valve|lung\s+volume\s+reduction|blvr)\b",
+                note_text,
+            )
+        )
+        if trach_exchange_context and not explicit_blvr_context:
+            procedures["blvr"] = {"performed": False}
+            record_data["procedures_performed"] = procedures
+            warnings.append("AUTO_CORRECTED: tracheostomy exchange context without valve evidence; cleared false BLVR.")
+            return warnings, True
+
         # Manufacturer selection (checkbox-aware)
         spiration = self._checkbox_state(note_text, ("spiration",))
         zephyr = self._checkbox_state(note_text, ("zephyr",))
@@ -1380,6 +1542,14 @@ class ClinicalGuardrails:
             "right lower": "RLL",
             "lingula": "Lingula",
         }
+        lobe_token_map = {
+            "RUL": "RUL",
+            "RML": "RML",
+            "RLL": "RLL",
+            "LUL": "LUL",
+            "LLL": "LLL",
+            "LINGULA": "Lingula",
+        }
         selected_lobes: list[str] = []
         for label, code in lobe_map.items():
             if self._checkbox_state(note_text, (label,)) is True:
@@ -1400,9 +1570,18 @@ class ClinicalGuardrails:
         balloon_yes = bool(re.search(r"(?i)\b1\D{0,6}yes\b", balloon_window)) or bool(
             re.search(r"(?i)\bballoon\s+occlusion\b[^.\n]{0,80}\bperformed\b", note_text)
         )
-        chartis_performed = chartis_yes or balloon_yes
+        chartis_performed = chartis_yes or balloon_yes or bool(
+            re.search(r"(?i)\bcollateral\s+ventilation\s+assessment\b", note_text)
+        )
 
         if chartis_performed and re.search(r"(?i)\bno/minimal\s+collateral\s+ventilation\b", note_text):
+            if blvr.get("collateral_ventilation_assessment") != "Chartis negative":
+                blvr["collateral_ventilation_assessment"] = "Chartis negative"
+                changed = True
+        elif chartis_performed and re.search(
+            r"(?i)\bcollateral\s+ventilation\s+assessment\b[^.\n]{0,40}\b(?:negative|absent)\b",
+            note_text,
+        ):
             if blvr.get("collateral_ventilation_assessment") != "Chartis negative":
                 blvr["collateral_ventilation_assessment"] = "Chartis negative"
                 changed = True
@@ -1521,6 +1700,119 @@ class ClinicalGuardrails:
             if not blvr.get("valve_sizes") or len(blvr.get("valve_sizes") or []) < count:
                 blvr["valve_sizes"] = sizes
                 changed = True
+
+        valve_count_rows: list[tuple[str, int]] = []
+        valves_header = re.search(r"(?im)^\s*valves\s*:\s*$", note_text or "")
+        if valves_header:
+            valve_count_block = (note_text or "")[valves_header.end() : valves_header.end() + 1000]
+            stop = re.search(
+                r"(?im)^\s*(?:ebl|complications?|plan|disposition(?:/plan)?|sedation|anesthesia|findings?)\b",
+                valve_count_block,
+            )
+            if stop:
+                valve_count_block = valve_count_block[: stop.start()]
+
+            row_re = re.compile(
+                r"(?i)^\s*(?:[-*]\s*)?(?P<label>(?:RUL|RML|RLL|LUL|LLL|Lingula|"
+                r"right\s+upper(?:\s+lobe)?|right\s+middle(?:\s+lobe)?|right\s+lower(?:\s+lobe)?|"
+                r"left\s+upper(?:\s+lobe)?|left\s+lower(?:\s+lobe)?)[^:\n]{0,60})\s*:\s*(?P<count>\d{1,2})\s*$"
+            )
+            for raw_line in valve_count_block.splitlines():
+                line = (raw_line or "").strip()
+                if not line:
+                    continue
+                match = row_re.match(line)
+                if not match:
+                    continue
+                try:
+                    row_count = int(match.group("count"))
+                except Exception:
+                    continue
+                if row_count <= 0:
+                    continue
+                valve_count_rows.append((match.group("label").strip(), row_count))
+
+        counted_segments: list[str] = []
+        counted_lobes: set[str] = set()
+        if valve_count_rows:
+            counted_total = sum(row_count for _label, row_count in valve_count_rows)
+            for label_text, _row_count in valve_count_rows:
+                counted_segments.append(label_text)
+                label_upper = label_text.upper()
+                for token, code in lobe_token_map.items():
+                    if token in label_upper:
+                        counted_lobes.add(code)
+                        break
+                else:
+                    for label, code in lobe_map.items():
+                        if label in label_text.lower():
+                            counted_lobes.add(code)
+                            break
+
+            try:
+                existing_count = int(blvr.get("number_of_valves")) if blvr.get("number_of_valves") is not None else None
+            except Exception:
+                existing_count = None
+            if existing_count != counted_total:
+                blvr["number_of_valves"] = counted_total
+                changed = True
+
+            existing_segments = blvr.get("segments_treated")
+            existing_len = len(existing_segments) if isinstance(existing_segments, list) else 0
+            if existing_len < len(counted_segments):
+                blvr["segments_treated"] = counted_segments
+                changed = True
+
+        explicit_count_match = re.search(
+            r"(?i)\b(?:endobronchial\s+)?valve\s+(?:deployment|placement)\s*x?\s*(?P<count0>\d{1,2})\b"
+            r"|\b(?<!size\s)(?P<count>\d{1,2}|one|two|three|four|five|six)\s+valves\b[^.\n]{0,40}\b(?:deploy(?:ed|ment)?|place(?:d|ment)?|insert(?:ed|ion)?|treat(?:ed|ment)?)\b"
+            r"|\b(?:deploy(?:ed|ment)?|place(?:d|ment)?|insert(?:ed|ion)?|treat(?:ed|ment)?)\b[^.\n]{0,40}\b(?:with\s+)?(?<!size\s)(?P<count2>\d{1,2}|one|two|three|four|five|six)\s+valves\b"
+            r"|\(\s*total(?:ing)?(?:\s+of)?\s*(?P<count3>\d{1,2}|one|two|three|four|five|six)\s+valves?\s*\)"
+            r"|\b(?:for\s+a\s+)?total(?:ing)?(?:\s+of)?\s+(?P<count4>\d{1,2}|one|two|three|four|five|six)\s+valves?\b",
+            note_text,
+        )
+        sequential_second_valve_match = re.search(
+            r"(?i)\bone\s+valve\s+(?:deploy(?:ed|ment)?|place(?:d|ment)?|insert(?:ed|ion)?)\b[^.\n]{0,140}"
+            r"\b(?:a\s+second|second(?:\s+valve)?|another\s+valve)\b",
+            note_text,
+        )
+        if explicit_count_match:
+            word_to_int = {
+                "one": 1,
+                "two": 2,
+                "three": 3,
+                "four": 4,
+                "five": 5,
+                "six": 6,
+            }
+            raw_count = (
+                explicit_count_match.group("count0")
+                or explicit_count_match.group("count")
+                or explicit_count_match.group("count2")
+                or explicit_count_match.group("count3")
+                or explicit_count_match.group("count4")
+                or ""
+            ).strip().lower()
+            try:
+                explicit_count = int(raw_count)
+            except Exception:
+                explicit_count = word_to_int.get(raw_count)
+            if explicit_count is not None:
+                try:
+                    existing_count = int(blvr.get("number_of_valves")) if blvr.get("number_of_valves") is not None else None
+                except Exception:
+                    existing_count = None
+                if existing_count != explicit_count:
+                    blvr["number_of_valves"] = explicit_count
+                    changed = True
+        elif sequential_second_valve_match:
+            try:
+                existing_count = int(blvr.get("number_of_valves")) if blvr.get("number_of_valves") is not None else None
+            except Exception:
+                existing_count = None
+            if existing_count != 2:
+                blvr["number_of_valves"] = 2
+                changed = True
         if segments:
             existing_segments = blvr.get("segments_treated")
             existing_len = len(existing_segments) if isinstance(existing_segments, list) else 0
@@ -1600,6 +1892,53 @@ class ClinicalGuardrails:
             record_data["granular_data"] = granular
             changed = True
 
+        valve_lobes: set[str] = set()
+        for valve in existing_valves:
+            lobe = valve.get("target_lobe")
+            if lobe in {"RUL", "RML", "RLL", "LUL", "LLL", "Lingula"}:
+                valve_lobes.add(lobe)
+        if not valve_lobes and isinstance(blvr.get("target_lobe"), str):
+            inferred = _infer_target_lobe(blvr.get("target_lobe") or "")
+            if inferred:
+                valve_lobes.add(inferred)
+
+        explicit_lobe_hits = list(counted_lobes)
+        explicit_lobe_hits.extend(
+            [
+                code
+                for label, code in lobe_map.items()
+                if re.search(
+                    rf"(?i)\b{label}(?:\s+lobe)?\b[^.\n]{{0,100}}\b(?:blvr|valve|chartis|collateral\s+ventilation)\b"
+                    rf"|\b(?:blvr|valve|chartis|collateral\s+ventilation)\b[^.\n]{{0,100}}\b{label}(?:\s+lobe)?\b",
+                    note_text,
+                )
+            ]
+        )
+        explicit_lobe_hits.extend(
+            [
+                code
+                for token, code in lobe_token_map.items()
+                if re.search(
+                    rf"(?i)\b{token}\b[^.\n]{{0,100}}\b(?:blvr|valve|chartis|collateral\s+ventilation)\b"
+                    rf"|\b(?:blvr|valve|chartis|collateral\s+ventilation)\b[^.\n]{{0,100}}\b{token}\b",
+                    note_text,
+                )
+            ]
+        )
+        if len(set(explicit_lobe_hits)) == 1:
+            valve_lobes.add(explicit_lobe_hits[0])
+        elif set(explicit_lobe_hits) == {"LUL", "Lingula"}:
+            valve_lobes.update({"LUL", "Lingula"})
+
+        canonical_target_lobe: str | None = None
+        if valve_lobes == {"LUL", "Lingula"}:
+            canonical_target_lobe = "LUL"
+        elif len(valve_lobes) == 1:
+            canonical_target_lobe = next(iter(valve_lobes))
+        if canonical_target_lobe and blvr.get("target_lobe") != canonical_target_lobe:
+            blvr["target_lobe"] = canonical_target_lobe
+            changed = True
+
         # Capture Chartis/balloon occlusion as granular measurements so CPT logic can bundle 31634 correctly.
         if chartis_performed:
             cv_negative = bool(
@@ -1612,16 +1951,6 @@ class ClinicalGuardrails:
                 cv_result = "CV Negative"
             elif cv_positive:
                 cv_result = "CV Positive"
-
-            valve_lobes: set[str] = set()
-            for valve in existing_valves:
-                lobe = valve.get("target_lobe")
-                if lobe in {"RUL", "RML", "RLL", "LUL", "LLL", "Lingula"}:
-                    valve_lobes.add(lobe)
-            if not valve_lobes and isinstance(blvr.get("target_lobe"), str):
-                inferred = _infer_target_lobe(blvr.get("target_lobe") or "")
-                if inferred:
-                    valve_lobes.add(inferred)
 
             existing_meas = granular.get("blvr_chartis_measurements")
             if not isinstance(existing_meas, list):
@@ -1819,6 +2148,28 @@ class ClinicalGuardrails:
             proc = pleural.get(name)
             if isinstance(proc, dict) and proc.get("performed") is True:
                 return True
+        return False
+
+    @staticmethod
+    def _strip_negated_endobronchial_fragment(text: str) -> str:
+        cleaned = re.sub(_NEGATED_ENDOBRONCHIAL_DISEASE_RE, " ", text or "")
+        cleaned = re.sub(r"\s+", " ", cleaned).strip(" .;:-,")
+        if _NONINFORMATIVE_AIRWAY_FINDING_RE.fullmatch(cleaned or ""):
+            return ""
+        return cleaned
+
+    @staticmethod
+    def _has_unnegated_match(
+        pattern: re.Pattern[str],
+        text: str,
+        *,
+        prefix_window: int = 80,
+    ) -> bool:
+        for match in pattern.finditer(text or ""):
+            prefix = text[max(0, match.start() - prefix_window) : match.start()]
+            if _NEGATION_PREFIX_RE.search(prefix):
+                continue
+            return True
         return False
 
     def _linear_station_data_present(self, record_data: dict[str, Any]) -> bool:

@@ -8,10 +8,12 @@ from typing import Any
 from config.settings import CoderSettings
 from app.coder.adapters.persistence.csv_kb_adapter import JsonKnowledgeBaseAdapter
 from app.domain.knowledge_base.repository import KnowledgeBaseRepository
+from app.registry.quality_signals import parse_quality_signal_warning
 from app.registry.schema import RegistryRecord
 
 
 _CPT_RE = re.compile(r"\b(\d{5})\b")
+_BARE_CPT_TEXT_RE = re.compile(r"^\s*\d{5}\s*$")
 
 
 @lru_cache(maxsize=1)
@@ -39,6 +41,8 @@ def _evidence_items_for_prefix(
             continue
         if key != prefix and not key.startswith(prefix + "."):
             continue
+        if key == "header_code_hints" or key.startswith("header_code_hints.") or key == "code_evidence" or key.startswith("code_evidence."):
+            continue
         if not isinstance(spans, list):
             continue
 
@@ -54,6 +58,9 @@ def _evidence_items_for_prefix(
                 start_val = int(start)
                 end_val = int(end)
             except (TypeError, ValueError):
+                continue
+
+            if _BARE_CPT_TEXT_RE.match(str(text)):
                 continue
 
             billing_items.append(
@@ -362,6 +369,7 @@ def build_coding_support_payload(
     code_units: dict[str, int] | None = None,
     code_rationales: dict[str, str] | None = None,
     derivation_warnings: list[str] | None = None,
+    quality_signal_warnings: list[str] | None = None,
     kb_repo: KnowledgeBaseRepository | None = None,
 ) -> dict[str, Any]:
     """Build the optional `coding_support` payload for the IP registry schema."""
@@ -446,9 +454,18 @@ def build_coding_support_payload(
             }
         )
 
+    quality_signals: list[dict[str, Any]] = []
+    for warning in quality_signal_warnings or []:
+        payload = parse_quality_signal_warning(warning)
+        if payload is None:
+            continue
+        entry = dict(payload)
+        entry.setdefault("source_warning", warning)
+        quality_signals.append(entry)
+
     generated_at = datetime.now(timezone.utc).isoformat()
 
-    return {
+    payload: dict[str, Any] = {
         "version": "coding_support.v1",
         "generated_at": generated_at,
         "generator": "registry_to_cpt",
@@ -460,6 +477,9 @@ def build_coding_support_payload(
             "global_comments": warnings or None,
         },
     }
+    if quality_signals:
+        payload["quality_pass"] = {"signals": quality_signals}
+    return payload
 
 
 __all__ = [

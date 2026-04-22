@@ -431,6 +431,17 @@ class BLVRValvePlacementAdapter(ExtractionAdapter):
             return False
 
         text = str(source.get("source_text") or source.get("note_text") or "")
+        structured_placement_evidence = bool(
+            source.get("blvr_valve_details")
+            or source.get("blvr_segments_treated")
+            or source.get("blvr_valve_sizes")
+            or source.get("blvr_number_of_valves")
+            or source.get("blvr_target_lobe")
+            or source.get("blvr_valve_type")
+        )
+        if not text.strip():
+            return structured_placement_evidence
+
         has_text_placement_evidence = bool(
             re.search(
                 r"(?i)\b(?:valves?\s+(?:placed|deployed|inserted)|placed\s+\d+\s+valves?|deployed\s+\d+\s+valves?)\b",
@@ -455,9 +466,7 @@ class BLVRValvePlacementAdapter(ExtractionAdapter):
                 return False
 
         return bool(
-            source.get("blvr_valve_details")
-            or source.get("blvr_segments_treated")
-            or source.get("blvr_valve_sizes")
+            structured_placement_evidence
             or (source.get("blvr_number_of_valves") and has_text_placement_evidence)
             or (source.get("blvr_valve_type") and has_text_placement_evidence)
         )

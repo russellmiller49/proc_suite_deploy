@@ -443,6 +443,40 @@ class AirwayStentProcedure(BaseModel):
         return v
 
 
+class AirwayDeviceActionProcedure(BaseModel):
+    """Structured non-CPT-driving airway device action capture.
+
+    This is intended for device exchanges/management that are important clinically
+    but do not have a safe one-to-one mapping to the existing stent/trach CPT fields.
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    performed: bool | None = None
+    device_type: Literal[
+        "Tracheostomy tube",
+        "Montgomery T-tube",
+        "Other",
+    ] | None = None
+    action: Literal[
+        "Placement",
+        "Exchange",
+        "Removal",
+        "Assessment only",
+    ] | None = None
+    device_name: str | None = None
+    device_size: str | None = None
+    location: str | None = None
+
+    @field_validator("device_name", "device_size", "location", mode="before")
+    @classmethod
+    def normalize_free_text(cls, v):
+        if v is None:
+            return None
+        s = str(v).strip()
+        return s or None
+
+
 # =============================================================================
 # EBUS Per-Station Detail
 # =============================================================================

@@ -1,6 +1,20 @@
+import { repairSpeechTranscript } from "./speechTranscriptRepair.js";
+
 const statusTextEl = document.getElementById("statusText");
 const actionBannerEl = document.getElementById("actionBanner");
 const seedTextEl = document.getElementById("seedText");
+const speechStartBtn = document.getElementById("speechStartBtn");
+const speechStopBtn = document.getElementById("speechStopBtn");
+const speechDiscardBtn = document.getElementById("speechDiscardBtn");
+const speechCloudFallbackBtn = document.getElementById("speechCloudFallbackBtn");
+const speechStartConfirmModalEl = document.getElementById("speechStartConfirmModal");
+const speechStartConfirmBtn = document.getElementById("speechStartConfirmBtn");
+const speechStartCancelBtn = document.getElementById("speechStartCancelBtn");
+const speechStatusTextEl = document.getElementById("speechStatusText");
+const speechWarningTextEl = document.getElementById("speechWarningText");
+const speechModelSelectEl = document.getElementById("speechModelSelect");
+const speechModelHintTextEl = document.getElementById("speechModelHintText");
+const speechSourceBadgeEl = document.getElementById("speechSourceBadge");
 const strictToggleEl = document.getElementById("strictToggle");
 const seedBtn = document.getElementById("seedBtn");
 const refreshBtn = document.getElementById("refreshBtn");
@@ -55,6 +69,46 @@ const state = {
   busy: false,
 };
 
+const REPORTER_SPEECH_MAX_SECONDS = 60;
+const REPORTER_SPEECH_SAMPLE_RATE = 16000;
+const REPORTER_SPEECH_WORKER_PATH = new URL("./speech.worker.js", import.meta.url).toString();
+const REPORTER_SPEECH_MODEL_STORAGE_KEY = "ps.reporter_speech_model_v1";
+const REPORTER_SPEECH_DEFAULT_MODEL_KEY = "base";
+const REPORTER_SPEECH_MODELS = Object.freeze({
+  base: Object.freeze({
+    key: "base",
+    label: "Base",
+  }),
+  tiny: Object.freeze({
+    key: "tiny",
+    label: "Tiny",
+  }),
+});
+
+let speechWorker = null;
+let speechWorkerReady = false;
+let speechWorkerUnavailableReason = "";
+let speechPendingRequest = null;
+let speechRequestCounter = 0;
+let speechMediaRecorder = null;
+let speechMediaStream = null;
+let speechRecording = false;
+let speechRequestingAccess = false;
+let speechLocalPending = false;
+let speechCloudPending = false;
+let speechChunks = [];
+let speechLastRecordingBlob = null;
+let speechStopTimer = null;
+let speechSource = "";
+let speechFallbackUsed = false;
+let speechCleaned = false;
+let speechIgnoreNextStop = false;
+let preservePhiStateOnNextSeedInput = false;
+let speechStartConfirmedForCurrentNote = false;
+let speechModelKey = loadStoredSpeechModelKey();
+let speechWorkerModelKey = speechModelKey;
+let speechWorkerModelLabel = getSpeechModelLabel(speechModelKey);
+
 // --- Client-side PHI redaction state (local worker) ---
 
 const PHI_WORKER_BASE_CONFIG = {
@@ -103,6 +157,190 @@ function setPhiSummary(text) {
 function setPhiConfirmAck(value) {
   if (!phiConfirmAckEl) return;
   phiConfirmAckEl.checked = Boolean(value);
+}
+
+function setSpeechStatus(text) {
+  if (!speechStatusTextEl) return;
+  speechStatusTextEl.textContent = String(text || "");
+}
+
+function setSpeechWarningText(text) {
+  if (!speechWarningTextEl) return;
+  speechWarningTextEl.textContent = String(text || "");
+}
+
+function normalizeSpeechModelKey(modelKey) {
+  return REPORTER_SPEECH_MODELS[String(modelKey || "").trim()] ? String(modelKey || "").trim() : REPORTER_SPEECH_DEFAULT_MODEL_KEY;
+}
+
+function getSpeechModelConfig(modelKey = speechModelKey) {
+  return REPORTER_SPEECH_MODELS[normalizeSpeechModelKey(modelKey)];
+}
+
+function getSpeechModelLabel(modelKey = speechModelKey) {
+  return getSpeechModelConfig(modelKey).label;
+}
+
+function loadStoredSpeechModelKey() {
+  try {
+    return normalizeSpeechModelKey(window.localStorage?.getItem(REPORTER_SPEECH_MODEL_STORAGE_KEY));
+  } catch {
+    return REPORTER_SPEECH_DEFAULT_MODEL_KEY;
+  }
+}
+
+function persistSpeechModelKey(modelKey) {
+  try {
+    window.localStorage?.setItem(REPORTER_SPEECH_MODEL_STORAGE_KEY, normalizeSpeechModelKey(modelKey));
+  } catch {
+    // ignore
+  }
+}
+
+function isLikelyMobileDictationDevice() {
+  if (typeof navigator?.userAgentData?.mobile === "boolean") {
+    return navigator.userAgentData.mobile;
+  }
+  const userAgent = String(navigator?.userAgent || "");
+  if (/android|iphone|ipad|ipod|mobile|tablet/i.test(userAgent)) return true;
+  try {
+    return Boolean((navigator?.maxTouchPoints || 0) > 1 && window.matchMedia?.("(max-width: 900px)").matches);
+  } catch {
+    return false;
+  }
+}
+
+function renderSpeechModelHint() {
+  if (!speechModelHintTextEl) return;
+  if (isLikelyMobileDictationDevice()) {
+    if (speechModelKey === "tiny") {
+      speechModelHintTextEl.textContent = "Tiny is recommended on phones and tablets, and it is selected now.";
+      return;
+    }
+    speechModelHintTextEl.textContent =
+      "Using a phone or tablet? Tiny is recommended because it usually loads and transcribes faster there.";
+    return;
+  }
+  if (speechModelKey === "tiny") {
+    speechModelHintTextEl.textContent =
+      "Tiny uses less local memory and can help on slower devices. Switch back to Base if you want the most accurate local model.";
+    return;
+  }
+  speechModelHintTextEl.textContent =
+    "Base is the default for better accuracy. Tiny is still available if you want a lighter local model on mobile devices.";
+}
+
+function syncSpeechModelControl() {
+  if (speechModelSelectEl) speechModelSelectEl.value = speechModelKey;
+  renderSpeechModelHint();
+}
+
+function applySpeechModelSelection(nextModelKey, { persist = true, restartWorker = false } = {}) {
+  const normalizedModelKey = normalizeSpeechModelKey(nextModelKey);
+  speechModelKey = normalizedModelKey;
+  speechWorkerModelKey = normalizedModelKey;
+  speechWorkerModelLabel = getSpeechModelLabel(normalizedModelKey);
+  if (persist) persistSpeechModelKey(normalizedModelKey);
+  syncSpeechModelControl();
+  if (restartWorker) startSpeechWorker();
+}
+
+function renderSpeechSourceBadge() {
+  if (!speechSourceBadgeEl) return;
+
+  let label = "";
+  if (speechCleaned) {
+    label = "cleaned";
+  } else if (speechFallbackUsed) {
+    label = "cloud fallback";
+  } else if (speechSource === "speech_local") {
+    label = "local transcript";
+  }
+
+  if (!label) {
+    speechSourceBadgeEl.classList.add("hidden");
+    speechSourceBadgeEl.textContent = "";
+    return;
+  }
+
+  speechSourceBadgeEl.classList.remove("hidden");
+  speechSourceBadgeEl.textContent = label;
+}
+
+function clearSpeechAudioBlob() {
+  speechLastRecordingBlob = null;
+  speechChunks = [];
+}
+
+function stopSpeechTracks() {
+  if (speechMediaStream && typeof speechMediaStream.getTracks === "function") {
+    speechMediaStream.getTracks().forEach((track) => {
+      try {
+        track.stop();
+      } catch {
+        // ignore
+      }
+    });
+  }
+  speechMediaStream = null;
+}
+
+function clearSpeechStopTimer() {
+  if (!speechStopTimer) return;
+  clearTimeout(speechStopTimer);
+  speechStopTimer = null;
+}
+
+function closeSpeechStartConfirmModal() {
+  if (!speechStartConfirmModalEl || typeof speechStartConfirmModalEl.close !== "function") return;
+  if (speechStartConfirmModalEl.open) speechStartConfirmModalEl.close();
+}
+
+function resetSpeechStartConfirmation() {
+  speechStartConfirmedForCurrentNote = false;
+  closeSpeechStartConfirmModal();
+}
+
+function openSpeechStartConfirmModal() {
+  if (!speechStartConfirmModalEl || typeof speechStartConfirmModalEl.showModal !== "function") return false;
+  if (!speechStartConfirmModalEl.open) speechStartConfirmModalEl.showModal();
+  if (speechStartConfirmBtn && typeof speechStartConfirmBtn.focus === "function") {
+    window.setTimeout(() => speechStartConfirmBtn.focus(), 0);
+  }
+  return true;
+}
+
+function resetSpeechState({ clearText = false } = {}) {
+  clearSpeechStopTimer();
+  stopSpeechTracks();
+
+  if (speechMediaRecorder && speechMediaRecorder.state !== "inactive") {
+    speechIgnoreNextStop = true;
+    try {
+      speechMediaRecorder.stop();
+    } catch {
+      // ignore
+    }
+  }
+
+  speechMediaRecorder = null;
+  speechRecording = false;
+  speechRequestingAccess = false;
+  speechLocalPending = false;
+  speechCloudPending = false;
+  speechPendingRequest = null;
+  clearSpeechAudioBlob();
+  speechSource = "";
+  speechFallbackUsed = false;
+  speechCleaned = false;
+
+  if (clearText && seedTextEl) {
+    seedTextEl.value = "";
+    seedTextEl.dispatchEvent(new Event("input", { bubbles: true }));
+  }
+
+  setSpeechWarningText("");
+  renderSpeechSourceBadge();
 }
 
 function formatScore(score) {
@@ -598,6 +836,659 @@ async function postJSON(url, payload) {
   return response.json();
 }
 
+async function postFormData(url, formData) {
+  const response = await fetch(url, {
+    method: "POST",
+    body: formData,
+  });
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`API Error: ${response.status} ${response.statusText} - ${text}`);
+  }
+  return response.json();
+}
+
+function getSpeechRecordingUnsupportedReason() {
+  if (!speechStartBtn) return "";
+  if (!window.isSecureContext) {
+    return "Microphone recording requires a secure local origin. Open this page on http://localhost:8000 or http://127.0.0.1:8000 instead of http://0.0.0.0:8000.";
+  }
+  if (!navigator?.mediaDevices || typeof navigator.mediaDevices.getUserMedia !== "function") {
+    return "This browser does not expose microphone capture APIs.";
+  }
+  if (typeof window.MediaRecorder !== "function") {
+    return "This browser cannot record microphone audio. Try current Chrome or Edge.";
+  }
+  return "";
+}
+
+function supportsSpeechRecording() {
+  return !getSpeechRecordingUnsupportedReason();
+}
+
+function buildSpeechRepairWarnings(replacements) {
+  if (!Array.isArray(replacements) || !replacements.length) return [];
+  return [`REPORTER_SPEECH_LOCAL_REPAIR: applied_${replacements.length}_deterministic_fixes`];
+}
+
+function joinSpeechWarnings(warnings) {
+  return (Array.isArray(warnings) ? warnings : [])
+    .map((warning) => String(warning || "").trim())
+    .filter(Boolean)
+    .join(" | ");
+}
+
+function describeSpeechAccessError(error) {
+  const name = String(error?.name || "");
+  const message = String(error?.message || "").trim();
+  if (name === "NotAllowedError" || name === "PermissionDeniedError") {
+    return "Microphone access was blocked. Allow microphone access for localhost in Chrome and macOS System Settings, then try again.";
+  }
+  if (name === "NotFoundError" || name === "DevicesNotFoundError") {
+    return "No microphone was found. Connect or enable a microphone and try again.";
+  }
+  if (name === "NotReadableError" || name === "TrackStartError") {
+    return "Chrome found a microphone, but another app may be using it. Close other recording apps and try again.";
+  }
+  if (name === "SecurityError") {
+    return "Microphone access is blocked by browser security settings. Open the reporter on localhost and try again.";
+  }
+  if (name === "AbortError") {
+    return "The microphone request was interrupted. Try again.";
+  }
+  return message || "Microphone access failed.";
+}
+
+function resolveSpeechIdleStatus() {
+  if (!speechStartBtn) return "";
+  if (speechRequestingAccess) return "Waiting for microphone permission…";
+  const unsupportedReason = getSpeechRecordingUnsupportedReason();
+  if (unsupportedReason) return unsupportedReason;
+  const modelLabel = speechWorkerReady ? speechWorkerModelLabel : getSpeechModelLabel(speechModelKey);
+  if (speechWorkerReady) return `Local speech support ready (${modelLabel}).`;
+  if (speechWorkerUnavailableReason) return `Local ${modelLabel} speech unavailable. Record only if you intend to use cloud fallback.`;
+  if (speechWorker) return `Loading local speech support (${modelLabel})…`;
+  return "Speech support unavailable.";
+}
+
+function renderSpeechState() {
+  renderSpeechSourceBadge();
+  updateControls();
+}
+
+function pickSpeechRecordingMimeType() {
+  if (typeof window.MediaRecorder !== "function") return "";
+  const candidates = [
+    "audio/webm;codecs=opus",
+    "audio/webm",
+    "audio/ogg;codecs=opus",
+    "audio/ogg",
+    "audio/mp4",
+  ];
+  for (const candidate of candidates) {
+    try {
+      if (typeof MediaRecorder.isTypeSupported !== "function" || MediaRecorder.isTypeSupported(candidate)) {
+        return candidate;
+      }
+    } catch {
+      // ignore
+    }
+  }
+  return "";
+}
+
+function buildSpeechUploadFilename(blob) {
+  const contentType = String(blob?.type || "").toLowerCase();
+  if (contentType.includes("ogg")) return "reporter_dictation.ogg";
+  if (contentType.includes("mp4") || contentType.includes("m4a")) return "reporter_dictation.m4a";
+  if (contentType.includes("mpeg") || contentType.includes("mp3")) return "reporter_dictation.mp3";
+  if (contentType.includes("wav")) return "reporter_dictation.wav";
+  return "reporter_dictation.webm";
+}
+
+function mixAudioBufferToMono(audioBuffer) {
+  const channelCount = Math.max(1, Number(audioBuffer?.numberOfChannels) || 1);
+  const frameCount = Math.max(0, Number(audioBuffer?.length) || 0);
+  const mono = new Float32Array(frameCount);
+  if (!frameCount) return mono;
+
+  for (let channelIndex = 0; channelIndex < channelCount; channelIndex += 1) {
+    const channel = audioBuffer.getChannelData(channelIndex);
+    for (let i = 0; i < frameCount; i += 1) {
+      mono[i] += (channel[i] || 0) / channelCount;
+    }
+  }
+  return mono;
+}
+
+function resampleFloat32(samples, inputRate, targetRate) {
+  if (!samples?.length) return new Float32Array();
+  if (!Number.isFinite(inputRate) || inputRate <= 0 || inputRate === targetRate) {
+    return samples instanceof Float32Array ? samples : new Float32Array(samples);
+  }
+
+  const source = samples instanceof Float32Array ? samples : new Float32Array(samples);
+  const targetLength = Math.max(1, Math.round((source.length * targetRate) / inputRate));
+  const output = new Float32Array(targetLength);
+  const ratio = inputRate / targetRate;
+
+  for (let i = 0; i < targetLength; i += 1) {
+    const sourceIndex = i * ratio;
+    const leftIndex = Math.floor(sourceIndex);
+    const rightIndex = Math.min(leftIndex + 1, source.length - 1);
+    const weight = sourceIndex - leftIndex;
+    const left = source[leftIndex] || 0;
+    const right = source[rightIndex] || 0;
+    output[i] = left + (right - left) * weight;
+  }
+
+  return output;
+}
+
+async function decodeAudioBlobToMono16kFloat32(blob) {
+  const arrayBuffer = await blob.arrayBuffer();
+  const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
+  if (!AudioContextCtor) {
+    throw new Error("Audio decoding is not supported in this browser");
+  }
+
+  const audioContext = new AudioContextCtor();
+  try {
+    const decoded = await new Promise((resolve, reject) => {
+      const result = audioContext.decodeAudioData(arrayBuffer.slice(0), resolve, reject);
+      if (result && typeof result.then === "function") result.then(resolve, reject);
+    });
+    const mono = mixAudioBufferToMono(decoded);
+    return resampleFloat32(mono, decoded.sampleRate, REPORTER_SPEECH_SAMPLE_RATE);
+  } finally {
+    try {
+      const closeResult = audioContext.close?.();
+      if (closeResult && typeof closeResult.catch === "function") closeResult.catch(() => {});
+    } catch {
+      // ignore
+    }
+  }
+}
+
+function attachSpeechWorkerHandlers(activeWorker) {
+  activeWorker.addEventListener("error", (event) => {
+    speechWorkerReady = false;
+    speechWorkerUnavailableReason = event?.message || "Local speech worker failed to load";
+    if (speechPendingRequest) {
+      const pending = speechPendingRequest;
+      speechPendingRequest = null;
+      pending.reject(new Error(speechWorkerUnavailableReason));
+    }
+    setSpeechStatus(`Local ${speechWorkerModelLabel} speech unavailable.`);
+    setSpeechWarningText(speechWorkerUnavailableReason);
+    renderSpeechState();
+  });
+
+  activeWorker.addEventListener("messageerror", () => {
+    if (speechPendingRequest) {
+      const pending = speechPendingRequest;
+      speechPendingRequest = null;
+      pending.reject(new Error("Speech worker message error"));
+    }
+    speechWorkerReady = false;
+    speechWorkerUnavailableReason = "Speech worker message error";
+    setSpeechStatus(`Local ${speechWorkerModelLabel} speech unavailable.`);
+    setSpeechWarningText("Speech worker message error");
+    renderSpeechState();
+  });
+
+  activeWorker.onmessage = (event) => {
+    const msg = event?.data || {};
+    if (!msg || typeof msg.type !== "string") return;
+
+    if (msg.type === "ready") {
+      speechWorkerModelKey = normalizeSpeechModelKey(msg.modelKey || speechModelKey);
+      speechWorkerModelLabel = String(msg.modelLabel || getSpeechModelLabel(speechWorkerModelKey));
+      speechWorkerReady = true;
+      speechWorkerUnavailableReason = "";
+      setSpeechStatus(`Local speech support ready (${speechWorkerModelLabel}).`);
+      setSpeechWarningText("");
+      renderSpeechState();
+      return;
+    }
+
+    if (msg.type === "unavailable") {
+      speechWorkerModelKey = normalizeSpeechModelKey(msg.modelKey || speechModelKey);
+      speechWorkerModelLabel = String(msg.modelLabel || getSpeechModelLabel(speechWorkerModelKey));
+      speechWorkerReady = false;
+      speechWorkerUnavailableReason = String(msg.message || "Local speech model assets are unavailable");
+      if (speechPendingRequest) {
+        const pending = speechPendingRequest;
+        speechPendingRequest = null;
+        pending.reject(new Error(speechWorkerUnavailableReason));
+      }
+      setSpeechStatus(`Local ${speechWorkerModelLabel} speech unavailable.`);
+      setSpeechWarningText(speechWorkerUnavailableReason);
+      renderSpeechState();
+      return;
+    }
+
+    if (msg.type === "transcription_result") {
+      const requestId = String(msg.requestId || "");
+      if (!speechPendingRequest || speechPendingRequest.requestId !== requestId) return;
+      const pending = speechPendingRequest;
+      speechPendingRequest = null;
+      pending.resolve({
+        transcript: String(msg.transcript || ""),
+        warnings: Array.isArray(msg.warnings) ? msg.warnings : [],
+      });
+      return;
+    }
+
+    if (msg.type === "transcription_error") {
+      const requestId = String(msg.requestId || "");
+      if (!speechPendingRequest || speechPendingRequest.requestId !== requestId) return;
+      const pending = speechPendingRequest;
+      speechPendingRequest = null;
+      pending.reject(new Error(String(msg.message || "Local speech transcription failed")));
+    }
+  };
+}
+
+function startSpeechWorker() {
+  if (!speechStartBtn || typeof window.Worker !== "function") {
+    setSpeechStatus(resolveSpeechIdleStatus());
+    renderSpeechState();
+    return;
+  }
+
+  const selectedModel = getSpeechModelConfig(speechModelKey);
+  speechWorkerModelKey = selectedModel.key;
+  speechWorkerModelLabel = selectedModel.label;
+
+  if (speechWorker) {
+    try {
+      speechWorker.terminate();
+    } catch {
+      // ignore
+    }
+  }
+
+  speechWorkerReady = false;
+  speechWorkerUnavailableReason = "";
+  speechPendingRequest = null;
+  try {
+    speechWorker = new Worker(REPORTER_SPEECH_WORKER_PATH, { type: "module" });
+    attachSpeechWorkerHandlers(speechWorker);
+    setSpeechStatus(`Loading local speech support (${selectedModel.label})…`);
+    setSpeechWarningText("");
+    renderSpeechState();
+    speechWorker.postMessage({ type: "init", modelKey: selectedModel.key });
+  } catch (error) {
+    speechWorkerUnavailableReason = error?.message || "Local speech worker initialization failed";
+    speechWorker = null;
+    setSpeechStatus(`Local ${selectedModel.label} speech unavailable.`);
+    setSpeechWarningText(speechWorkerUnavailableReason);
+    renderSpeechState();
+  }
+}
+
+async function requestLocalSpeechTranscript(blob) {
+  if (!speechWorker || !speechWorkerReady) {
+    throw new Error(speechWorkerUnavailableReason || "Local speech support is still loading");
+  }
+  if (speechPendingRequest) {
+    throw new Error("Speech transcription is already in progress");
+  }
+
+  speechLocalPending = true;
+  setSpeechStatus(`Transcribing locally with ${speechWorkerModelLabel}…`);
+  setSpeechWarningText("");
+  renderSpeechState();
+
+  try {
+    const audio = await decodeAudioBlobToMono16kFloat32(blob);
+    if (!audio.length) throw new Error("Unable to decode recorded audio");
+
+    const requestId = `speech-${Date.now()}-${++speechRequestCounter}`;
+    const response = await new Promise((resolve, reject) => {
+      speechPendingRequest = { requestId, resolve, reject };
+      speechWorker.postMessage({ type: "transcribe", requestId, audio }, [audio.buffer]);
+    });
+    const transcript = String(response?.transcript || "").trim();
+    if (!transcript) throw new Error("Local speech transcription returned an empty transcript");
+    return {
+      transcript,
+      warnings: Array.isArray(response?.warnings) ? response.warnings : [],
+    };
+  } finally {
+    speechLocalPending = false;
+    renderSpeechState();
+  }
+}
+
+function replaceSeedTextFromSpeech(
+  text,
+  { source = "speech_local", fallbackUsed = false, cleaned = false, warnings = [], preservePhiState = false } = {},
+) {
+  seedTextEl.value = String(text || "").trim();
+  speechSource = String(source || "speech_local");
+  speechFallbackUsed = Boolean(fallbackUsed);
+  speechCleaned = Boolean(cleaned);
+  renderSpeechSourceBadge();
+  setSpeechWarningText(joinSpeechWarnings(warnings));
+  preservePhiStateOnNextSeedInput = Boolean(preservePhiState);
+  seedTextEl.dispatchEvent(new Event("input", { bubbles: true }));
+  seedTextEl.focus();
+}
+
+async function finalizeSpeechRecording(blob) {
+  speechLastRecordingBlob = blob;
+  speechSource = "";
+  speechFallbackUsed = false;
+  speechCleaned = false;
+  renderSpeechState();
+
+  if (!blob || !blob.size) {
+    setSpeechStatus("Recording was empty.");
+    setSpeechWarningText("Try again and speak a little louder or closer to the microphone.");
+    return;
+  }
+
+  if (!speechWorkerReady) {
+    if (speechWorkerUnavailableReason) {
+      setSpeechStatus(`Local ${getSpeechModelLabel(speechModelKey)} speech unavailable.`);
+      setSpeechWarningText(`${speechWorkerUnavailableReason} Use Cloud Fallback only if the recording contains no PHI.`);
+      showBanner("warning", "Recording captured. Local speech is unavailable, so only cloud fallback can transcribe it.");
+    } else {
+      setSpeechStatus(`Recording captured while local ${getSpeechModelLabel(speechModelKey)} speech support was still loading.`);
+      setSpeechWarningText("Wait for local speech support or use Cloud Fallback only if the recording contains no PHI.");
+      showBanner("warning", "Recording captured. Local speech is still loading.");
+    }
+    renderSpeechState();
+    return;
+  }
+
+  try {
+    const localResult = await requestLocalSpeechTranscript(blob);
+    replaceSeedTextFromSpeech(localResult.transcript, {
+      source: "speech_local",
+      fallbackUsed: false,
+      cleaned: false,
+      warnings: localResult.warnings,
+    });
+    setSpeechStatus(`Local ${speechWorkerModelLabel} transcript ready. Review and redact before seeding.`);
+    showBanner("success", "Local dictation transcript inserted. Run PHI detection and apply redactions before seeding.");
+  } catch (error) {
+    setSpeechStatus(`Local ${speechWorkerModelLabel} transcription failed.`);
+    setSpeechWarningText(`${error?.message || "Local transcription failed"} Use Cloud Fallback only if the recording contains no PHI.`);
+    showBanner("warning", "Local transcription failed. You can use Cloud Fallback if the recording contains no PHI.");
+  } finally {
+    renderSpeechState();
+  }
+}
+
+async function startSpeechDictation() {
+  if (!speechStartConfirmedForCurrentNote) {
+    if (openSpeechStartConfirmModal()) return;
+    const confirmed = window.confirm(
+      "I confirm that I will not include patient names, MRN, DOB, phone, address, or exact dates in this dictation.",
+    );
+    if (!confirmed) return;
+    speechStartConfirmedForCurrentNote = true;
+  }
+  const unsupportedReason = getSpeechRecordingUnsupportedReason();
+  if (unsupportedReason) {
+    setSpeechStatus(unsupportedReason);
+    if (!window.isSecureContext) {
+      showBanner(
+        "error",
+        "Microphone recording requires a secure local origin. Open the reporter on http://localhost:8000 or http://127.0.0.1:8000.",
+      );
+    } else {
+      showBanner("error", unsupportedReason);
+    }
+    return;
+  }
+  if (speechRecording || speechLocalPending || speechCloudPending || state.busy) return;
+
+  clearSpeechStopTimer();
+  clearSpeechAudioBlob();
+  speechIgnoreNextStop = false;
+  speechRequestingAccess = true;
+  setSpeechStatus("Waiting for microphone permission…");
+  setSpeechWarningText("Chrome may show a permission prompt in the address bar, and macOS may show a system prompt.");
+  renderSpeechState();
+
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        channelCount: 1,
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+      },
+    });
+    const mimeType = pickSpeechRecordingMimeType();
+    const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
+
+    speechRequestingAccess = false;
+    speechMediaStream = stream;
+    speechMediaRecorder = recorder;
+    speechChunks = [];
+    speechLastRecordingBlob = null;
+
+    recorder.addEventListener("dataavailable", (event) => {
+      if (event?.data?.size) speechChunks.push(event.data);
+    });
+
+    recorder.addEventListener("error", () => {
+      speechRecording = false;
+      stopSpeechTracks();
+      clearSpeechStopTimer();
+      setSpeechStatus("Recording failed.");
+      setSpeechWarningText("Microphone capture failed.");
+      renderSpeechState();
+    });
+
+    recorder.addEventListener("stop", () => {
+      const shouldIgnore = speechIgnoreNextStop;
+      speechIgnoreNextStop = false;
+      const recordedBlob = new Blob(speechChunks, {
+        type: recorder.mimeType || mimeType || "audio/webm",
+      });
+      speechMediaRecorder = null;
+      speechRecording = false;
+      stopSpeechTracks();
+      clearSpeechStopTimer();
+      renderSpeechState();
+      if (shouldIgnore) {
+        clearSpeechAudioBlob();
+        return;
+      }
+      void finalizeSpeechRecording(recordedBlob);
+    });
+
+    recorder.start(250);
+    speechRecording = true;
+    setSpeechStatus("Recording… Dictate procedure details only.");
+    setSpeechWarningText("Do not dictate names, MRN, DOB, phone, address, or exact dates.");
+    renderSpeechState();
+
+    speechStopTimer = setTimeout(() => {
+      if (!speechMediaRecorder || speechMediaRecorder.state !== "recording") return;
+      setSpeechWarningText(`Recording stopped at ${REPORTER_SPEECH_MAX_SECONDS} seconds.`);
+      try {
+        speechMediaRecorder.stop();
+      } catch {
+        // ignore
+      }
+    }, REPORTER_SPEECH_MAX_SECONDS * 1000);
+  } catch (error) {
+    speechRequestingAccess = false;
+    speechRecording = false;
+    stopSpeechTracks();
+    clearSpeechStopTimer();
+    setSpeechStatus("Unable to access the microphone.");
+    setSpeechWarningText(describeSpeechAccessError(error));
+    renderSpeechState();
+    showBanner("error", describeSpeechAccessError(error));
+  }
+}
+
+function stopSpeechDictation() {
+  if (!speechMediaRecorder || speechMediaRecorder.state !== "recording") return;
+  setSpeechStatus("Finalizing recording…");
+  renderSpeechState();
+  try {
+    speechMediaRecorder.stop();
+  } catch {
+    setSpeechStatus("Unable to stop recording cleanly.");
+    renderSpeechState();
+  }
+}
+
+function discardSpeechTranscript() {
+  const shouldClearText = Boolean((speechSource || speechCleaned) && String(seedTextEl?.value || "").trim());
+  resetSpeechState({ clearText: shouldClearText });
+  setSpeechStatus(resolveSpeechIdleStatus());
+  renderSpeechState();
+  showBanner("success", "Speech recording discarded.");
+}
+
+async function runCloudSpeechFallback() {
+  if (!speechLastRecordingBlob) {
+    showBanner("warning", "Record audio first before using cloud fallback.");
+    return;
+  }
+
+  const confirmed = window.confirm(
+    "Cloud fallback will upload raw audio to the server transcription provider. Continue only if the recording contains no PHI.",
+  );
+  if (!confirmed) return;
+
+  speechCloudPending = true;
+  setSpeechStatus("Uploading audio for cloud fallback…");
+  setSpeechWarningText("Raw audio leaves the browser during cloud fallback.");
+  renderSpeechState();
+
+  try {
+    const formData = new FormData();
+    formData.append("audio_file", speechLastRecordingBlob, buildSpeechUploadFilename(speechLastRecordingBlob));
+    formData.append("source", "reporter_builder");
+    formData.append("cloud_fallback_confirmed", "true");
+
+    const result = await postFormData("/report/transcribe_audio", formData);
+    const repaired = repairSpeechTranscript(String(result?.transcript || ""));
+    const warnings = [
+      ...(Array.isArray(result?.warnings) ? result.warnings : []),
+      ...buildSpeechRepairWarnings(repaired.replacements),
+    ];
+    const transcript = String(repaired.text || "").trim();
+    if (!transcript) throw new Error("Cloud fallback returned an empty transcript");
+
+    replaceSeedTextFromSpeech(transcript, {
+      source: "speech_cloud_fallback",
+      fallbackUsed: true,
+      cleaned: false,
+      warnings,
+    });
+    setSpeechStatus("Cloud fallback transcript ready. Review, redact, then seed.");
+    showBanner(
+      "warning",
+      "Cloud fallback transcript inserted. Review carefully, then run PHI detection and apply redactions before seeding.",
+    );
+  } finally {
+    speechCloudPending = false;
+    renderSpeechState();
+  }
+}
+
+async function cleanSpeechTranscript({ automatic = false } = {}) {
+  const text = String(seedTextEl?.value || "").trim();
+  if (!text) {
+    if (!automatic) showBanner("warning", "Record or paste transcript text before cleaning it.");
+    return false;
+  }
+  if (!speechSource) {
+    if (!automatic) showBanner("warning", "Cleaning is only available for speech-derived transcript text.");
+    return false;
+  }
+  if (!phiScrubbedConfirmed) {
+    if (!automatic) showBanner("warning", "Run PHI detection and apply redactions before cleaning the transcript.");
+    return false;
+  }
+
+  const priorSource = speechSource;
+  const priorFallbackUsed = speechFallbackUsed;
+  const priorPhiSummary = String(phiSummaryTextEl?.textContent || "");
+  const priorPhiStatus = String(phiStatusTextEl?.textContent || "");
+
+  await withBusy(automatic ? "Auto-cleaning transcript..." : "Cleaning transcript...", async () => {
+    setSpeechStatus(automatic ? "Auto-cleaning scrubbed transcript…" : "Cleaning scrubbed transcript…");
+    setSpeechWarningText("");
+    const result = await postJSON("/report/clean_seed_text", {
+      text,
+      already_scrubbed: true,
+      source: priorSource,
+      strict: true,
+    });
+    const warnings = Array.isArray(result?.warnings) ? result.warnings : [];
+    const cleanedText = String(result?.cleaned_text || "").trim();
+
+    if (result?.changed && cleanedText) {
+      replaceSeedTextFromSpeech(cleanedText, {
+        source: priorSource,
+        fallbackUsed: priorFallbackUsed,
+        cleaned: true,
+        warnings,
+        preservePhiState: automatic,
+      });
+      if (automatic) {
+        phiScrubbedConfirmed = true;
+        setPhiConfirmAck(false);
+        setPhiStatus(priorPhiStatus || "Redactions applied (scrubbed text ready to seed)");
+        setPhiSummary(priorPhiSummary);
+        setSpeechStatus("Transcript auto-cleaned. Confirm PHI removal, then seed.");
+        renderPhiDetections();
+        showBanner("success", "Transcript auto-cleaned after redaction. Confirm PHI removal, then seed.");
+      } else {
+        setSpeechStatus("Transcript cleaned. Re-run PHI detection before seeding.");
+        showBanner("success", "Transcript cleaned. Re-run PHI detection, apply redactions, and confirm before seeding.");
+      }
+      return true;
+    }
+
+    speechSource = priorSource;
+    speechFallbackUsed = priorFallbackUsed;
+    speechCleaned = true;
+    setSpeechStatus(
+      automatic ? "Transcript auto-clean completed. Confirm PHI removal, then seed." : "Transcript checked. No cleanup changes were needed.",
+    );
+    setSpeechWarningText(joinSpeechWarnings(warnings));
+    renderSpeechState();
+    showBanner(
+      "success",
+      automatic
+        ? "Transcript auto-clean completed. No cleanup changes were needed."
+        : "Transcript cleanup completed. No text changes were needed.",
+    );
+    return true;
+  });
+  return true;
+}
+
+async function autoCleanSpeechTranscriptAfterRedaction() {
+  if (!speechSource || speechCleaned || !phiScrubbedConfirmed) return false;
+  try {
+    return await cleanSpeechTranscript({ automatic: true });
+  } catch (error) {
+    setSpeechStatus("Redactions applied (scrubbed text ready to seed)");
+    setSpeechWarningText(error?.message || "Automatic transcript cleanup failed");
+    renderSpeechState();
+    showBanner(
+      "warning",
+      "Redactions were applied, but automatic transcript cleanup was unavailable. You can still confirm PHI removal and seed.",
+    );
+    return false;
+  }
+}
+
 function currentIssues() {
   if (state.verify?.issues) return state.verify.issues;
   if (state.render?.issues) return state.render.issues;
@@ -620,6 +1511,28 @@ function currentInferenceNotes() {
   if (state.verify?.inference_notes) return state.verify.inference_notes;
   if (state.render?.inference_notes) return state.render.inference_notes;
   return state.seed?.inference_notes || [];
+}
+
+function currentQualityFlags() {
+  if (state.verify?.quality_flags) return state.verify.quality_flags;
+  if (state.render?.quality_flags) return state.render.quality_flags;
+  return state.seed?.quality_flags || [];
+}
+
+function currentNeedsManualReview() {
+  if (typeof state.verify?.needs_manual_review === "boolean") return state.verify.needs_manual_review;
+  if (typeof state.render?.needs_manual_review === "boolean") return state.render.needs_manual_review;
+  return Boolean(state.seed?.needs_manual_review);
+}
+
+function isBlockingQualityFlag(flag) {
+  const severity = String(flag?.severity || "").trim().toLowerCase();
+  if (severity === "blocker") return true;
+  return Boolean(flag?.metadata?.blocking);
+}
+
+function currentBlockerFlags() {
+  return currentQualityFlags().filter((flag) => isBlockingQualityFlag(flag));
 }
 
 function currentMarkdown() {
@@ -685,6 +1598,14 @@ function consumeDashboardTransferPayload() {
 }
 
 function transferToDashboard() {
+  const blockerCount = currentBlockerFlags().length;
+  if (blockerCount) {
+    showBanner(
+      "warning",
+      `Resolve ${blockerCount} blocker flag${blockerCount === 1 ? "" : "s"} before sending this note to the dashboard.`,
+    );
+    return;
+  }
   const note = buildTransferNoteText();
   if (!note) {
     showBanner("warning", "No note text available to transfer.");
@@ -713,21 +1634,45 @@ function updateControls() {
   const hasBundle = Boolean(state.bundle);
   const hasQuestions = Array.isArray(state.questions) && state.questions.length > 0;
   const hasTransferNote = buildTransferNoteText().length > 0;
+  const hasBlockers = currentBlockerFlags().length > 0;
+  const hasSpeechTranscript = Boolean(speechSource || speechCleaned);
+  const speechBusy = speechRequestingAccess || speechRecording || speechLocalPending || speechCloudPending;
   const requiresPhi = Boolean(phiRunBtn && phiApplyBtn && phiStatusTextEl);
   const ackChecked = !phiConfirmAckEl || Boolean(phiConfirmAckEl.checked);
   const phiOk = !requiresPhi || (phiScrubbedConfirmed && ackChecked);
-  seedBtn.disabled = state.busy || !phiOk;
+  seedBtn.disabled = state.busy || speechBusy || !phiOk;
   if (state.busy) seedBtn.title = "";
   else if (!requiresPhi || phiOk) seedBtn.title = "";
   else if (!phiScrubbedConfirmed) seedBtn.title = "Run PHI detection and apply redactions first";
   else seedBtn.title = "Confirm PHI removal before seeding";
   refreshBtn.disabled = state.busy || !hasBundle;
-  clearBtn.disabled = state.busy;
+  clearBtn.disabled = state.busy || speechBusy;
   applyPatchBtn.disabled = state.busy || !hasBundle || !hasQuestions;
-  if (transferToDashboardBtn) transferToDashboardBtn.disabled = state.busy || !hasTransferNote;
+  if (transferToDashboardBtn) {
+    transferToDashboardBtn.disabled = state.busy || !hasTransferNote || hasBlockers;
+    transferToDashboardBtn.title = hasBlockers
+      ? "Resolve reporter blocker flags before sending this note to the dashboard"
+      : "";
+  }
   if (completenessInsertBtn) completenessInsertBtn.disabled = state.busy || !completenessPrompts.length;
   if (completenessCopyBtn) completenessCopyBtn.disabled = state.busy || !buildCompletenessAddendumBlock();
-  strictToggleEl.disabled = state.busy;
+  strictToggleEl.disabled = state.busy || speechBusy;
+
+  if (speechStartBtn) {
+    const speechUnsupportedReason = getSpeechRecordingUnsupportedReason();
+    speechStartBtn.disabled = state.busy || speechBusy || Boolean(speechUnsupportedReason);
+    if (speechUnsupportedReason) {
+      speechStartBtn.title = speechUnsupportedReason;
+    } else {
+      speechStartBtn.title = "";
+    }
+  }
+  if (speechStopBtn) speechStopBtn.disabled = state.busy || !speechRecording;
+  if (speechDiscardBtn) {
+    speechDiscardBtn.disabled = state.busy || speechBusy || (!speechLastRecordingBlob && !hasSpeechTranscript);
+  }
+  if (speechCloudFallbackBtn) speechCloudFallbackBtn.disabled = state.busy || speechBusy || !speechLastRecordingBlob;
+  if (speechModelSelectEl) speechModelSelectEl.disabled = state.busy || speechBusy;
 
   if (phiRunBtn) phiRunBtn.disabled = state.busy || phiRunning || !phiWorkerReady;
   if (phiApplyBtn) phiApplyBtn.disabled = state.busy || phiRunning || !phiHasRunDetection;
@@ -753,13 +1698,36 @@ function renderValidation() {
   const warnings = currentWarnings();
   const suggestions = currentSuggestions();
   const notes = currentInferenceNotes();
+  const qualityFlags = currentQualityFlags();
+  const blockers = currentBlockerFlags();
 
-  if (!issues.length && !warnings.length && !suggestions.length && !notes.length) {
+  if (!issues.length && !warnings.length && !suggestions.length && !notes.length && !qualityFlags.length) {
     validationHostEl.innerHTML = '<div class="empty-state">No validation output yet.</div>';
     return;
   }
 
   let html = "";
+  if (blockers.length) {
+    html += "<h4>Blockers</h4><ul class=\"builder-list blocker-list\">";
+    blockers.forEach((flag) => {
+      const code = String(flag?.code || "BLOCKER");
+      const message = String(flag?.message || "Manual review required.");
+      html += `<li><strong>${escapeHtml(code)}</strong>: ${escapeHtml(message)}</li>`;
+    });
+    html += "</ul>";
+  }
+
+  const nonBlockingFlags = qualityFlags.filter((flag) => !isBlockingQualityFlag(flag));
+  if (nonBlockingFlags.length) {
+    html += "<h4>Quality Flags</h4><ul class=\"builder-list\">";
+    nonBlockingFlags.forEach((flag) => {
+      const code = String(flag?.code || "FLAG");
+      const message = String(flag?.message || "");
+      html += `<li><strong>${escapeHtml(code)}</strong>: ${escapeHtml(message)}</li>`;
+    });
+    html += "</ul>";
+  }
+
   if (issues.length) {
     html += "<h4>Issues</h4><ul class=\"builder-list\">";
     issues.forEach((issue) => {
@@ -1096,6 +2064,7 @@ function renderAll() {
   renderQuestions();
   renderValidation();
   renderBundleAndPatchJson();
+  renderSpeechSourceBadge();
   updateControls();
 }
 
@@ -1261,6 +2230,8 @@ async function seedBundleFromText() {
       warnings: seed.warnings || [],
       inference_notes: seed.inference_notes || [],
       suggestions: seed.suggestions || [],
+      quality_flags: seed.quality_flags || [],
+      needs_manual_review: Boolean(seed.needs_manual_review),
     };
     state.verify = {
       bundle: seed.bundle,
@@ -1269,15 +2240,20 @@ async function seedBundleFromText() {
       inference_notes: seed.inference_notes || [],
       suggestions: seed.suggestions || [],
       questions: seed.questions || [],
+      quality_flags: seed.quality_flags || [],
+      needs_manual_review: Boolean(seed.needs_manual_review),
     };
     state.bundle = seed.bundle;
     state.questions = seed.questions || [];
     state.lastPatch = [];
     renderAll();
 
+    const blockerCount = currentBlockerFlags().length;
     showBanner(
-      "success",
-      `Bundle seeded. ${state.questions.length} follow-up question${state.questions.length === 1 ? "" : "s"} generated.`,
+      blockerCount ? "warning" : "success",
+      blockerCount
+        ? `Bundle seeded, but ${blockerCount} blocker flag${blockerCount === 1 ? "" : "s"} require manual review before dashboard transfer.`
+        : `Bundle seeded. ${state.questions.length} follow-up question${state.questions.length === 1 ? "" : "s"} generated.`,
     );
   });
 }
@@ -1300,9 +2276,12 @@ async function refreshQuestions() {
     state.questions = verify.questions || [];
     renderAll();
 
+    const blockerCount = currentBlockerFlags().length;
     showBanner(
-      "success",
-      `Questions refreshed. ${state.questions.length} question${state.questions.length === 1 ? "" : "s"} remaining.`,
+      blockerCount ? "warning" : "success",
+      blockerCount
+        ? `Questions refreshed. ${blockerCount} blocker flag${blockerCount === 1 ? "" : "s"} still require manual review.`
+        : `Questions refreshed. ${state.questions.length} question${state.questions.length === 1 ? "" : "s"} remaining.`,
     );
   });
 }
@@ -1347,11 +2326,14 @@ async function applyPatchAndRender() {
     state.lastPatch = patchOps;
     renderAll();
 
+    const blockerCount = currentBlockerFlags().length;
     showBanner(
-      "success",
-      `Patch applied (${patchOps.length} op${patchOps.length === 1 ? "" : "s"}). ${state.questions.length} question${
-        state.questions.length === 1 ? "" : "s"
-      } remaining.`,
+      blockerCount ? "warning" : "success",
+      blockerCount
+        ? `Patch applied, but ${blockerCount} blocker flag${blockerCount === 1 ? "" : "s"} still require manual review.`
+        : `Patch applied (${patchOps.length} op${patchOps.length === 1 ? "" : "s"}). ${state.questions.length} question${
+            state.questions.length === 1 ? "" : "s"
+          } remaining.`,
     );
   });
 }
@@ -1365,6 +2347,8 @@ function clearState() {
   state.lastPatch = [];
   completenessPrompts = [];
   completenessValuesByPath = new Map();
+  resetSpeechState({ clearText: false });
+  resetSpeechStartConfirmation();
   seedTextEl.value = "";
   phiDetections = [];
   phiExcludedDetections = new Set();
@@ -1376,6 +2360,8 @@ function clearState() {
   setPhiSummary("");
   setPhiProgress("");
   if (phiWorkerReady) setPhiStatus("Ready (local model loaded)");
+  setSpeechStatus(resolveSpeechIdleStatus());
+  setSpeechWarningText("");
   renderPhiDetections();
   hideBanner();
   renderAll();
@@ -1425,14 +2411,59 @@ if (completenessCopyBtn) {
     });
   });
 }
+if (speechStartBtn) {
+  speechStartBtn.addEventListener("click", () => {
+    startSpeechDictation().catch((error) => {
+      showBanner("error", error?.message || "Unable to start reporter dictation.");
+    });
+  });
+}
+if (speechStartCancelBtn) {
+  speechStartCancelBtn.addEventListener("click", () => {
+    closeSpeechStartConfirmModal();
+  });
+}
+if (speechStartConfirmBtn) {
+  speechStartConfirmBtn.addEventListener("click", () => {
+    speechStartConfirmedForCurrentNote = true;
+    closeSpeechStartConfirmModal();
+    startSpeechDictation().catch((error) => {
+      showBanner("error", error?.message || "Unable to start reporter dictation.");
+    });
+  });
+}
+if (speechStopBtn) {
+  speechStopBtn.addEventListener("click", stopSpeechDictation);
+}
+if (speechDiscardBtn) {
+  speechDiscardBtn.addEventListener("click", discardSpeechTranscript);
+}
+if (speechCloudFallbackBtn) {
+  speechCloudFallbackBtn.addEventListener("click", () => {
+    runCloudSpeechFallback().catch((error) => {
+      showBanner("error", error?.message || "Cloud fallback transcription failed.");
+      setSpeechStatus("Cloud fallback failed.");
+      setSpeechWarningText(error?.message || "Cloud fallback transcription failed");
+      renderSpeechState();
+    });
+  });
+}
+if (speechModelSelectEl) {
+  speechModelSelectEl.addEventListener("change", () => {
+    applySpeechModelSelection(speechModelSelectEl.value, { restartWorker: true });
+  });
+}
 seedTextEl.addEventListener("input", () => {
   if (!phiRunBtn) {
     updateControls();
     return;
   }
 
+  const preservePhiState = preservePhiStateOnNextSeedInput;
+  preservePhiStateOnNextSeedInput = false;
+
   // Any text edit invalidates prior detection + scrub confirmation.
-  if (phiHasRunDetection || phiScrubbedConfirmed || phiDetections.length) {
+  if (!preservePhiState && (phiHasRunDetection || phiScrubbedConfirmed || phiDetections.length)) {
     phiHasRunDetection = false;
     phiScrubbedConfirmed = false;
     phiDetections = [];
@@ -1497,6 +2528,12 @@ if (phiConfirmAckEl) {
   });
 }
 
+if (speechStartBtn) {
+  applySpeechModelSelection(speechModelKey, { persist: false });
+  setSpeechStatus(resolveSpeechIdleStatus());
+  startSpeechWorker();
+}
+
 if (phiRunBtn) {
   const forceLegacy = shouldForceLegacyPhiWorker();
   setPhiStatus(forceLegacy ? "Loading legacy PHI worker…" : "Loading local PHI model…");
@@ -1554,6 +2591,7 @@ if (phiApplyBtn) {
     phiSelection = null;
     renderPhiDetections();
     updateControls();
+    void autoCleanSpeechTranscriptAfterRedaction();
   });
 }
 
@@ -1578,6 +2616,8 @@ if (phiRevertBtn) {
 
 const dashboardTransfer = consumeDashboardTransferPayload();
 if (dashboardTransfer?.note) {
+  resetSpeechState({ clearText: false });
+  resetSpeechStartConfirmation();
   seedTextEl.value = dashboardTransfer.note;
   if (phiRunBtn) {
     phiDetections = [];
@@ -1592,6 +2632,8 @@ if (dashboardTransfer?.note) {
     setPhiStatus("Note loaded. Run detection and apply redactions before seeding.");
     renderPhiDetections();
   }
+  setSpeechStatus(resolveSpeechIdleStatus());
+  setSpeechWarningText("");
   showBanner("success", "Loaded note from dashboard. Run PHI detection, apply redactions, then seed.");
 }
 

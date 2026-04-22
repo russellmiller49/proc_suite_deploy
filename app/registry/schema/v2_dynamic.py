@@ -26,6 +26,7 @@ from app.common.spans import Span
 
 from app.registry.schema.ebus_events import NodeActionType, NodeInteraction, NodeOutcomeType
 from app.registry.schema_granular import (
+    AirwayDeviceActionProcedure,
     AirwayStentProcedure,
     ClinicalContext,
     EnhancedRegistryGranularData,
@@ -262,6 +263,7 @@ CUSTOM_FIELD_TYPES: dict[tuple[str, ...], Any] = {}
 CUSTOM_FIELD_TYPES[("RegistryRecord", "pleural_procedures", "ipc")] = IPCProcedure
 CUSTOM_FIELD_TYPES[("RegistryRecord", "clinical_context")] = ClinicalContext
 CUSTOM_FIELD_TYPES[("RegistryRecord", "patient_demographics")] = PatientDemographics
+CUSTOM_FIELD_TYPES[("RegistryRecord", "procedures_performed", "airway_device_action")] = AirwayDeviceActionProcedure
 CUSTOM_FIELD_TYPES[("RegistryRecord", "procedures_performed", "airway_stent")] = AirwayStentProcedure
 CUSTOM_FIELD_TYPES[("RegistryRecord", "procedures_performed", "airway_stent_revision")] = AirwayStentProcedure
 CUSTOM_FIELD_TYPES[("RegistryRecord", "procedures_performed", "linear_ebus")] = LinearEBUSProcedure

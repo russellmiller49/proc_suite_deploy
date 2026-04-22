@@ -969,11 +969,11 @@
             }
           }
         },
-        "intubation": {
-          "type": [
-            "object",
-            "null"
-          ],
+    "intubation": {
+      "type": [
+        "object",
+        "null"
+      ],
           "description": "Endotracheal intubation performed as a distinct procedure (e.g., emergency/fiberoptic airway management).",
           "properties": {
             "performed": {
@@ -1002,14 +1002,69 @@
                 "string",
                 "null"
               ]
-            }
-          }
+        }
+      }
+    },
+    "airway_device_action": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "description": "Structured airway-device management that does not safely map to existing stent/trach CPT fields.",
+      "properties": {
+        "performed": {
+          "type": "boolean"
         },
-        "bal": {
+        "device_type": {
           "type": [
-            "object",
+            "string",
             "null"
           ],
+          "enum": [
+            "Tracheostomy tube",
+            "Montgomery T-tube",
+            "Other",
+            null
+          ]
+        },
+        "action": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "Placement",
+            "Exchange",
+            "Removal",
+            "Assessment only",
+            null
+          ]
+        },
+        "device_name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "device_size": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "location": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "bal": {
+      "type": [
+        "object",
+        "null"
+      ],
           "description": "Bronchoalveolar lavage",
           "properties": {
             "performed": {
@@ -1574,6 +1629,54 @@
                 "null"
               ],
               "minimum": 1
+            }
+          }
+        },
+        "fiducial_placement": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "properties": {
+            "performed": {
+              "type": "boolean"
+            }
+          }
+        },
+        "dye_marker_placement": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "properties": {
+            "performed": {
+              "type": "boolean"
+            },
+            "agent": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "enum": [
+                "Indocyanine green",
+                "Methylene blue",
+                "Isosulfan blue",
+                "Other",
+                null
+              ]
+            },
+            "volume_ml": {
+              "type": [
+                "number",
+                "null"
+              ],
+              "minimum": 0
+            },
+            "target_location": {
+              "type": [
+                "string",
+                "null"
+              ]
             }
           }
         },
@@ -2178,6 +2281,24 @@
                 "string",
                 "null"
               ]
+            },
+            "material_type": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "enum": [
+                "tumor",
+                "granulation",
+                "necrotic_inflammatory",
+                "fungal_material",
+                "hair",
+                "foreign_body",
+                "mucus",
+                "other_non_tumor",
+                "unknown",
+                null
+              ]
             }
           }
         },
@@ -2740,6 +2861,17 @@
             }
           }
         },
+        "peg_insertion": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "properties": {
+            "performed": {
+              "type": "boolean"
+            }
+          }
+        },
         "neck_ultrasound": {
           "type": [
             "object",
@@ -2930,6 +3062,13 @@
                 "string",
                 "null"
               ]
+            },
+            "cpt31573_eligible": {
+              "type": [
+                "boolean",
+                "null"
+              ],
+              "description": "True only when the documented therapeutic injection should derive CPT 31573."
             }
           }
         }
@@ -3060,6 +3199,7 @@
               "enum": [
                 "Right",
                 "Left",
+                "Bilateral",
                 null
               ]
             },
@@ -6855,6 +6995,62 @@
                 "string",
                 "null"
               ]
+            }
+          }
+        },
+        "quality_pass": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "description": "Structured quality-pass suppressions, recoveries, and guardrail signals associated with this extraction/coding result.",
+          "properties": {
+            "signals": {
+              "type": [
+                "array",
+                "null"
+              ],
+              "items": {
+                "type": "object",
+                "properties": {
+                  "signal": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "field": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "action": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "detail": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "source": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "source_warning": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                }
+              }
             }
           }
         }

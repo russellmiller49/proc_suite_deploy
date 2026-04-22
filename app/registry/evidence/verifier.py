@@ -484,7 +484,7 @@ def verify_evidence_integrity(record: RegistryRecord, full_note_text: str) -> tu
         field_path="procedures_performed.airway_stent.performed",
         obj=stent,
         policy=EVIDENCE_REQUIRED["procedures_performed.airway_stent.performed"],
-        anchor_patterns=[r"\bairway\s+stent\b", r"\bstent\b"],
+        anchor_patterns=[r"\bairway\s+stent\b", r"\bstent\b", r"\b(?:montgomery\s+)?t[- ]?tube\b"],
         wipe_fields={
             "action": None,
             "stent_type": None,

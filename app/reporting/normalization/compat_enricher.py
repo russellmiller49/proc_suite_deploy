@@ -1508,6 +1508,15 @@ def _add_compat_flat_fields(raw: dict[str, Any]) -> dict[str, Any]:
                 return None
             return value
 
+        def _looks_like_result_context(value: str) -> bool:
+            lowered = value.lower()
+            return bool(
+                re.search(
+                    r"(?i)\b(?:rose|rapid\s+on-?site|cytology|pathology|malignan|positive|negative|atypical|adequate)\b",
+                    lowered,
+                )
+            )
+
         pattern = re.compile(
             r"(?i)\b(?:"
             r"bronchoscopy|rigid\s+bronchoscopy|flexible\s+bronchoscopy|robotic\s+bronchoscopy|"
@@ -1519,7 +1528,7 @@ def _add_compat_flat_fields(raw: dict[str, Any]) -> dict[str, Any]:
         )
         for match in pattern.finditer(head):
             pre_tail = head[max(0, match.start(1) - 80) : match.start(1)]
-            if re.search(r"(?i)\b(?:sent|submitted|specimens?|samples?)\s+for\s*$", pre_tail.strip()):
+            if re.search(r"(?i)\b(?:sent|submitted|specimens?|samples?)\s+for\s*$", pre_tail.strip()) or _looks_like_result_context(pre_tail):
                 continue
             value = _clean(match.group(1))
             if value and len(value) <= 240:
@@ -1530,7 +1539,7 @@ def _add_compat_flat_fields(raw: dict[str, Any]) -> dict[str, Any]:
         match = re.search(r"(?i)\bfor\b\s+([^\n\.;]{3,240})", head[:260])
         if match:
             pre_tail = head[max(0, match.start(1) - 80) : match.start(1)]
-            if not re.search(r"(?i)\b(?:sent|submitted|specimens?|samples?)\s+for\s*$", pre_tail.strip()):
+            if not re.search(r"(?i)\b(?:sent|submitted|specimens?|samples?)\s+for\s*$", pre_tail.strip()) and not _looks_like_result_context(pre_tail):
                 value = _clean(match.group(1))
                 if value and len(value) <= 240:
                     return value
@@ -1706,7 +1715,7 @@ def _add_compat_flat_fields(raw: dict[str, Any]) -> dict[str, Any]:
         if match:
             tbna_needle_gauge = f"{match.group(1)}G"
         match = re.search(
-            r"(?i)\bROSE\b[^\n]{0,40}?(?:result\s*[:\\-]|\+|:)\s*([^\n\.;]{2,120})",
+            r"(?i)\bTBNA\b[^\.\n]{0,120}?\bROSE\b[^\n]{0,40}?(?:result\s*[:\\-]|\+|:)\s*([^\n\.;]{2,120})",
             source_text,
         )
         if match:
@@ -2277,6 +2286,17 @@ def _add_compat_flat_fields(raw: dict[str, Any]) -> dict[str, Any]:
         )
     )
     ebus_like_without_peripheral = (has_ebus_context or ebus_station_syntax) and not has_peripheral_context
+    conventional_tbna_only_context = not has_ebus_context and not ebus_station_syntax
+    if (
+        not tbna_rose_result
+        and rose_hint
+        and conventional_tbna_only_context
+        and (tbna_count is not None or (isinstance(peripheral_tbna, dict) and peripheral_tbna.get("performed") is True))
+    ):
+        cleaned_tbna_rose = str(rose_hint).strip().rstrip(".")
+        if cleaned_tbna_rose and not re.search(r"(?i)\b(?:available|yes|no|pending)\b", cleaned_tbna_rose):
+            tbna_rose_result = cleaned_tbna_rose
+
     if ebus_like_without_peripheral:
         # Guardrail: EBUS station sampling (e.g., "station 4R/7") is often misclassified as peripheral TBNA.
         # Do not allow a peripheral TBNA payload to leak into the reporter bundle without explicit peripheral context.

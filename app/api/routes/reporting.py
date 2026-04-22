@@ -6,7 +6,7 @@ import logging
 import os
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from pydantic import BaseModel
 
 from app.api.dependencies import get_registry_service
@@ -18,8 +18,11 @@ from app.api.schemas import (
     QuestionsResponse,
     RenderRequest,
     RenderResponse,
+    ReporterSpeechTranscriptionResponse,
     SeedFromTextRequest,
     SeedFromTextResponse,
+    SpeechTranscriptCleanupRequest,
+    SpeechTranscriptCleanupResponse,
     VerifyRequest,
     VerifyResponse,
 )
@@ -44,6 +47,17 @@ from app.reporting.engine import (
 from app.reporting.inference import InferenceEngine
 from app.reporting.macro_registry import get_macro_registry
 from app.reporting.normalization.normalize import normalize_bundle
+from app.reporting.quality_gate import build_reporter_quality_flags
+from app.reporting.seed_pipeline import (
+    seed_outcome_from_llm_findings_seed,
+    seed_outcome_from_registry_result,
+)
+from app.reporting.speech_support import (
+    ReporterSpeechUnavailable,
+    ReporterSpeechUnsafeInput,
+    clean_scrubbed_reporter_transcript,
+    transcribe_reporter_audio,
+)
 from app.reporting.validation import ValidationEngine
 
 router = APIRouter(tags=["reporting"])
@@ -52,6 +66,9 @@ _logger = logging.getLogger(__name__)
 _ready_dep = Depends(require_ready)
 _registry_service_dep = Depends(get_registry_service)
 _phi_scrubber_dep = Depends(get_phi_scrubber)
+_report_audio_file = File(...)
+_report_audio_source = Form("reporter_builder")
+_report_audio_cloud_fallback_confirmed = Form(False)
 
 
 def _verify_bundle(
@@ -453,6 +470,10 @@ async def report_verify(req: VerifyRequest) -> VerifyResponse:
 async def report_questions(req: QuestionsRequest) -> QuestionsResponse:
     bundle, issues, warnings, suggestions, notes = _verify_bundle(req.bundle)
     questions = build_questions(bundle, issues)
+    quality_flags, needs_manual_review = build_reporter_quality_flags(
+        source_text=bundle.free_text_hint,
+        bundle=bundle,
+    )
     return QuestionsResponse(
         bundle=bundle,
         issues=issues,
@@ -460,6 +481,8 @@ async def report_questions(req: QuestionsRequest) -> QuestionsResponse:
         suggestions=suggestions,
         inference_notes=notes,
         questions=questions,
+        quality_flags=quality_flags,
+        needs_manual_review=needs_manual_review,
     )
 
 
@@ -489,6 +512,7 @@ async def report_seed_from_text(
     seed_record_for_completeness = None
     seed_text_for_bundle = note_text
     extraction_source: Any = None
+    seed_outcome = None
 
     if debug_notes is not None:
         debug_notes.append(
@@ -517,6 +541,10 @@ async def report_seed_from_text(
             seed_record_for_completeness = seed.record
             seed_text_for_bundle = seed.masked_prompt_text
             extraction_source = build_record_payload_for_reporting(seed)
+            seed_outcome = seed_outcome_from_llm_findings_seed(
+                seed,
+                reporting_payload=extraction_source,
+            )
             if debug_notes is not None:
                 debug_notes.append(
                     {
@@ -548,6 +576,10 @@ async def report_seed_from_text(
         extraction_source = extraction_result.record
         seed_record_for_completeness = extraction_result.record
         seed_text_for_bundle = note_text
+        seed_outcome = seed_outcome_from_registry_result(
+            extraction_result,
+            masked_seed_text=note_text,
+        )
 
     # Apply completeness addendum uplift for reporter flow (age/ASA/ECOG + EBUS detail).
     seed_record_for_completeness = _apply_reporter_completeness_uplift(
@@ -603,6 +635,14 @@ async def report_seed_from_text(
         embed_metadata=False,
         debug_notes=debug_notes,
     )
+    quality_flags, needs_manual_review = build_reporter_quality_flags(
+        source_text=seed_text_for_bundle,
+        bundle=bundle,
+        markdown=markdown,
+        prior_flags=list(getattr(seed_outcome, "quality_flags", []) or []),
+    )
+    if getattr(seed_outcome, "needs_review", False):
+        needs_manual_review = True
     return SeedFromTextResponse(
         bundle=bundle,
         markdown=markdown,
@@ -611,8 +651,63 @@ async def report_seed_from_text(
         inference_notes=notes,
         suggestions=suggestions,
         questions=questions,
+        quality_flags=quality_flags,
+        needs_manual_review=needs_manual_review,
         missing_field_prompts=missing_field_prompts,
         debug_notes=debug_notes if debug_enabled else None,
+    )
+
+
+@router.post("/report/transcribe_audio", response_model=ReporterSpeechTranscriptionResponse)
+async def report_transcribe_audio(
+    audio_file: UploadFile = _report_audio_file,
+    source: str = _report_audio_source,
+    cloud_fallback_confirmed: bool = _report_audio_cloud_fallback_confirmed,
+    _ready: None = _ready_dep,
+) -> ReporterSpeechTranscriptionResponse:
+    try:
+        payload = await audio_file.read()
+        result = await transcribe_reporter_audio(
+            audio_bytes=payload,
+            filename=audio_file.filename,
+            content_type=audio_file.content_type,
+            source=source,
+            cloud_fallback_confirmed=cloud_fallback_confirmed,
+        )
+    except ReporterSpeechUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    return ReporterSpeechTranscriptionResponse(
+        transcript=result.transcript,
+        provider=result.provider,
+        model=result.model,
+        fallback_used=result.fallback_used,
+        warnings=list(result.warnings or []),
+    )
+
+
+@router.post("/report/clean_seed_text", response_model=SpeechTranscriptCleanupResponse)
+async def report_clean_seed_text(
+    req: SpeechTranscriptCleanupRequest,
+    _ready: None = _ready_dep,
+) -> SpeechTranscriptCleanupResponse:
+    try:
+        result = clean_scrubbed_reporter_transcript(
+            req.text,
+            already_scrubbed=bool(req.already_scrubbed),
+            strict=bool(req.strict),
+        )
+    except ReporterSpeechUnsafeInput as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except ReporterSpeechUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    return SpeechTranscriptCleanupResponse(
+        cleaned_text=result.cleaned_text,
+        changed=result.changed,
+        correction_applied=result.correction_applied,
+        model=result.model,
+        warnings=list(result.warnings or []),
     )
 
 
@@ -638,6 +733,11 @@ async def report_render(req: RenderRequest) -> RenderResponse:
         embed_metadata=req.embed_metadata,
         debug_notes=debug_notes,
     )
+    quality_flags, needs_manual_review = build_reporter_quality_flags(
+        source_text=bundle.free_text_hint,
+        bundle=bundle,
+        markdown=markdown,
+    )
     return RenderResponse(
         bundle=bundle,
         markdown=markdown,
@@ -645,6 +745,8 @@ async def report_render(req: RenderRequest) -> RenderResponse:
         warnings=warnings,
         inference_notes=notes,
         suggestions=suggestions,
+        quality_flags=quality_flags,
+        needs_manual_review=needs_manual_review,
         debug_notes=debug_notes if debug_enabled else None,
     )
 

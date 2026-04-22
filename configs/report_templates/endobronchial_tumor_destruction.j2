@@ -7,4 +7,4 @@
 {% else %}
 {% set modality = _mod_raw %}
 {% endif %}
-{{ modality }}: Endobronchial obstruction was treated with {{ modality }} for tumor ablation and hemostasis{% if proc.airway_segment %}. Performed at the {{ proc.airway_segment }}{% endif %}.{% if proc.notes %} Notes: {{ proc.notes }}.{% endif %}
+{{ modality }}: Endobronchial obstruction was treated with {{ modality }} for treatment of obstructing endobronchial tissue and hemostasis{% if proc.airway_segment %}. Performed at the {{ proc.airway_segment }}{% endif %}.{% if proc.notes %} Notes: {{ proc.notes }}.{% endif %}

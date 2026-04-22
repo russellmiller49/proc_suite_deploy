@@ -18,6 +18,7 @@ from app.reporting.engine import (
 from app.reporting.inference import InferenceEngine
 from app.reporting.macro_registry import get_macro_registry
 from app.reporting.normalization.normalize import normalize_bundle
+from app.reporting.quality_gate import build_reporter_quality_flags
 from app.reporting.validation import ValidationEngine
 
 logger = logging.getLogger(__name__)
@@ -66,6 +67,8 @@ class ReporterSeedPipelineResult:
     markdown: str
     warnings: list[str]
     debug_notes: list[dict[str, Any]] | None
+    quality_flags: list[dict[str, Any]] = field(default_factory=list)
+    needs_manual_review: bool = False
     render_fallback_used: bool = False
     render_fallback_reason: str | None = None
     render_fallback_category: str | None = None
@@ -588,11 +591,20 @@ def run_reporter_seed_pipeline(
         embed_metadata=False,
         debug_notes=debug_notes,
     )
+    quality_flags, needs_manual_review = build_reporter_quality_flags(
+        source_text=note_text,
+        bundle=bundle,
+        markdown=markdown,
+        prior_flags=list(outcome.quality_flags or []),
+    )
+    needs_manual_review = bool(outcome.needs_review or needs_manual_review)
     return ReporterSeedPipelineResult(
         bundle=bundle,
         markdown=markdown,
         warnings=warnings,
         debug_notes=debug_notes if debug_enabled else None,
+        quality_flags=quality_flags,
+        needs_manual_review=needs_manual_review,
         render_fallback_used=render_fallback_used,
         render_fallback_reason=render_fallback_info.code if render_fallback_info else None,
         render_fallback_category=render_fallback_info.category if render_fallback_info else None,

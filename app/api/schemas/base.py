@@ -140,6 +140,8 @@ class RenderResponse(BaseModel):
     warnings: list[str] = Field(default_factory=list)
     inference_notes: list[str] = Field(default_factory=list)
     suggestions: list[str] = Field(default_factory=list)
+    quality_flags: list[dict[str, Any]] = Field(default_factory=list)
+    needs_manual_review: bool = False
     debug_notes: list[dict[str, Any]] | None = None
 
     @model_serializer(mode="wrap")
@@ -162,6 +164,8 @@ class QuestionsResponse(BaseModel):
     inference_notes: list[str] = Field(default_factory=list)
     suggestions: list[str] = Field(default_factory=list)
     questions: list[QuestionSpec] = Field(default_factory=list)
+    quality_flags: list[dict[str, Any]] = Field(default_factory=list)
+    needs_manual_review: bool = False
     markdown: str | None = None
 
 
@@ -182,6 +186,8 @@ class SeedFromTextResponse(BaseModel):
     inference_notes: list[str] = Field(default_factory=list)
     suggestions: list[str] = Field(default_factory=list)
     questions: list[QuestionSpec] = Field(default_factory=list)
+    quality_flags: list[dict[str, Any]] = Field(default_factory=list)
+    needs_manual_review: bool = False
     missing_field_prompts: list[MissingFieldPrompt] = Field(
         default_factory=list,
         description="Suggested missing fields to document (completeness nudges).",
@@ -194,6 +200,29 @@ class SeedFromTextResponse(BaseModel):
         if data.get("debug_notes") is None:
             data.pop("debug_notes", None)
         return data
+
+
+class ReporterSpeechTranscriptionResponse(BaseModel):
+    transcript: str
+    provider: str
+    model: str | None = None
+    fallback_used: bool = False
+    warnings: list[str] = Field(default_factory=list)
+
+
+class SpeechTranscriptCleanupRequest(BaseModel):
+    text: str
+    already_scrubbed: bool = False
+    source: str | None = None
+    strict: bool = False
+
+
+class SpeechTranscriptCleanupResponse(BaseModel):
+    cleaned_text: str
+    changed: bool
+    correction_applied: bool
+    model: str | None = None
+    warnings: list[str] = Field(default_factory=list)
 
 
 class KnowledgeMeta(BaseModel):
@@ -505,8 +534,11 @@ __all__ = [
     "JsonPatchOperation",
     "QuestionsRequest",
     "QuestionsResponse",
+    "ReporterSpeechTranscriptionResponse",
     "SeedFromTextRequest",
     "SeedFromTextResponse",
+    "SpeechTranscriptCleanupRequest",
+    "SpeechTranscriptCleanupResponse",
     "UnifiedProcessRequest",
     "UnifiedProcessResponse",
     "BundleTimepointRole",

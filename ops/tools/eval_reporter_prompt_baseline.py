@@ -89,8 +89,8 @@ def build_case_runner(*, registry_service: RegistryService, strict: bool):
         return ReporterEvalCaseOutput(
             markdown=pipeline_result.markdown,
             warnings=list(seed_outcome.warnings or []),
-            quality_flags=list(seed_outcome.quality_flags or []),
-            needs_review=bool(seed_outcome.needs_review),
+            quality_flags=list(pipeline_result.quality_flags or []),
+            needs_review=bool(pipeline_result.needs_manual_review),
             render_fallback_used=bool(pipeline_result.render_fallback_used),
             render_fallback_reason=pipeline_result.render_fallback_reason,
             render_fallback_category=pipeline_result.render_fallback_category,

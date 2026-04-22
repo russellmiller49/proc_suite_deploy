@@ -46,6 +46,12 @@ CPT_TO_REGISTRY_MAPPING: dict[str, RegistryFieldMapping] = {
         hints={"navigation_type": "electromagnetic"},
     ),
 
+    # Fiducial placement
+    "31626": RegistryFieldMapping(
+        fields={"navigation_performed": True},
+        hints={"procedure_type": "fiducial_placement"},
+    ),
+
     # Transbronchial lung biopsy
     "31628": RegistryFieldMapping(
         fields={"tblb_performed": True},
@@ -321,6 +327,9 @@ def aggregate_registry_fields(
     # Navigation bronchoscopy: 31627
     if "31627" in code_set:
         procedures["navigational_bronchoscopy"] = {"performed": True}
+
+    if "31626" in code_set:
+        procedures["fiducial_placement"] = {"performed": True}
 
     # Airway stent: 31636 (initial placement), 31637 (each additional), 31638 (removal)
     if code_set & {"31636", "31637", "31638"}:

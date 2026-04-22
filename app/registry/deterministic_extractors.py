@@ -86,6 +86,26 @@ def is_negated(token_span_start: int, token_span_end: int, text: str) -> bool:
     return False
 
 
+def _sentence_window(text: str, start: int, end: int) -> str:
+    raw = text or ""
+    if not raw:
+        return ""
+    left_boundary = max(raw.rfind(".", 0, start), raw.rfind("\n", 0, start), raw.rfind(";", 0, start))
+    sentence_start = left_boundary + 1 if left_boundary != -1 else 0
+    right_candidates = [pos for pos in (raw.find(".", end), raw.find("\n", end), raw.find(";", end)) if pos != -1]
+    sentence_end = min(right_candidates) if right_candidates else len(raw)
+    return raw[sentence_start:sentence_end]
+
+
+def _sentence_has_post_negation(sentence_text: str, procedure_pattern: str) -> bool:
+    return bool(
+        re.search(
+            rf"(?i)(?:{procedure_pattern})[^.\n;]{{0,80}}\b(?:were\s+)?(?:not\s+(?:obtained|performed|done|taken|collected)|deferred|declined)\b",
+            sentence_text or "",
+        )
+    )
+
+
 def extract_demographics(note_text: str) -> Dict[str, Any]:
     """Extract patient age and gender from note header.
 
@@ -294,16 +314,22 @@ def extract_sedation_airway(note_text: str) -> Dict[str, Any]:
         return result
 
     # Check for general anesthesia indicators
-    ga_indicators = [
-        "general anesthesia",
-        "general anesthetic",
-        "under general",
-        "ga with",
-        "propofol/fentanyl/rocuronium",
-        "jet ventilation",
-    ]
+    general_present = bool(
+        re.search(
+            r"(?i)\bgeneral\s+anesthe(?:sia|tic)\b"
+            r"|\bunder\s+general\b"
+            r"|\bperformed\s+under\s+ga\b"
+            r"|\bunder\s+ga\b"
+            r"|^\s*anesthesia\s*:\s*ga\b"
+            r"|\bga\s+with\b"
+            r"|\bpropofol/fentanyl/rocuronium\b"
+            r"|\bjet\s+ventilation\b",
+            note_text or "",
+            re.MULTILINE,
+        )
+    )
 
-    if any(ind in note_lower for ind in ga_indicators):
+    if general_present:
         result["sedation_type"] = "General"
 
         # Check airway type for GA
@@ -434,8 +460,17 @@ def extract_primary_indication(note_text: str) -> Optional[str]:
                 r"the\s+nature,\s*purpose,\s*risks?,\s*benefits?\s+and\s+alternatives?"
                 r"|risks?,\s*benefits?,\s*(?:and\s+)?alternatives?"
                 r"|patient(?:\s+or\s+surrogate)?\s+indicated\s+a\s+wish\s+to\s+proceed"
+                r"|(?:patient|family|surrogate)\s+(?:was\s+)?(?:updated|counseled|counselled|advised|informed|notified)"
+                r"|discussion\s+with\s+(?:the\s+)?(?:patient|family|surrogate)"
+                r"|discussed\s+with\s+(?:the\s+)?(?:patient|family|surrogate)"
                 r"|informed\s+consent\s+was\s+signed"
                 r"|consent\s+was\s+signed"
+                r"|after\s+informed\s+consent(?:\s+and\s+time[-\s]?out)?"
+                r"|informed\s+consent\s+(?:was\s+)?obtained"
+                r"|consent\s+obtained"
+                r"|time[-\s]?out\s+(?:was\s+)?performed"
+                r"|timeout\s+(?:was\s+)?performed"
+                r"|confirming\s+the\s+patient'?s\s+name"
                 r")\b",
                 indication,
                 maxsplit=1,
@@ -1209,7 +1244,15 @@ AIRWAY_STENT_DEVICE_PATTERNS = [
     # without using the term "stent"; this is still billed under 31638 when revised.
     r"\bvascular\s+plug\b",
     r"\bendobronchial\s+plug\b",
+    r"\bmontgomery\s+t[- ]?tube\b",
+    r"\bt[- ]?tube\b",
 ]
+
+_AIRWAY_STENT_DEVICE_PATTERN = (
+    r"(?:stent|y-?\s*stent|dumon|aero(?:stent)?|aerstent|ultraflex|sems|"
+    r"silicone\s+stent|metal(?:lic)?\s+stent|bonostent|vascular\s+plug|endobronchial\s+plug|"
+    r"montgomery\s+t[- ]?tube|t[- ]?tube)"
+)
 
 AIRWAY_STENT_PLACEMENT_PATTERNS = [
     r"\b(?:place(?:d)?|deploy(?:ed)?|insert(?:ed)?|positioned|deliver(?:ed)?|deploy(?:ment)?)\b",
@@ -1440,6 +1483,10 @@ def _extract_ln_stations_from_text(note_text: str) -> list[str]:
         r"\b(?:tbna|fna|aspirat|biops|sampled|sampling|needle|passes?|core|forceps)\b",
         re.IGNORECASE,
     )
+    sampling_action_re = re.compile(
+        r"\b(?:tbna|fna|aspirat|biops|sampled|sampling|needle|core|forceps)\b",
+        re.IGNORECASE,
+    )
     sampling_negation_re = re.compile(
         r"\b(?:"
         r"not\s+(?:sampled|biopsied|aspirated)"
@@ -1468,21 +1515,41 @@ def _extract_ln_stations_from_text(note_text: str) -> list[str]:
     )
 
     stations: list[str] = []
+    raw_lines = (note_text or "").splitlines()
 
-    for raw_line in (note_text or "").splitlines():
+    for idx, raw_line in enumerate(raw_lines):
         line = raw_line.strip()
         if not line:
             continue
-        if table_header_re.search(line) or table_row_re.match(line):
+        if table_header_re.search(line):
             continue
-
-        if not sampling_hint_re.search(line):
-            continue
-        if sampling_negation_re.search(line):
-            continue
+        if table_row_re.match(line):
+            numeric_cells = len(re.findall(r"(?i)\b\d+(?:\.\d+)?(?:\s*(?:mm|cm))?\b", line))
+            likely_table_row = bool(
+                "\t" in raw_line
+                or (
+                    re.search(r"(?i)\bpasses?\b", line)
+                    and numeric_cells >= 2
+                    and not sampling_action_re.search(line)
+                )
+            )
+            if likely_table_row:
+                continue
 
         tokens = [m.group(1) for m in station_token_re.finditer(line)]
         has_subcarinal = bool(re.search(r"\bsubcarinal\b", line, re.IGNORECASE))
+        station_list_context = bool(
+            (tokens or has_subcarinal)
+            and re.search(r"(?i)\b(?:station(?:s)?|sites?|inspected|lymph\s+nodes?)\b", line)
+        )
+        nearby_block = " ".join(raw_lines[max(0, idx - 2) : min(len(raw_lines), idx + 3)])
+        has_nearby_sampling = bool(sampling_action_re.search(nearby_block))
+
+        if not sampling_hint_re.search(line):
+            if not (station_list_context and has_nearby_sampling):
+                continue
+        if sampling_negation_re.search(line):
+            continue
         if not tokens and not has_subcarinal:
             continue
 
@@ -1497,11 +1564,41 @@ def _extract_ln_stations_from_text(note_text: str) -> list[str]:
                 continue
 
             # Avoid interpreting bare digits (e.g., "7") as stations when they look like counts ("7 passes").
-            if candidate_norm.isdigit() and not alpha_station_present:
+            if candidate_norm.isdigit():
                 prefix = line[max(0, match.start() - 20) : match.start()]
-                if re.search(r"(?i)\b(?:site|case|patient)\s+#?\s*$", prefix):
+                tight_prefix = line[max(0, match.start() - 12) : match.start()]
+                suffix = line[match.end() : min(len(line), match.end() + 20)]
+                measurement_prefix = line[max(0, match.start() - 48) : match.start()]
+                bare_station_line = bool(
+                    re.search(
+                        rf"(?i)^\s*{re.escape(candidate)}\s*(?:[:\-]\s*)?(?:x\s*\d+|\d+\s*passes?|passes?)\b",
+                        line,
+                    )
+                )
+                if bare_station_line:
+                    prefix = ""
+                if re.match(r"(?i)^\s*(?:mm|cm|ml|mL|cc|gauge|g|fr|french)\b", suffix):
                     continue
-                if not station_context_re.search(prefix):
+                if re.search(
+                    r"(?i)\b(?:short\s+axis|long\s+axis|diameter|size|measuring|measured|approximately|approx|gauge|caliber|width|depth)\b[^.\n]{0,20}$",
+                    measurement_prefix,
+                ):
+                    continue
+                if re.search(r"[-–/]\s*$", tight_prefix):
+                    continue
+                if re.search(r"(?i)^\s*(?:passes?|biops(?:y|ies)|samples?)\b", suffix) and re.search(
+                    station_token_re,
+                    prefix,
+                ):
+                    continue
+                if re.search(r"(?i)^\s*[)\]\"']", suffix) and re.search(r"[-–/]\s*\d{1,2}\s*$", tight_prefix):
+                    continue
+            if candidate_norm.isdigit() and not alpha_station_present:
+                if bare_station_line:
+                    pass
+                elif re.search(r"(?i)\b(?:site|case|patient)\s+#?\s*$", prefix):
+                    continue
+                elif not station_context_re.search(prefix):
                     continue
 
             if candidate_norm not in stations:
@@ -1511,6 +1608,179 @@ def _extract_ln_stations_from_text(note_text: str) -> list[str]:
             stations.append("7")
 
     return stations
+
+
+def _mask_inline_eus_b_sampling(text: str) -> str:
+    """Mask inline EUS-B clauses while preserving same-line bronchoscopic EBUS text."""
+    raw = text or ""
+    if not raw:
+        return raw
+
+    masked = list(raw)
+
+    def _blank(start: int, end: int) -> None:
+        for idx in range(max(0, start), min(len(masked), end)):
+            if masked[idx] not in "\r\n":
+                masked[idx] = " "
+
+    offset = 0
+    for raw_line in raw.splitlines(keepends=True):
+        line = raw_line.rstrip("\r\n")
+        inline = re.search(r"(?i)\bEUS-?B\b", line)
+        if inline:
+            before = line[: inline.start()]
+            sentence_boundary = max(before.rfind("."), before.rfind(";"))
+            blank_start = offset if sentence_boundary == -1 else offset + sentence_boundary + 1
+            _blank(blank_start, offset + len(line))
+        offset += len(raw_line)
+
+    return "".join(masked)
+
+
+def _is_confirmation_only_trach_exchange_bronchoscopy(note_text: str) -> bool:
+    raw_text = _maybe_unescape_newlines(note_text or "")
+    raw_lower = raw_text.lower()
+    if not raw_lower.strip():
+        return False
+
+    change_cue = bool(
+        re.search(
+            r"(?i)\btrach(?:eostomy)?\b[^.\n]{0,60}\b(?:change|exchange|tube\s+change|changed|replaced)\b"
+            r"|\bold\b[^.\n]{0,80}\b(?:trach(?:eostomy)?|tracheostomy)\s+tube\b[^.\n]{0,120}\bremoved\b"
+            r"|\bnew\b[^.\n]{0,80}\b(?:trach(?:eostomy)?|tracheostomy)\s+tube\b[^.\n]{0,120}\b(?:advanced|placed|inserted)\b",
+            raw_text,
+        )
+    )
+    if not change_cue or "bronchoscop" not in raw_lower:
+        return False
+
+    confirm_cue = bool(
+        re.search(
+            r"(?i)\b(?:position\s+confirmed|confirm\s+(?:intra-?tracheal\s+)?position|tip\s+\d+(?:\.\d+)?\s*cm\s+above\s+carina|no\s+false\s+passage)\b",
+            raw_text,
+        )
+    )
+    if not confirm_cue:
+        return False
+
+    active_bronchoscopy_work = bool(
+        re.search(
+            r"(?i)\b(?:suction(?:ed|ing)|secretions?|mucus|lavage|washings?|bal\b|brushings?|biops|aspirat|debrid|forceps|culture|specimen|"
+            r"evaluate\s+the\s+distal\s+airway|distal\s+airway|therapeutic)\b",
+            raw_text,
+        )
+    )
+    return not active_bronchoscopy_work
+
+
+def _extract_named_airway_device(raw_text: str, *, allow_montgomery: bool = True) -> str | None:
+    text = raw_text or ""
+    brand_patterns: tuple[tuple[str, str], ...] = (
+        ("Montgomery", r"(?i)\bmontgomery\b"),
+        ("Shiley", r"(?i)\bshiley\b"),
+        ("Bivona", r"(?i)\bbivona\b"),
+        ("Portex", r"(?i)\bportex\b"),
+        ("Tracoe", r"(?i)\btracoe\b"),
+    )
+    for brand, pattern in brand_patterns:
+        if brand == "Montgomery" and not allow_montgomery:
+            continue
+        if re.search(pattern, text):
+            return brand
+    return None
+
+
+def _extract_airway_device_action(note_text: str) -> Dict[str, Any]:
+    raw_text = _maybe_unescape_newlines(note_text or "")
+    preferred_text, _used_detail = _preferred_procedure_detail_text(raw_text)
+    preferred_text = _strip_cpt_definition_lines(preferred_text)
+    text = preferred_text or raw_text
+    text_lower = text.lower()
+    if not text_lower.strip():
+        return {}
+
+    montgomery_exchange = bool(
+        re.search(r"(?i)\b(?:montgomery\s+)?t[- ]?tube\b", text)
+        and (
+            re.search(r"(?i)\b(?:tube\s+)?exchange\b", text)
+            or (
+                re.search(r"(?i)\bold\b[^.\n]{0,120}\b(?:montgomery\s+)?t[- ]?tube\b[^.\n]{0,120}\bremoved\b", text)
+                and re.search(
+                    r"(?i)\bnew\b[^.\n]{0,120}\b(?:montgomery\s+)?t[- ]?tube\b[^.\n]{0,140}\b(?:inserted|folded|repositioned|advanced)\b",
+                    text,
+                )
+            )
+        )
+    )
+    if montgomery_exchange:
+        proc: dict[str, Any] = {
+            "performed": True,
+            "device_type": "Montgomery T-tube",
+            "action": "Exchange",
+            "device_name": "Montgomery",
+            "location": "Trachea",
+        }
+        size_match = re.search(
+            r"(?i)\b(\d+(?:\.\d+)?\s*(?:x|×)\s*\d+(?:\.\d+)?\s*(?:x|×)\s*\d+(?:\.\d+)?\s*(?:mm)?)\b",
+            text,
+        )
+        if not size_match:
+            size_match = re.search(
+                r"(?i)\b(\d+(?:\.\d+)?\s*(?:x|×)\s*\d+(?:\.\d+)?\s*(?:mm)?)\b",
+                text,
+            )
+        if size_match:
+            proc["device_size"] = re.sub(r"\s+", " ", size_match.group(1)).strip()
+        return {"airway_device_action": proc}
+
+    mature_trach_exchange = bool(
+        re.search(r"(?i)\b(?:mature|established)\s+(?:tract|stoma|tracheostomy)\b", raw_text)
+        and re.search(
+            r"(?i)\btrach(?:eostomy)?\b[^.\n]{0,60}\b(?:change|exchange|tube\s+change|changed|replaced)\b"
+            r"|\b(?:old|existing)\b[^.\n]{0,80}\b(?:trach(?:eostomy)?|tracheostomy)\s+tube\b[^.\n]{0,120}\bremoved\b",
+            raw_text,
+        )
+    )
+    if mature_trach_exchange:
+        has_new_tube = bool(
+            re.search(
+                r"(?i)\bnew\b[^.\n]{0,100}\b(?:trach(?:eostomy)?|tracheostomy)\s+tube\b[^.\n]{0,120}\b(?:advanced|placed|inserted|replaced)\b"
+                r"|\bnew\b[^.\n]{0,40}\b(?:shiley|bivona|portex|tracoe)\b[^.\n]{0,40}\b\d+(?:\.\d+)?(?:\s*(?:cuffed|cuffless|tts))?\s+tube\b"
+                r"|\bnew\b[^.\n]{0,20}\b(?:cuffed|cuffless|tts)\b[^.\n]{0,20}\b(?:shiley|bivona|portex|tracoe)\b[^.\n]{0,80}\b(?:advanced|placed|inserted|replaced)\b"
+                r"|\bnew\b[^.\n]{0,80}\b(?:shiley|bivona|portex|tracoe)\b[^.\n]{0,80}\btube\b",
+                raw_text,
+            )
+            or re.search(r"(?i)\breplaced\s+with\s+a\s+new\b[^.\n]{0,120}\btracheostomy\s+tube\b", raw_text)
+        )
+        if has_new_tube:
+            proc = {
+                "performed": True,
+                "device_type": "Tracheostomy tube",
+                "action": "Exchange",
+                "location": "Established tracheostomy",
+            }
+            device_name = _extract_named_airway_device(raw_text, allow_montgomery=False)
+            if device_name:
+                proc["device_name"] = device_name
+            size_match = re.search(
+                r"(?i)\bnew\b[^.\n]{0,40}\b(?:shiley|bivona|portex|tracoe)\b[^.\n]{0,20}\b(?P<size>\d+(?:\.\d+)?(?:\s*(?:cuffed|cuffless|tts))?)\s+tube\b",
+                raw_text,
+            )
+            if not size_match:
+                size_match = re.search(
+                    r"(?i)\bnew\b[^.\n]{0,60}\b(?P<size>\d+(?:\.\d+)?(?:\s*(?:cuffed|cuffless|tts))?)\s+(?:trach(?:eostomy)?\s+)?tube\b",
+                    raw_text,
+                )
+            if not size_match:
+                size_match = re.search(
+                    r"(?i)\b(?:shiley|bivona|portex|tracoe)\s+(?P<size>\d+(?:\.\d+)?(?:\s*(?:cuffed|cuffless|tts))?)\s+tube\b",
+                    raw_text,
+                )
+            if size_match:
+                proc["device_size"] = re.sub(r"\s+", " ", size_match.group("size")).strip()
+            return {"airway_device_action": proc}
+
+    return {}
 
 
 def extract_bal(note_text: str) -> Dict[str, Any]:
@@ -1535,7 +1805,8 @@ def extract_bal(note_text: str) -> Dict[str, Any]:
                 # Location: prefer narrative phrasing over specimen/headers.
                 loc_match = re.search(
                     r"(?i)\b(?:bronch(?:ial)?\s+alveolar\s+lavage|broncho[-\s]?alveolar\s+lavage|BAL)\b"
-                    r"[^.\n]{0,60}\b(?:was\s+)?performed\b[^.\n]{0,60}\b(?:at|in)\b\s+(?P<loc>[^.\n]{3,140})",
+                    r"[^.\n]{0,60}(?:\b(?:was\s+)?performed\b[^.\n]{0,60})?\b(?:at|in)\b\s+"
+                    r"(?P<loc>[^.\n]{3,140}?)(?=\s*(?:,|;|\.|\bwith\b|\b(?:and\s+)?sent\s+for\b|\b\d{1,4}\s*(?:cc|ml)\b))",
                     text,
                 )
                 if loc_match:
@@ -1702,6 +1973,16 @@ def is_true_therapeutic_aspiration(
             contexts.append(text[s:e])
     context_text = " ".join(contexts) if contexts else text
     context_lower = context_text.lower()
+
+    pleural_placement_re = re.compile(
+        r"(?i)\b(?:"
+        r"pleural\s+space|yueh|guidewire|peel[-\s]?away\s+sheath|seldinger|serial\s+dilat(?:ion|ors?)|"
+        r"tunne(?:l|ll)ed\s+catheter|indwelling\s+pleural\s+catheter|"
+        r"aspirat(?:ion|ed)\s+of\s+(?:air|fluid)\s+to\s+verify\s+placement|verify\s+placement"
+        r")\b"
+    )
+    if pleural_placement_re.search(context_text):
+        return False
 
     obstruction_re = re.compile(
         r"(?i)\b(?:obstruct\w*|occlu\w*|plug\w*|impaction|large\s+burden|copious|tenacious|purulent|blood\s+clot)\b"
@@ -1895,6 +2176,13 @@ def extract_intubation(note_text: str) -> Dict[str, Any]:
     if not text_lower.strip():
         return {}
 
+    if re.search(
+        r"(?i)\b(?:no|not|without)\b[^.\n]{0,40}\bintubat(?:ion|ed|ing)\b"
+        r"|\bintubat(?:ion|ed|ing)\b[^.\n]{0,40}\b(?:not\s+required|not\s+needed|was\s+not\s+required|was\s+not\s+needed)\b",
+        text_lower,
+    ):
+        return {}
+
     fiberoptic = bool(re.search(r"\bfiber\s*optic\s+intubat(?:ion|ed|ing)\b", text_lower)) or bool(
         re.search(r"\bfiberoptic\s+intubat(?:ion|ed|ing)\b", text_lower)
     )
@@ -1983,15 +2271,11 @@ def _stent_action_window_hit(text_lower: str, *, verbs: list[str], max_chars: in
     if not text_lower:
         return False
 
-    device = (
-        r"(?:stent|y-?\s*stent|dumon|aero(?:stent)?|aerstent|ultraflex|sems|"
-        r"silicone\s+stent|metal(?:lic)?\s+stent|bonostent|vascular\s+plug|endobronchial\s+plug)"
-    )
     verb_union = "|".join(verbs)
     span = max(0, int(max_chars))
     patterns = [
-        rf"\b{device}\b[^.\n]{{0,{span}}}\b(?:{verb_union})\w*\b",
-        rf"\b(?:{verb_union})\w*\b[^.\n]{{0,{span}}}\b{device}\b",
+        rf"\b{_AIRWAY_STENT_DEVICE_PATTERN}\b[^.\n]{{0,{span}}}\b(?:{verb_union})\w*\b",
+        rf"\b(?:{verb_union})\w*\b[^.\n]{{0,{span}}}\b{_AIRWAY_STENT_DEVICE_PATTERN}\b",
     ]
     return any(re.search(p, text_lower, re.IGNORECASE) for p in patterns)
 
@@ -2084,57 +2368,107 @@ def classify_stent_action(note_text: str) -> Dict[str, Any]:
     if not text_lower.strip():
         return {}
 
+    history_only_placement = bool(
+        re.search(
+            rf"(?i)\b(?:{_AIRWAY_STENT_DEVICE_PATTERN})\b[^.\n]{{0,140}}\bplaced\b[^.\n]{{0,80}}\b(?:ago|prior|previously|in\s+situ|in\s+place)\b"
+            rf"|\b(?:known|existing|prior|previously|pre[-\s]?existing)\b[^.\n]{{0,120}}\b(?:{_AIRWAY_STENT_DEVICE_PATTERN})\b",
+            text,
+        )
+    )
+    ttube_surveillance_only = bool(
+        re.search(r"(?i)\b(?:montgomery\s+)?t[- ]?tube\b", text)
+        and re.search(
+            r"(?i)\b(?:sidearm|plug|in\s+situ|position\s+intact|position\s+satisfactory|clearance|muc(?:us|oid)|secretions?)\b",
+            text,
+        )
+        and not re.search(
+            r"(?i)\bold\s+(?:montgomery\s+)?t[- ]?tube\b[^.\n]{0,140}\bremoved\b"
+            r"|\bnew\b[^.\n]{0,80}\b(?:montgomery\s+)?t[- ]?tube\b[^.\n]{0,140}\b(?:inserted)\b"
+            r"|\b(?:exchange|exchanged|replace(?:d|ment)|revision|reposition(?:ing)?)\b[^.\n]{0,80}\b(?:montgomery\s+)?t[- ]?tube\b"
+            r"|\b(?:montgomery\s+)?t[- ]?tube\b[^.\n]{0,120}\b(?:exchange|exchanged|replace(?:d|ment)|revision|reposition(?:ing)?|insert(?:ed|ion)?|deployed|advanced|exteriorized)\b"
+            r"|\b(?:insert(?:ed|ion)?|deployed|advanced|folded)\b[^.\n]{0,120}\b(?:montgomery\s+)?t[- ]?tube\b"
+            r"|\bsidearm\s+exteriorized\b",
+            text,
+        )
+    )
+    plug_only_removal = bool(
+        re.search(r"(?i)\b(?:sidearm\s+)?plug\s+removed\b", text)
+        and not re.search(
+            r"(?i)\bold\s+(?:montgomery\s+)?t[- ]?tube\b[^.\n]{0,140}\bremoved\b"
+            r"|\b(?:montgomery\s+)?t[- ]?tube\b[^.\n]{0,140}\bremoved\b[^.\n]{0,120}\b(?:via|through)\b",
+            text,
+        )
+    )
+
     placement = bool(
         _stent_action_window_hit(
             text_lower,
             verbs=["placed", "insert", "inserted", "deploy", "deployed", "implant", "advanced"],
         )
         or re.search(
-            r"(?i)\bto\s+place\b[^.\n]{0,80}\b(?:stent|bonostent|vascular\s+plug|endobronchial\s+plug)\b",
+            rf"(?i)\bto\s+place\b[^.\n]{{0,80}}\b{_AIRWAY_STENT_DEVICE_PATTERN}\b",
             text,
         )
         or re.search(
-            r"(?i)\b(?:new|another|replacement|custom)\b[^.\n]{0,80}\b(?:stent|bonostent|vascular\s+plug|endobronchial\s+plug)\b",
+            rf"(?i)\b(?:new|another|replacement|custom)\b[^.\n]{{0,80}}\b{_AIRWAY_STENT_DEVICE_PATTERN}\b",
             text,
         )
         or re.search(
-            r"(?i)\b(?:bonostent|stent|vascular\s+plug|endobronchial\s+plug)\b[^.\n]{0,100}\b(?:was\s+)?(?:placed|inserted|deployed)\b"
-            r"|\b(?:placed|inserted|deployed)\b[^.\n]{0,100}\b(?:bonostent|stent|vascular\s+plug|endobronchial\s+plug)\b",
+            rf"(?i)\b{_AIRWAY_STENT_DEVICE_PATTERN}\b[^.\n]{{0,100}}\b(?:was\s+)?(?:placed|insert(?:ed|ion)?|deployed)\b"
+            rf"|\b(?:placed|insert(?:ed|ion)?|deployed)\b[^.\n]{{0,100}}\b{_AIRWAY_STENT_DEVICE_PATTERN}\b",
             text,
         )
     )
+    if history_only_placement and not re.search(
+        rf"(?i)\b(?:new|replacement|another|custom)\b[^.\n]{{0,80}}\b(?:{_AIRWAY_STENT_DEVICE_PATTERN})\b"
+        rf"|\b(?:insert(?:ed|ion)?|placed|deployed)\b[^.\n]{{0,80}}\bnew\b"
+        rf"|\b(?:{_AIRWAY_STENT_DEVICE_PATTERN})\b[^.\n]{{0,100}}\b(?:was\s+)?(?:placed|insert(?:ed|ion)?|deployed)\b"
+        rf"|\b(?:placed|insert(?:ed|ion)?|deployed)\b[^.\n]{{0,100}}\b(?:{_AIRWAY_STENT_DEVICE_PATTERN})\b",
+        text,
+    ):
+        placement = False
     removal = bool(
         _stent_action_window_hit(
             text_lower,
             verbs=["remov", "retriev", "extract", "explant", "pull", "withdraw", "exchange", "replace"],
         )
         or re.search(
-            r"(?i)\b(?:stent(?:s)?|bonostent)\b[^.\n]{0,120}\b(?:removed|retrieved|extracted|withdrawn)\b",
+            rf"(?i)\b(?:{_AIRWAY_STENT_DEVICE_PATTERN})(?:s)?\b[^.\n]{{0,120}}\b(?:removed|retrieved|extracted|withdrawn)\b",
             text,
         )
     )
+    if plug_only_removal:
+        removal = False
     if _stent_placement_negated(text_lower) and not removal:
         placement = False
 
     explicit_exchange = bool(
-        re.search(r"(?i)\b(?:exchange|exchanged|revision|reposition(?:ing)?|revis(?:ed|ion))\b", text)
-        or re.search(r"(?i)\b(?:replace|replaced|replacement)\b[^.\n]{0,80}\bstent\b", text)
+        re.search(
+            rf"(?i)\b(?:exchange|exchanged|revision|reposition(?:ing)?|revis(?:ed|ion)|replace|replaced|replacement)\b"
+            rf"[^.\n]{{0,80}}\b{_AIRWAY_STENT_DEVICE_PATTERN}\b"
+            rf"|\b{_AIRWAY_STENT_DEVICE_PATTERN}\b[^.\n]{{0,80}}\b(?:exchange|exchanged|revision|reposition(?:ing)?|revis(?:ed|ion)|replace|replaced|replacement)\b",
+            text,
+        )
     )
+    if ttube_surveillance_only:
+        placement = False
+        removal = False
+        explicit_exchange = False
 
     # If stent/plug removal is documented before any same-session placement event,
     # treat as an exchange/revision of an existing airway device.
     first_removal_event = re.search(
-        r"(?i)\b(?:stent(?:s)?|bonostent|vascular\s+plug|endobronchial\s+plug)\b[^.\n]{0,120}"
+        rf"(?i)\b(?:{_AIRWAY_STENT_DEVICE_PATTERN})(?:s)?\b[^.\n]{{0,120}}"
         r"\b(?:remov(?:e|ed|al)|retriev(?:e|ed|al)|extract(?:ed|ion)?|withdrawn|explant(?:ed|ation)?)\b"
-        r"|\b(?:remov(?:e|ed|al)|retriev(?:e|ed|al)|extract(?:ed|ion)?|withdrawn|explant(?:ed|ation)?)\b[^.\n]{0,120}"
-        r"\b(?:stent(?:s)?|bonostent|vascular\s+plug|endobronchial\s+plug)\b",
+        rf"|\b(?:remov(?:e|ed|al)|retriev(?:e|ed|al)|extract(?:ed|ion)?|withdrawn|explant(?:ed|ation)?)\b[^.\n]{{0,120}}"
+        rf"\b(?:{_AIRWAY_STENT_DEVICE_PATTERN})(?:s)?\b",
         text,
     )
     first_placement_event = re.search(
-        r"(?i)\b(?:stent(?:s)?|bonostent|vascular\s+plug|endobronchial\s+plug)\b[^.\n]{0,120}"
-        r"\b(?:placed|inserted|deployed|implanted)\b"
-        r"|\b(?:placed|inserted|deployed|implanted)\b[^.\n]{0,120}\b(?:stent(?:s)?|bonostent|vascular\s+plug|endobronchial\s+plug)\b"
-        r"|\bto\s+place\b[^.\n]{0,120}\b(?:stent(?:s)?|bonostent|vascular\s+plug|endobronchial\s+plug)\b",
+        rf"(?i)\b(?:{_AIRWAY_STENT_DEVICE_PATTERN})(?:s)?\b[^.\n]{{0,120}}"
+        r"\b(?:placed|insert(?:ed|ion)?|deployed|implanted)\b"
+        rf"|\b(?:placed|insert(?:ed|ion)?|deployed|implanted)\b[^.\n]{{0,120}}\b(?:{_AIRWAY_STENT_DEVICE_PATTERN})(?:s)?\b"
+        rf"|\bto\s+place\b[^.\n]{{0,120}}\b(?:{_AIRWAY_STENT_DEVICE_PATTERN})(?:s)?\b",
         text,
     )
     removal_before_placement = bool(
@@ -2148,11 +2482,11 @@ def classify_stent_action(note_text: str) -> Dict[str, Any]:
     early_text = full_lower[:2600]
     preexisting_stent = bool(
         re.search(
-            r"(?i)\b(?:known|existing|prior|previously|pre[-\s]?existing)\b[^.\n]{0,120}\b(?:stent|bonostent)\b",
+            rf"(?i)\b(?:known|existing|prior|previously|pre[-\s]?existing)\b[^.\n]{{0,120}}\b{_AIRWAY_STENT_DEVICE_PATTERN}\b",
             early_text,
         )
         or re.search(
-            r"(?i)\b(?:stent|bonostent)\b[^.\n]{0,120}\b(?:placed|placement)\b[^.\n]{0,80}\b(?:\d+\s*(?:day|week|month|year)s?\s+ago|ago)\b",
+            rf"(?i)\b{_AIRWAY_STENT_DEVICE_PATTERN}\b[^.\n]{{0,120}}\b(?:placed|placement|in\s+situ|in\s+place)\b[^.\n]{{0,80}}\b(?:\d+\s*(?:day|week|month|year)s?\s+ago|ago|\d+\s*(?:day|week|month|year)s?)\b",
             early_text,
         )
         or re.search(r"(?i)\bafter\s+placement\b", early_text)
@@ -2171,7 +2505,9 @@ def classify_stent_action(note_text: str) -> Dict[str, Any]:
         action_type = "assessment_only"
 
     stent_type: str | None = None
-    if re.search(r"(?i)\by-?\s*stent\b", text):
+    if re.search(r"(?i)\b(?:montgomery\s+)?t[- ]?tube\b", text):
+        stent_type = "Other"
+    elif re.search(r"(?i)\by-?\s*stent\b", text):
         stent_type = "Y-Stent"
     else:
         _brand, brand_type = _select_stent_brand(text_lower, action_type)
@@ -2184,7 +2520,7 @@ def classify_stent_action(note_text: str) -> Dict[str, Any]:
     ):
         raw = re.sub(r"\s+", "", (match.group(0) or "").strip())
         window = text_lower[max(0, match.start() - 80) : min(len(text_lower), match.end() + 80)]
-        if raw and "stent" in window and raw not in size_candidates:
+        if raw and re.search(rf"(?i)\b(?:{_AIRWAY_STENT_DEVICE_PATTERN})\b", window) and raw not in size_candidates:
             size_candidates.append(raw)
     limb_lengths_mm: list[int] = []
     for match in re.finditer(
@@ -2435,26 +2771,46 @@ def extract_airway_stent(note_text: str) -> Dict[str, Any]:
     text_lower = (preferred_text or "").lower()
     if not text_lower.strip():
         return {}
+    device_action = _extract_airway_device_action(note_text).get("airway_device_action")
+    if isinstance(device_action, dict):
+        if device_action.get("device_type") == "Montgomery T-tube" and device_action.get("action") == "Exchange":
+            return {}
     classified = classify_stent_action(note_text) or {}
     classified_action_type = str(classified.get("action_type") or "").strip().lower()
     preexisting_stent = bool(classified.get("preexisting_stent"))
     classified_sizes = [
         str(v).strip() for v in (classified.get("sizes") or []) if isinstance(v, str) and str(v).strip()
     ]
+    if classified_action_type == "assessment_only":
+        return {}
+    planned_only_stent = bool(
+        re.search(
+            r"(?i)\b(?:consider(?:ed|ing)?|candidate\s+for|plan(?:ned)?|possible|would|if\s+needed)\b"
+            r"[^.\n]{0,120}\b(?:stent|y-?\s*stent|tracheobronchial\s+stent|airway\s+stent)\b",
+            preferred_text or "",
+        )
+    )
+    aborted_before_deployment = bool(
+        re.search(
+            r"(?i)\b(?:before|prior\s+to)\b[^.\n]{0,120}\b(?:any\s+)?(?:airway\s+stent|stent|y-?\s*stent)\b"
+            r"[^.\n]{0,80}\b(?:deploy(?:ed|ment)?|insert(?:ed|ion)?|place(?:d|ment)?)\b"
+            r"|\b(?:no|without)\b[^.\n]{0,80}\b(?:airway\s+stent|stent|y-?\s*stent)\b"
+            r"[^.\n]{0,80}\b(?:deploy(?:ed|ment)?|insert(?:ed|ion)?|place(?:d|ment)?)\b"
+            r"|\b(?:airway\s+stent|stent|y-?\s*stent)\b[^.\n]{0,80}\b(?:was\s+not|were\s+not|never)\b"
+            r"[^.\n]{0,40}\b(?:deploy(?:ed|ment)?|insert(?:ed|ion)?|place(?:d|ment)?)\b",
+            preferred_text or "",
+        )
+    )
 
     def _has_nonnegated_strong_stent_placement(text: str) -> bool:
         if not text:
             return False
         strong_verbs = ["deploy", "insert", "advance", "seat", "deliver", "implant"]
-        device = (
-            r"(?:stent|y-?\s*stent|dumon|aero(?:stent)?|aerstent|ultraflex|sems|"
-            r"silicone\s+stent|metal(?:lic)?\s+stent|bonostent|vascular\s+plug|endobronchial\s+plug)"
-        )
         verb_union = "|".join(strong_verbs)
         span = 40
         patterns = [
-            rf"\b{device}\b[^.\n]{{0,{span}}}\b(?:{verb_union})\w*\b",
-            rf"\b(?:{verb_union})\w*\b[^.\n]{{0,{span}}}\b{device}\b",
+            rf"\b{_AIRWAY_STENT_DEVICE_PATTERN}\b[^.\n]{{0,{span}}}\b(?:{verb_union})\w*\b",
+            rf"\b(?:{verb_union})\w*\b[^.\n]{{0,{span}}}\b{_AIRWAY_STENT_DEVICE_PATTERN}\b",
         ]
         for pat in patterns:
             for m in re.finditer(pat, text, re.IGNORECASE):
@@ -2465,6 +2821,16 @@ def extract_airway_stent(note_text: str) -> Dict[str, Any]:
                     if not re.search(r"(?i)\b(?:new|custom|replacement|another|additional)\b", window):
                         continue
                 if _stent_placement_negated(window.lower()):
+                    continue
+                if re.search(
+                    r"(?i)\b(?:before|prior\s+to)\b[^.\n]{0,120}\b(?:any\s+)?(?:airway\s+stent|stent|y-?\s*stent)\b"
+                    r"[^.\n]{0,80}\b(?:deploy(?:ed|ment)?|insert(?:ed|ion)?|place(?:d|ment)?)\b"
+                    r"|\b(?:no|without)\b[^.\n]{0,80}\b(?:airway\s+stent|stent|y-?\s*stent)\b"
+                    r"[^.\n]{0,80}\b(?:deploy(?:ed|ment)?|insert(?:ed|ion)?|place(?:d|ment)?)\b"
+                    r"|\b(?:airway\s+stent|stent|y-?\s*stent)\b[^.\n]{0,80}\b(?:was\s+not|were\s+not|never)\b"
+                    r"[^.\n]{0,40}\b(?:deploy(?:ed|ment)?|insert(?:ed|ion)?|place(?:d|ment)?)\b",
+                    window,
+                ):
                     continue
                 # Hypothetical-only guard ("would insert a stent", "plan to insert stent")
                 if re.search(
@@ -2551,7 +2917,8 @@ def extract_airway_stent(note_text: str) -> Dict[str, Any]:
         if not text:
             return False
         placed_re = re.compile(
-            r"(?i)\bplaced\b[^.\n]{0,60}\b(?:stent|bonostent)\b|\b(?:stent|bonostent)\b[^.\n]{0,60}\bplaced\b"
+            rf"(?i)\bplaced\b[^.\n]{{0,60}}\b(?:{_AIRWAY_STENT_DEVICE_PATTERN})\b"
+            rf"|\b(?:{_AIRWAY_STENT_DEVICE_PATTERN})\b[^.\n]{{0,60}}\bplaced\b"
         )
         for match in placed_re.finditer(text):
             window_start = max(0, match.start() - 140)
@@ -2563,7 +2930,11 @@ def extract_airway_stent(note_text: str) -> Dict[str, Any]:
                 if not re.search(r"(?i)\b(?:new|custom|replacement|another|additional)\b", window):
                     continue
             # Avoid treating generic positioning phrases as placement evidence.
-            if re.search(r"(?i)\bstent\b[^.\n]{0,80}\bin\s+(?:good\s+)?position\b|\bstent\b[^.\n]{0,80}\bin\s+place\b", window):
+            if re.search(
+                rf"(?i)\b(?:{_AIRWAY_STENT_DEVICE_PATTERN})\b[^.\n]{{0,80}}\bin\s+(?:good\s+)?position\b"
+                rf"|\b(?:{_AIRWAY_STENT_DEVICE_PATTERN})\b[^.\n]{{0,80}}\bin\s+place\b",
+                window,
+            ):
                 if not re.search(r"(?i)\b(?:deploy|insert|advance|seat|deliver|implant)\w*\b", window):
                     continue
             if _stent_placement_negated(window.lower()):
@@ -2587,14 +2958,16 @@ def extract_airway_stent(note_text: str) -> Dict[str, Any]:
     removed_stent_hit = bool(
         re.search(
             r"(?i)\b(?:"
-            r"stent(?:s)?\b[^.\n]{0,80}\b(?:remov(?:e|ed|al)|retriev(?:e|ed|al)|extract(?:ed|ion)?|explant(?:ed|ation)?|exchange(?:d)?|replac(?:ed|ement)?)\b"
+            rf"(?:{_AIRWAY_STENT_DEVICE_PATTERN})(?:s)?\b[^.\n]{{0,80}}\b(?:remov(?:e|ed|al)|retriev(?:e|ed|al)|extract(?:ed|ion)?|explant(?:ed|ation)?|exchange(?:d)?|replac(?:ed|ement)?)\b"
             r"|"
-            r"(?:remov(?:e|ed|al)|retriev(?:e|ed|al)|extract(?:ed|ion)?|explant(?:ed|ation)?|exchange(?:d)?|replac(?:ed|ement)?)\b[^.\n]{0,80}\bstent(?:s)?\b"
+            rf"(?:remov(?:e|ed|al)|retriev(?:e|ed|al)|extract(?:ed|ion)?|explant(?:ed|ation)?|exchange(?:d)?|replac(?:ed|ement)?)\b[^.\n]{{0,80}}\b(?:{_AIRWAY_STENT_DEVICE_PATTERN})(?:s)?\b"
             r")",
             text_lower,
         )
     )
-    pull_out_hit = bool(re.search(r"(?i)\bstent\b[^.\n]{0,40}\bpull(?:ed)?\s+out\b", text_lower))
+    pull_out_hit = bool(
+        re.search(rf"(?i)\b(?:{_AIRWAY_STENT_DEVICE_PATTERN})\b[^.\n]{{0,40}}\bpull(?:ed)?\s+out\b", text_lower)
+    )
     has_removal = bool(removal_window_hit or removed_stent_hit or pull_out_hit)
 
     revision_window_hit = _stent_action_window_hit(
@@ -2628,17 +3001,20 @@ def extract_airway_stent(note_text: str) -> Dict[str, Any]:
     elif classified_action_type == "revision":
         revision_hint = True
 
+    if planned_only_stent and aborted_before_deployment and not has_removal and not revision_hint:
+        return {}
+
     if not has_placement and not has_removal and not revision_hint:
         return {}
 
     # Exclude explicit history-only removal (e.g., "stent removed 2 years ago").
     removal_history = bool(
         re.search(
-            r"\bstent\b[^.\n]{0,40}\bremoved\b[^.\n]{0,40}\b(?:year|yr|month|day)s?\s+ago",
+            rf"\b(?:{_AIRWAY_STENT_DEVICE_PATTERN})\b[^.\n]{{0,40}}\bremoved\b[^.\n]{{0,40}}\b(?:year|yr|month|day)s?\s+ago",
             text_lower,
         )
-        or re.search(r"\b(?:history|prior|previous)\b[^.\n]{0,80}\bstent\b", text_lower)
-        or re.search(r"\bold\s+stent\b", text_lower)
+        or re.search(rf"\b(?:history|prior|previous)\b[^.\n]{{0,80}}\b(?:{_AIRWAY_STENT_DEVICE_PATTERN})\b", text_lower)
+        or re.search(rf"\bold\s+(?:{_AIRWAY_STENT_DEVICE_PATTERN})\b", text_lower)
     )
     if removal_history and not has_placement:
         return {}
@@ -2648,9 +3024,9 @@ def extract_airway_stent(note_text: str) -> Dict[str, Any]:
         return {}
 
     existing_revision_hint = bool(
-        re.search(r"(?i)\b(?:existing|prior|previous|known|left[- ]sided)\b[^.\n]{0,140}\bstent", text_lower)
+        re.search(rf"(?i)\b(?:existing|prior|previous|known|left[- ]sided)\b[^.\n]{{0,140}}\b(?:{_AIRWAY_STENT_DEVICE_PATTERN})", text_lower)
         or re.search(r"(?i)\bin[- ]stent\b[^.\n]{0,120}\bsecretions?\b", text_lower)
-        or re.search(r"(?i)\bstent(?:s)?\b[^.\n]{0,120}\b(?:revis|revision|reposition|adjust)", text_lower)
+        or re.search(rf"(?i)\b(?:{_AIRWAY_STENT_DEVICE_PATTERN})(?:s)?\b[^.\n]{{0,120}}\b(?:revis|revision|reposition|adjust)", text_lower)
         or preexisting_stent
     )
     has_existing_revision = bool(revision_hint and existing_revision_hint)
@@ -2674,7 +3050,7 @@ def extract_airway_stent(note_text: str) -> Dict[str, Any]:
             tight_start = max(0, m.start() - 80)
             tight_end = min(len(text), m.end() + 80)
             tight = (text or "")[tight_start:tight_end].lower()
-            if "stent" not in tight:
+            if not re.search(rf"(?i)\b(?:{_AIRWAY_STENT_DEVICE_PATTERN})\b", tight):
                 continue
             ctx_start = max(0, m.start() - 120)
             ctx_end = min(len(text), m.end() + 160)
@@ -2696,7 +3072,10 @@ def extract_airway_stent(note_text: str) -> Dict[str, Any]:
 
             # Score: prefer explicit placement/deployment context and later (narrative) mentions.
             score = 0
-            if re.search(r"(?i)\b(?:deployed|deploy(?:ment)?|placed|placement|insert(?:ed|ion)?|implant(?:ed|ation)?)\b", ctx):
+            if re.search(
+                r"(?i)\b(?:deployed|deploy(?:ment)?|placed|placement|insert(?:ed|ion)?|introduced|implant(?:ed|ation)?)\b",
+                ctx,
+            ):
                 score += 2
             if re.search(r"(?i)\b(?:existing|prior|previous|known)\b", ctx):
                 score -= 1
@@ -2712,7 +3091,7 @@ def extract_airway_stent(note_text: str) -> Dict[str, Any]:
             tight_start = max(0, m.start() - 80)
             tight_end = min(len(text), m.end() + 80)
             tight = (text or "")[tight_start:tight_end].lower()
-            if "stent" not in tight:
+            if not re.search(rf"(?i)\b(?:{_AIRWAY_STENT_DEVICE_PATTERN})\b", tight):
                 continue
             ctx_start = max(0, m.start() - 140)
             ctx_end = min(len(text), m.end() + 180)
@@ -2729,7 +3108,10 @@ def extract_airway_stent(note_text: str) -> Dict[str, Any]:
                 continue
 
             score = 0
-            if re.search(r"(?i)\b(?:deployed|deploy(?:ment)?|placed|placement|insert(?:ed|ion)?|implant(?:ed|ation)?)\b", ctx):
+            if re.search(
+                r"(?i)\b(?:deployed|deploy(?:ment)?|placed|placement|insert(?:ed|ion)?|introduced|implant(?:ed|ation)?)\b",
+                ctx,
+            ):
                 score += 2
             if re.search(r"(?i)\b(?:existing|prior|previous|known)\b", ctx):
                 score -= 2
@@ -2743,7 +3125,7 @@ def extract_airway_stent(note_text: str) -> Dict[str, Any]:
             tight_start = max(0, m.start() - 80)
             tight_end = min(len(text), m.end() + 80)
             tight = (text or "")[tight_start:tight_end].lower()
-            if "stent" not in tight:
+            if not re.search(rf"(?i)\b(?:{_AIRWAY_STENT_DEVICE_PATTERN})\b", tight):
                 continue
             ctx_start = max(0, m.start() - 120)
             ctx_end = min(len(text), m.end() + 160)
@@ -2764,7 +3146,10 @@ def extract_airway_stent(note_text: str) -> Dict[str, Any]:
             length = None
 
             score = 0
-            if re.search(r"(?i)\b(?:deployed|deploy(?:ment)?|placed|placement|insert(?:ed|ion)?|implant(?:ed|ation)?)\b", ctx):
+            if re.search(
+                r"(?i)\b(?:deployed|deploy(?:ment)?|placed|placement|insert(?:ed|ion)?|introduced|implant(?:ed|ation)?)\b",
+                ctx,
+            ):
                 score += 2
             if re.search(r"(?i)\b(?:existing|prior|previous|known)\b", ctx):
                 score -= 1
@@ -2779,7 +3164,12 @@ def extract_airway_stent(note_text: str) -> Dict[str, Any]:
         return best[2], best[3], best[4], best[1]
 
     def _apply_brand_type(proc: dict[str, Any], *, action: str) -> None:
-        if re.search(r"\by-?\s*stent\b", text_lower):
+        if re.search(r"(?i)\b(?:montgomery\s+)?t[- ]?tube\b", text_lower):
+            proc.setdefault("stent_type", "Other")
+            if re.search(r"(?i)\bmontgomery\b", text_lower):
+                proc.setdefault("stent_brand", "Montgomery")
+            return
+        if re.search(r"(?i)\b(?:y-?\s*stent|tracheobronchial\s+stent|carinal\s+stent)\b", text_lower):
             proc.setdefault("stent_type", "Y-Stent")
         brand, stent_type = _select_stent_brand(text_lower, action)
         if brand and not proc.get("stent_brand"):
@@ -2787,12 +3177,22 @@ def extract_airway_stent(note_text: str) -> Dict[str, Any]:
         if stent_type and not proc.get("stent_type"):
             proc["stent_type"] = stent_type
 
+    def _normalize_y_stent_location(proc: dict[str, Any]) -> None:
+        if proc.get("stent_type") == "Y-Stent" or re.search(
+            r"(?i)\b(?:y-?\s*stent|tracheobronchial\s+stent|carinal\s+stent)\b",
+            preferred_text or "",
+        ):
+            proc["stent_type"] = "Y-Stent"
+            proc["location"] = "Carina (Y)"
+
     result: dict[str, Any] = {}
 
     # Primary event: prefer capturing placement details when present.
     if has_placement:
         placement_proc: dict[str, Any] = {"performed": True, "action": "Placement"}
         _apply_brand_type(placement_proc, action="Placement")
+        if planned_only_stent and not _has_nonnegated_strong_stent_placement(text_lower):
+            return {}
 
         size_candidate = _best_stent_size_candidate(preferred_text or "")
         if size_candidate:
@@ -2818,6 +3218,9 @@ def extract_airway_stent(note_text: str) -> Dict[str, Any]:
                 inferred = _infer_airway_site_last(window)
                 if inferred:
                     placement_proc["location"] = inferred
+        if placement_proc.get("stent_brand") == "Montgomery" and not placement_proc.get("location"):
+            placement_proc["location"] = "Trachea"
+        _normalize_y_stent_location(placement_proc)
         result["airway_stent"] = placement_proc
 
         # Secondary: existing-stent revision documented alongside a new placement.
@@ -2839,6 +3242,8 @@ def extract_airway_stent(note_text: str) -> Dict[str, Any]:
         elif revision_hint:
             proc["action"] = "Revision/Repositioning"
         _apply_brand_type(proc, action=str(proc.get("action") or ""))
+        if planned_only_stent and not has_removal and not revision_hint:
+            return {}
 
         # Existing-stent context (assessment/obstruction/cleaning): capture stent size/location
         # when explicitly documented so downstream evidence/coding has the details.
@@ -2861,12 +3266,15 @@ def extract_airway_stent(note_text: str) -> Dict[str, Any]:
         if not proc.get("location"):
             # Best-effort: infer from the immediate stent mention window (avoid using full-note
             # "last location" which can be polluted by other later airway targets).
-            m = re.search(r"(?i)\bstent\b", preferred_text or "")
+            m = re.search(r"(?i)\bstent\b|\bt[- ]?tube\b", preferred_text or "")
             if m:
                 window = (preferred_text or "")[m.start() : min(len(preferred_text or ""), m.start() + 280)]
                 inferred = _infer_airway_site_last(window)
                 if inferred:
                     proc["location"] = inferred
+        if proc.get("stent_brand") == "Montgomery" and not proc.get("location"):
+            proc["location"] = "Trachea"
+        _normalize_y_stent_location(proc)
 
         result["airway_stent"] = proc
 
@@ -3150,7 +3558,7 @@ def extract_blvr(note_text: str) -> Dict[str, Any]:
         if len(lobes) == 1:
             proc["target_lobe"] = next(iter(lobes))
 
-    if proc.get("procedure_type") == "Valve placement" and not proc.get("number_of_valves"):
+    if proc.get("procedure_type") == "Valve placement":
         word_to_int = {
             "one": 1,
             "two": 2,
@@ -3160,31 +3568,50 @@ def extract_blvr(note_text: str) -> Dict[str, Any]:
             "six": 6,
         }
         count_match = re.search(
-            r"(?i)\b(?P<count>\d{1,2}|one|two|three|four|five|six)\s+valves?\b[^.\n]{0,40}\b(?:deploy(?:ed|ment)?|place(?:d|ment)?|insert(?:ed|ion)?)\b"
-            r"|\b(?:deploy(?:ed|ment)?|place(?:d|ment)?|insert(?:ed|ion)?)\b[^.\n]{0,40}\b(?P<count2>\d{1,2}|one|two|three|four|five|six)\s+valves?\b",
+            r"(?i)\b(?:endobronchial\s+)?valve\s+(?:deployment|placement)\s*x?\s*(?P<count0>\d{1,2})\b"
+            r"|\b(?<!size\s)(?P<count>\d{1,2}|one|two|three|four|five|six)\s+valves\b[^.\n]{0,40}\b(?:deploy(?:ed|ment)?|place(?:d|ment)?|insert(?:ed|ion)?|treat(?:ed|ment)?)\b"
+            r"|\b(?:deploy(?:ed|ment)?|place(?:d|ment)?|insert(?:ed|ion)?|treat(?:ed|ment)?)\b[^.\n]{0,40}\b(?:with\s+)?(?<!size\s)(?P<count2>\d{1,2}|one|two|three|four|five|six)\s+valves\b"
+            r"|\(\s*total(?:ing)?(?:\s+of)?\s*(?P<count3>\d{1,2}|one|two|three|four|five|six)\s+valves?\s*\)"
+            r"|\b(?:for\s+a\s+)?total(?:ing)?(?:\s+of)?\s+(?P<count4>\d{1,2}|one|two|three|four|five|six)\s+valves?\b",
             preferred_text,
         )
+        explicit_count: int | None = None
         if count_match:
-            raw_count = (count_match.group("count") or count_match.group("count2") or "").strip().lower()
+            raw_count = (
+                count_match.group("count0")
+                or count_match.group("count")
+                or count_match.group("count2")
+                or count_match.group("count3")
+                or count_match.group("count4")
+                or ""
+            ).strip().lower()
             try:
-                proc["number_of_valves"] = int(raw_count)
+                explicit_count = int(raw_count)
             except Exception:
-                parsed = word_to_int.get(raw_count)
-                if parsed is not None:
-                    proc["number_of_valves"] = parsed
+                explicit_count = word_to_int.get(raw_count)
+        if explicit_count is not None:
+            try:
+                existing_count = int(proc.get("number_of_valves")) if proc.get("number_of_valves") is not None else None
+            except Exception:
+                existing_count = None
+            if existing_count != explicit_count:
+                proc["number_of_valves"] = explicit_count
 
     if not proc.get("target_lobe"):
         lobes = _extract_lung_locations_from_text(preferred_text)
         if len(lobes) == 1:
             proc["target_lobe"] = lobes[0]
 
-    # Collateral ventilation assessment is schema-constrained (Chartis-focused).
-    # Only populate when Chartis is explicitly mentioned; rely on evidence text to
-    # support 31634 in non-Chartis balloon occlusion workflows.
-    if proc.get("collateral_ventilation_assessment") is None and "chartis" in text_lower:
+    # Collateral ventilation assessment is schema-constrained (Chartis-focused), but
+    # many BLVR notes phrase this as a generic collateral-ventilation assessment
+    # without naming Chartis explicitly.
+    cv_assessment_present = "chartis" in text_lower or bool(
+        re.search(r"(?i)\bcollateral\s+ventilation\s+assessment\b", preferred_text)
+    )
+    if proc.get("collateral_ventilation_assessment") is None and cv_assessment_present:
         if re.search(r"(?i)\bno/minimal\s+collateral\s+ventilation\b", text_lower) or re.search(
             r"(?i)\bno\s+collateral\s+ventilation\b", text_lower
-        ):
+        ) or re.search(r"(?i)\bcollateral\s+ventilation\s+assessment\b[^.\n]{0,40}\b(?:negative|absent)\b", preferred_text):
             proc["collateral_ventilation_assessment"] = "Chartis negative"
         elif re.search(r"(?i)\bcollateral\s+ventilation\b[^.\n]{0,40}\bpresent\b", text_lower):
             proc["collateral_ventilation_assessment"] = "Chartis positive"
@@ -3202,10 +3629,32 @@ def extract_diagnostic_bronchoscopy(note_text: str) -> Dict[str, Any]:
     """
     preferred_text, used_detail_section = _preferred_procedure_detail_text(note_text)
     preferred_text = _strip_cpt_definition_lines(preferred_text)
-    text_lower = (preferred_text or "").lower()
+    fallback_text = _strip_cpt_definition_lines(_maybe_unescape_newlines(note_text or ""))
+    search_text = preferred_text or fallback_text
+    text_lower = (search_text or "").lower()
     full_lower = (note_text or "").lower()
     if not text_lower.strip():
         return {}
+
+    header_31622_cue = bool(
+        re.search(r"(?im)^\s*31622\s*:\s*bronchoscopy\s+only\b", note_text or "")
+        or re.search(
+            r"(?is)\bprocedures?\s+performed\s*:\b[^.\n]{0,240}\b31622\b[^.\n]{0,120}\bbronchoscopy\s+only\b",
+            note_text or "",
+        )
+    )
+    procedure_header_bronchoscopy = bool(
+        re.search(
+            r"(?im)^\s*PROCEDURE(?:S)?\s*:\s*[^.\n]{0,240}\b(?:flexible\s+)?bronchoscopy\b",
+            note_text or "",
+        )
+    )
+    explicit_scope_entry_cue = bool(
+        re.search(
+            r"(?i)\b(?:bronchoscope|bronchoscopy)\b[^.\n]{0,120}\b(?:via|through|introduced|advanced|inserted)\b",
+            note_text or "",
+        )
+    )
 
     # Hard negations: aborted/not performed.
     if re.search(
@@ -3215,7 +3664,9 @@ def extract_diagnostic_bronchoscopy(note_text: str) -> Dict[str, Any]:
         return {}
 
     # Require some evidence of intraprocedural airway inspection / scope use.
-    hits = any(re.search(pat, text_lower, re.IGNORECASE) for pat in DIAGNOSTIC_BRONCHOSCOPY_PATTERNS)
+    hits = any(re.search(pat, text_lower, re.IGNORECASE) for pat in DIAGNOSTIC_BRONCHOSCOPY_PATTERNS) or header_31622_cue or explicit_scope_entry_cue or (
+        procedure_header_bronchoscopy and explicit_scope_entry_cue
+    )
     if not hits:
         return {}
 
@@ -3226,7 +3677,7 @@ def extract_diagnostic_bronchoscopy(note_text: str) -> Dict[str, Any]:
             r"(?i)\b(?:"
             r"the\s+airway\s+was\s+inspected|"
             r"initial\s+airway\s+inspection\s+findings|"
-            r"tracheobronchial\s+tree\s+was\s+examined|"
+            r"tracheobronchial\s+tree\s+(?:was\s+)?(?:examined|inspected)|"
             r"dynamic\s+bronchoscopy|"
             r"dynamic\s+assessment|"
             r"forced\s+expiratory\s+maneuver|"
@@ -3235,20 +3686,20 @@ def extract_diagnostic_bronchoscopy(note_text: str) -> Dict[str, Any]:
             text_lower,
         )
     )
-    header_31622_cue = bool(
-        re.search(r"(?im)^\s*31622\s*:\s*bronchoscopy\s+only\b", note_text or "")
-        or re.search(
-            r"(?is)\bprocedures?\s+performed\s*:\b[^.\n]{0,240}\b31622\b[^.\n]{0,120}\bbronchoscopy\s+only\b",
-            note_text or "",
-        )
-    )
-    if not used_detail_section and not (strong_inspection_cue or header_31622_cue):
+    if not used_detail_section and not (
+        strong_inspection_cue
+        or header_31622_cue
+        or explicit_scope_entry_cue
+        or procedure_header_bronchoscopy
+    ):
         return {}
 
     # Ensure we're in bronchoscopy context, not generic airway exam wording.
     # (The scope context is often in the header/instrument section, while the
     # detail section just says "airway was inspected".)
     if "bronchoscop" not in full_lower and "bronchoscope" not in full_lower:
+        return {}
+    if _is_confirmation_only_trach_exchange_bronchoscopy(note_text):
         return {}
 
     return {"diagnostic_bronchoscopy": {"performed": True}}
@@ -3326,66 +3777,133 @@ def extract_therapeutic_injection(note_text: str) -> Dict[str, Any]:
     if not text.strip():
         return {}
 
+    dose_fragment = r"(?P<num>(?:\d+(?:\.\d+)?|\.\d+))\s*(?P<unit>mg|mcg|ug|g)\b"
+
+    def _normalize_dose_text(raw: str) -> str:
+        match = re.search(dose_fragment, raw or "", re.IGNORECASE)
+        if not match:
+            return (raw or "").strip()
+        number = (match.group("num") or "").strip()
+        if number.startswith("."):
+            number = f"0{number}"
+        unit = (match.group("unit") or "").strip().lower()
+        return f"{number}{unit}"
+
+    def _normalized_dose_attested(source_text: str, raw_dose: str) -> bool:
+        normalized_dose = _normalize_dose_text(raw_dose)
+        if not normalized_dose:
+            return False
+
+        def _collapse_dose_mentions(value: str) -> str:
+            return re.sub(
+                dose_fragment,
+                lambda match: _normalize_dose_text(match.group(0)),
+                value or "",
+                flags=re.IGNORECASE,
+            ).lower()
+
+        return normalized_dose.lower() in _collapse_dose_mentions(source_text)
+
+    def _clean_medication_text(raw: str | None) -> str | None:
+        text_raw = str(raw or "").strip()
+        if not text_raw:
+            return None
+        cleaned = re.sub(r"(?i)\b(?:cc|ml)\s+of\b", "", text_raw)
+        cleaned = re.sub(r"(?i)\b(?:a\s+total\s+of|total\s+of|using|via|with|through)\b", " ", cleaned)
+        cleaned = re.sub(r"(?i)\b(?:gauge|needle|submucosa(?:l)?|we|then|into|the|of)\b", " ", cleaned)
+        cleaned = re.sub(r"\s+", " ", cleaned).strip(" ,;:-")
+        return cleaned or None
+
+    def _infer_airway_location(raw: str) -> str | None:
+        window = raw or ""
+        if re.search(r"(?i)\bdistal\s+trachea\b", window):
+            return "Distal trachea"
+        if re.search(r"(?i)\btrachea(?:l)?\b", window):
+            return "Trachea"
+        if re.search(r"(?i)\bcarina\b", window):
+            return "Carina"
+        if re.search(r"(?i)\b(?:right\s+main(?:\s*|-)?stem|rms)\b", window):
+            return "Right mainstem"
+        if re.search(r"(?i)\b(?:left\s+main(?:\s*|-)?stem|lms)\b", window):
+            return "Left mainstem"
+        if re.search(r"(?i)\bbronchus\s+intermedius\b", window):
+            return "Bronchus intermedius"
+        return None
+
     instill_re = re.compile(r"(?i)\b(?:instill(?:ed|ation)?|inject(?:ed|ion)?)\b")
     med_dose_re = re.compile(
         r"(?i)\b(?P<med>[A-Za-z][A-Za-z0-9\-]*(?:\s+[A-Za-z][A-Za-z0-9\-]*)*)\s+"
-        r"(?P<dose>\d{1,4}\s*(?:mg|mcg|ug|g))\b"
+        rf"(?P<dose>{dose_fragment})"
     )
     dose_med_re = re.compile(
-        r"(?i)\b(?P<dose>\d{1,4}\s*(?:mg|mcg|ug|g))\s+(?P<med>[A-Za-z][A-Za-z0-9\-]*(?:\s+[A-Za-z][A-Za-z0-9\-]*)*)\b"
+        rf"(?i)\b(?P<dose>{dose_fragment})\s+(?P<med>[A-Za-z][A-Za-z0-9\-]*(?:\s+[A-Za-z][A-Za-z0-9\-]*)*)\b"
     )
-    vol_re = re.compile(r"(?i)\b(?P<vol>\d{1,4})\s*(?:cc|ml)\b")
+    vol_re = re.compile(r"(?i)\b(?P<vol>\d{1,4}(?:\.\d+)?)\s*(?:cc|ml)\b")
     exclude_re = re.compile(r"(?i)\b(?:lidocaine|xylocaine|saline|normal\s+saline|ns)\b")
     bal_context_re = re.compile(r"(?i)\b(?:bal|bronchoalveolar|bronchial\s+alveolar|lavage)\b")
     med_fallback_re = re.compile(
-        r"(?i)\b(?:amphotericin|antibiotic|antifungal|gentamicin|tobramycin|vancomycin|"
-        r"tranexamic\s+acid|txa|epinephrine)\b"
+        r"(?i)\b(?:amphotericin(?:\s+b)?|antibiotic|antifungal|gentamicin|tobramycin|vancomycin|"
+        r"tranexamic\s+acid|txa|epinephrine|kenalog|triamcinolone|dexamethasone|methylprednisolone|"
+        r"solu-?medrol|depo-?medrol|steroid|corticosteroid)\b"
+    )
+    hemostatic_med_re = re.compile(r"(?i)\b(?:tranexamic\s+acid|txa|epinephrine|epi)\b")
+    hemostatic_context_re = re.compile(
+        r"(?i)\b(?:hemostas|bleed(?:ing)?|ooz(?:e|ing)|hemoptysis|vasoconstrictor|control(?:led)?\s+bleeding)\b"
+    )
+    submucosal_context_re = re.compile(r"(?i)\b(?:submucosa(?:l)?|intralesional)\b")
+    anti_inflammatory_med_re = re.compile(
+        r"(?i)\b(?:kenalog|triamcinolone|dexamethasone|methylprednisolone|solu-?medrol|depo-?medrol|steroid|corticosteroid)\b"
     )
 
     candidates: list[dict[str, Any]] = []
     for sentence in re.split(r"(?:\n+|(?<=[.!?])\s+)", text):
         if not sentence or not instill_re.search(sentence):
             continue
-        if exclude_re.search(sentence) and not re.search(r"(?i)\b(?:amphotericin|antibiot|antifungal)\b", sentence):
-            # Likely topical anesthesia or lavage-only context.
+        specific_med_match = med_fallback_re.search(sentence)
+        if exclude_re.search(sentence) and specific_med_match is None:
             continue
 
         med = None
         dose = None
         m_med = med_dose_re.search(sentence)
         if m_med:
-            med = (m_med.group("med") or "").strip()
-            dose = (m_med.group("dose") or "").strip()
+            med = _clean_medication_text(m_med.group("med"))
+            dose = _normalize_dose_text((m_med.group("dose") or "").strip())
         else:
             m_rev = dose_med_re.search(sentence)
             if m_rev:
-                med = (m_rev.group("med") or "").strip()
-                dose = (m_rev.group("dose") or "").strip()
+                med = _clean_medication_text(m_rev.group("med"))
+                dose = _normalize_dose_text((m_rev.group("dose") or "").strip())
 
-            # Fallback: medication name without explicit dose (e.g., "amphotericin was instilled")
-            m_simple = med_fallback_re.search(sentence)
-            if m_simple:
-                med = (m_simple.group(0) or "").strip()
+        if specific_med_match is not None:
+            med = (specific_med_match.group(0) or "").strip()
+
+        if dose and not _normalized_dose_attested(sentence, dose):
+            dose = None
 
         vol_match = vol_re.search(sentence)
         volume_ml: float | None = None
         if vol_match:
             try:
-                volume_ml = float(int(vol_match.group("vol")))
+                volume_ml = float(vol_match.group("vol"))
             except Exception:
                 volume_ml = None
 
-        # Avoid misclassifying BAL instillation volumes as therapeutic injections
-        # unless a medication/dose is explicitly documented.
         if bal_context_re.search(sentence) and not (med or dose):
             continue
-
-        # Guardrail: volume-only instillation sentences are usually BAL/flush/hemostasis
-        # artifacts and should not trigger 31573 without an explicit medication/dose cue.
         if not (med or dose):
             continue
 
+        lower_sentence = sentence.lower()
+        if hemostatic_med_re.search(lower_sentence) and hemostatic_context_re.search(lower_sentence):
+            continue
+
         proc: dict[str, Any] = {"performed": True}
+        eligible = True
+        if anti_inflammatory_med_re.search(lower_sentence) and submucosal_context_re.search(lower_sentence):
+            eligible = False
+        proc["cpt31573_eligible"] = eligible
+
         if med:
             proc["medication"] = med
         if dose:
@@ -3395,6 +3913,10 @@ def extract_therapeutic_injection(note_text: str) -> Dict[str, Any]:
         locations = _extract_lung_locations_from_text(sentence)
         if locations:
             proc["location"] = locations[0]
+        else:
+            airway_loc = _infer_airway_location(sentence)
+            if airway_loc:
+                proc["location"] = airway_loc
         candidates.append(proc)
 
     if not candidates:
@@ -3403,11 +3925,11 @@ def extract_therapeutic_injection(note_text: str) -> Dict[str, Any]:
     if len(candidates) == 1:
         return {"therapeutic_injection": candidates[0]}
 
-    # Merge multiple instillations into a single summary object.
     meds: list[str] = []
     doses: list[str] = []
     volumes: list[float] = []
     locations: list[str] = []
+    eligibilities: list[bool | None] = []
     for cand in candidates:
         med = cand.get("medication")
         if isinstance(med, str) and med and med not in meds:
@@ -3421,8 +3943,13 @@ def extract_therapeutic_injection(note_text: str) -> Dict[str, Any]:
         loc = cand.get("location")
         if isinstance(loc, str) and loc:
             locations.append(loc)
+        eligibilities.append(cand.get("cpt31573_eligible") if isinstance(cand, dict) else None)
 
     merged: dict[str, Any] = {"performed": True}
+    if any(flag is True for flag in eligibilities):
+        merged["cpt31573_eligible"] = True
+    elif any(flag is False for flag in eligibilities):
+        merged["cpt31573_eligible"] = False
     if meds:
         merged["medication"] = "; ".join(meds)
     if doses:
@@ -3430,8 +3957,7 @@ def extract_therapeutic_injection(note_text: str) -> Dict[str, Any]:
     if len(set(volumes)) == 1:
         merged["volume_ml"] = volumes[0]
     if locations:
-        # Prefer a single consistent location if available.
-        unique_locs = []
+        unique_locs: list[str] = []
         for loc in locations:
             if loc not in unique_locs:
                 unique_locs.append(loc)
@@ -3439,8 +3965,6 @@ def extract_therapeutic_injection(note_text: str) -> Dict[str, Any]:
             merged["location"] = unique_locs[0]
 
     return {"therapeutic_injection": merged}
-
-    return {}
 
 
 def extract_endobronchial_biopsy(note_text: str) -> Dict[str, Any]:
@@ -3456,9 +3980,47 @@ def extract_endobronchial_biopsy(note_text: str) -> Dict[str, Any]:
     if not text_lower.strip():
         return {}
 
-    explicit_endobronchial_biopsy = bool(
-        re.search(r"(?i)\bendobronchial\s+biops|\bebbx\b", text)
-    )
+    def _header_or_menu_context(snippet: str) -> bool:
+        return bool(
+            re.search(
+                r"(?i)\b(?:apply\s+to|cpt|modifier\s*22|unusual\s+procedure|substantially\s+greater\s+work|include\s+codes?)\b",
+                snippet or "",
+            )
+        )
+
+    def _has_narrative_biopsy_action(snippet: str) -> bool:
+        return bool(
+            re.search(
+                r"(?i)\b(?:forceps\s+biops(?:y|ies)|endobronchial\s+biops(?:y|ies)|ebbx|biops(?:y|ies))\b"
+                r"[^.\n;]{0,80}\b(?:obtained|taken|collected|performed|sent)\b"
+                r"|\b(?:obtained|taken|collected|performed)\b[^.\n;]{0,80}\b(?:biops(?:y|ies)|specimens?|samples?)\b"
+                r"|\bforceps\b[^.\n;]{0,80}\b(?:obtained|taken|collected)\b",
+                snippet or "",
+            )
+        )
+
+    def _has_airway_or_lesion_context(snippet: str) -> bool:
+        return bool(
+            re.search(
+                r"(?i)\b(?:endobronch|airway|trachea|carina|mainstem|bronchus\s+intermedius|mucosa|lesion|mass|tumou?r|granulation|mycetoma|cavity)\b",
+                snippet or "",
+            )
+        )
+
+    explicit_endobronchial_biopsy = False
+    explicit_biopsy_pattern = r"\bendobronchial\s+biops(?:y|ies|ied)?\b|\bebbx\b"
+    for explicit_match in re.finditer(explicit_biopsy_pattern, text, re.IGNORECASE):
+        sentence = _sentence_window(text, int(explicit_match.start()), int(explicit_match.end()))
+        if is_negated(int(explicit_match.start()), int(explicit_match.end()), text):
+            continue
+        if _sentence_has_post_negation(sentence, explicit_biopsy_pattern):
+            continue
+        if _header_or_menu_context(sentence) and not (
+            _has_narrative_biopsy_action(sentence) and _has_airway_or_lesion_context(sentence)
+        ):
+            continue
+        explicit_endobronchial_biopsy = True
+        break
     peripheral_workflow = bool(
         re.search(
             r"(?i)\b(?:peripheral|nodule|lung\s+(?:nodule|lesion|mass)|pulmonary\s+(?:nodule|lesion|mass)|"
@@ -3470,7 +4032,7 @@ def extract_endobronchial_biopsy(note_text: str) -> Dict[str, Any]:
     )
     no_endobronchial_disease = bool(
         re.search(
-            r"(?i)\bno\s+endobronchial\s+(?:lesions?|tumou?rs?|mass(?:es)?)\b",
+            r"(?i)\b(?:no|without)\s+(?:focal\s+)?endobronchial\s+(?:lesions?|tumou?rs?|mass(?:es)?|abnormalit(?:y|ies)|disease)\b",
             text,
         )
     )
@@ -3514,6 +4076,14 @@ def extract_endobronchial_biopsy(note_text: str) -> Dict[str, Any]:
         sentence = re.sub(r"\s+", " ", (sentence_text or "").strip())
         if not sentence:
             return []
+        airway_site_match = re.search(
+            r"(?i)\b(?:at|in|on)\s+(?P<site>[^.\n;]{0,80}?\b(?:carina|trachea|mainstem|bronchus\s+intermedius)\b(?:\s*\([^)]*\))?)",
+            sentence,
+        )
+        if airway_site_match:
+            site = re.sub(r"\s+", " ", (airway_site_match.group("site") or "").strip(" ,;:-"))
+            if site:
+                return [site]
         match = re.search(r"(?i)\bwas\s+performed\s+(?:at|in|on)\s+(?P<loc>[^.\n;]+)", sentence)
         if not match:
             return []
@@ -3568,6 +4138,11 @@ def extract_endobronchial_biopsy(note_text: str) -> Dict[str, Any]:
         for match in re.finditer(pattern, text_lower, re.IGNORECASE):
             if not used_detail_section and narrative_start > 0 and int(match.start()) < narrative_start:
                 continue
+            sentence = _sentence_window(text, int(match.start()), int(match.end()))
+            if is_negated(int(match.start()), int(match.end()), text):
+                continue
+            if _sentence_has_post_negation(sentence, explicit_biopsy_pattern):
+                continue
             negation_check = r"\b(?:no|not|without|declined|deferred)\b[^.\n]{0,60}" + pattern
             if re.search(negation_check, text_lower, re.IGNORECASE):
                 continue
@@ -3583,6 +4158,10 @@ def extract_endobronchial_biopsy(note_text: str) -> Dict[str, Any]:
             clause_end = min(right_candidates) if right_candidates else len(text)
             clause = text[clause_start:clause_end]
             clause_lower = clause.lower()
+            if _header_or_menu_context(clause) and not (
+                _has_narrative_biopsy_action(clause) and _has_airway_or_lesion_context(clause)
+            ):
+                continue
 
             # Guardrail: avoid classifying peripheral/radial/fluoro lesion sampling
             # as endobronchial biopsy unless there is explicit airway context.
@@ -3598,6 +4177,10 @@ def extract_endobronchial_biopsy(note_text: str) -> Dict[str, Any]:
                     clause_lower,
                 )
             )
+            if not _has_narrative_biopsy_action(clause):
+                continue
+            if not (airway_context or _has_airway_or_lesion_context(clause)):
+                continue
             if peripheral_context and not airway_context:
                 continue
 
@@ -3648,6 +4231,30 @@ def extract_radial_ebus(note_text: str) -> Dict[str, Any]:
             negation_check = r"\b(?:no|not|without|declined|deferred)\b[^.\n]{0,60}" + pattern
             if re.search(negation_check, text_lower, re.IGNORECASE):
                 continue
+            local = text_lower[max(0, match.start() - 220) : min(len(text_lower), match.end() + 320)]
+            raw_target_context = bool(
+                re.search(
+                    r"(?i)\b(?:peripheral|nodule|lesion|mass|target|parenchym|pulmonary|sampling|biops(?:y|ies)|tbna|brushings?)\b",
+                    local,
+                )
+            )
+            negated_target_context = bool(
+                re.search(
+                    r"(?i)\b(?:no|not|without|unable\s+to|could\s+not|did\s+not)\b"
+                    r"[^.\n]{0,120}\b(?:peripheral|nodule|lesion|mass|target|localiz(?:e|ation)|sampling|biops(?:y|ies)|tbna|brushings?)\b",
+                    local,
+                )
+            )
+            peripheral_target_context = raw_target_context and not negated_target_context
+            anatomy_mapping_only = bool(
+                re.search(
+                    r"(?i)\b(?:vascular|vasculature|vessel|artery|vein|airway\s+anatomy|anatomic(?:al)?\s+mapping|mapping|stenos(?:is|ed)|stent)\b",
+                    local,
+                )
+                and not peripheral_target_context
+            )
+            if anatomy_mapping_only or negated_target_context:
+                continue
             proc: dict[str, Any] = {"performed": True}
 
             # Probe position/view (explicit-only; do not infer from tool lists).
@@ -3691,6 +4298,96 @@ def extract_eus_b(note_text: str) -> Dict[str, Any]:
     return {}
 
 
+def _has_positive_bronchoscopic_ablation_context(text: str) -> bool:
+    if not text:
+        return False
+
+    for match in re.finditer(
+        r"\b(?:bronchoscop|bronchoscope|navigation|navigational|robotic|ion\b|monarch|galaxy|"
+        r"radial\s+(?:ebus|probe)|tool[-\s]?in[-\s]?lesion|working\s+channel|cbct|cone\s*beam)\b",
+        text,
+        re.IGNORECASE,
+    ):
+        lead = text[max(0, match.start() - 40) : match.start()]
+        if re.search(r"(?i)\b(?:no|not|without|declined|deferred)\b[^.\n]{0,24}$", lead):
+            continue
+        return True
+    return False
+
+
+def _is_percutaneous_nonbronchoscopic_ablation_context(text: str) -> bool:
+    if not text:
+        return False
+
+    percutaneous_context = bool(
+        re.search(
+            r"\b(?:ct[-\s]?guided|computed\s+tomography|transthoracic|percutaneous|coaxial|chest\s+wall|"
+            r"pleural[-\s]?based|microwave\s+antenna|ablation\s+antenna|ablation\s+probe|"
+            r"electrode\s+placement|needle\s+path)\b",
+            text,
+            re.IGNORECASE,
+        )
+    )
+    # A cryoprobe alone is not enough to imply nonbronchoscopic ablation because it is
+    # also used bronchoscopically for therapeutic cryotherapy and diagnostic cryobiopsy.
+    cryoprobe_percutaneous_context = bool(
+        re.search(r"\b(?:cryo\s*probe|cryo(?:genic)?\s+probe)\b", text, re.IGNORECASE)
+        and re.search(
+            r"\b(?:ct[-\s]?guided|computed\s+tomography|transthoracic|percutaneous|coaxial|"
+            r"chest\s+wall|pleural[-\s]?based|ablation|needle\s+path)\b",
+            text,
+            re.IGNORECASE,
+        )
+    )
+    return (percutaneous_context or cryoprobe_percutaneous_context) and not _has_positive_bronchoscopic_ablation_context(text)
+
+
+def _has_populated_cryotherapy_table_row(text: str) -> bool:
+    if not text:
+        return False
+
+    for line in _maybe_unescape_newlines(text).splitlines():
+        if not re.search(r"(?i)\b(?:cryoprobe|cryospray|cryotherap(?:y|ies))\b", line):
+            continue
+        if not re.search(r"\t| {2,}", line):
+            continue
+        if re.search(r"(?i)\b(?:biops(?:y|ies|ied)|specimen(?:s)?|patholog(?:y|ic)|samples?)\b", line):
+            continue
+        if not re.search(
+            r"(?i)\b(?:treat(?:ed|ment)?|freeze|thaw|cycle(?:s)?|ablat(?:ed|ion)?|destroy(?:ed|ing)?|"
+            r"debulk(?:ed|ing)?|recanaliz(?:ed|ation)?)\b",
+            line,
+        ):
+            continue
+        return True
+    return False
+
+
+def _has_populated_mechanical_debulking_table_row(text: str) -> bool:
+    if not text:
+        return False
+
+    for line in _maybe_unescape_newlines(text).splitlines():
+        if not re.search(r"\t| {2,}", line):
+            continue
+        if not re.search(r"(?i)\b(?:mechanical|alligator\s+forceps|forceps|snare|microdebrider)\b", line):
+            continue
+        if re.search(r"(?i)\b(?:biops(?:y|ies|ied)|specimen(?:s)?|patholog(?:y|ic)|samples?)\b", line):
+            continue
+        if not re.search(
+            r"(?i)\b(?:remov(?:ed|al)?|excise(?:d|ion)?|debulk(?:ed|ing)?|resect(?:ed|ion)?|core\s*out)\b",
+            line,
+        ):
+            continue
+        if not re.search(
+            r"(?i)\b(?:granulation|tumou?r|lesion|mass|obstruct|stenos|fungating|recanaliz|airway|bronch)\w*\b",
+            line,
+        ):
+            continue
+        return True
+    return False
+
+
 def extract_cryotherapy(note_text: str) -> Dict[str, Any]:
     """Extract cryotherapy (tumor destruction/stenosis relief) indicator."""
     preferred_text, used_detail = _preferred_procedure_detail_text(note_text)
@@ -3698,7 +4395,16 @@ def extract_cryotherapy(note_text: str) -> Dict[str, Any]:
         preferred_text = _strip_cpt_definition_lines(preferred_text)
     else:
         preferred_text = _strip_cpt_definition_lines(preferred_text)
+    if _has_populated_cryotherapy_table_row(preferred_text):
+        proc = {"performed": True}
+        location = _extract_airway_location_summary(preferred_text)
+        if location:
+            proc["location"] = location
+        return {"cryotherapy": proc}
+    if _is_percutaneous_nonbronchoscopic_ablation_context(preferred_text):
+        return {}
     text_lower = preferred_text.lower()
+    location_windows: list[str] = []
     for pattern in CRYOTHERAPY_PATTERNS:
         for match in re.finditer(pattern, text_lower, re.IGNORECASE):
             negation_check = r"\b(?:no|not|without|declined|deferred)\b[^.\n]{0,60}" + pattern
@@ -3716,7 +4422,14 @@ def extract_cryotherapy(note_text: str) -> Dict[str, Any]:
             )
             if planning_context:
                 continue
-            return {"cryotherapy": {"performed": True}}
+            location_windows.append(
+                preferred_text[max(0, match.start() - 220) : min(len(preferred_text), match.end() + 260)]
+            )
+            proc = {"performed": True}
+            location = _extract_airway_location_summary(" ".join(location_windows))
+            if location:
+                proc["location"] = location
+            return {"cryotherapy": proc}
 
     if re.search(CRYOPROBE_PATTERN, text_lower, re.IGNORECASE) and not re.search(
         CRYOBIOPSY_PATTERN, text_lower, re.IGNORECASE
@@ -3751,6 +4464,7 @@ def extract_cryotherapy(note_text: str) -> Dict[str, Any]:
 
             if therapeutic_context:
                 saw_therapeutic = True
+                location_windows.append(local)
             if biopsy_context and not therapeutic_context:
                 saw_biopsy_only = True
 
@@ -3760,7 +4474,11 @@ def extract_cryotherapy(note_text: str) -> Dict[str, Any]:
         # cryobiopsy workflows; do not assert cryotherapy unless therapeutic context is present.
         if not saw_therapeutic:
             return {}
-        return {"cryotherapy": {"performed": True}}
+        proc = {"performed": True}
+        location = _extract_airway_location_summary(" ".join(location_windows) or preferred_text)
+        if location:
+            proc["location"] = location
+        return {"cryotherapy": proc}
 
     return {}
 
@@ -3813,6 +4531,153 @@ def extract_navigational_bronchoscopy(note_text: str) -> Dict[str, Any]:
                 continue
             return {"navigational_bronchoscopy": {"performed": True}}
     return {}
+
+
+def extract_navigation_imaging_equipment(note_text: str) -> Dict[str, Any]:
+    """Extract navigation-adjacent imaging/equipment flags used for coding."""
+    preferred_text, _used_detail = _preferred_procedure_detail_text(note_text)
+    preferred_text = _strip_cpt_definition_lines(preferred_text)
+    text = preferred_text or ""
+    if not text.strip():
+        return {}
+
+    equipment: dict[str, Any] = {}
+
+    platform_raw = None
+    if re.search(r"(?i)\bintuitive\s+ion\b|\bion\b", text):
+        platform_raw = "Ion"
+    elif re.search(r"(?i)\bmonarch\b", text):
+        platform_raw = "Monarch"
+    elif re.search(r"(?i)\bgalaxy\b|\bnoah\b", text):
+        platform_raw = "Galaxy"
+    elif re.search(r"(?i)\bsuperdimension\b|\bEMN\b|\belectromagnetic\s+navigation\b", text):
+        platform_raw = "superDimension"
+    elif re.search(r"(?i)\billumisite\b", text):
+        platform_raw = "ILLUMISITE"
+    elif re.search(r"(?i)\bspin(?:drive)?\b", text):
+        platform_raw = "SPiN"
+    elif re.search(r"(?i)\blungvision\b", text):
+        platform_raw = "LungVision"
+    elif re.search(r"(?i)\barchimedes\b", text):
+        platform_raw = "ARCHIMEDES"
+
+    if platform_raw:
+        try:
+            from app.registry.postprocess import normalize_navigation_platform
+
+            normalized = normalize_navigation_platform(platform_raw)
+        except Exception:
+            normalized = platform_raw
+        if normalized:
+            equipment["navigation_platform"] = normalized
+
+    if re.search(
+        r"(?i)\bcone[-\s]?beam\s+ct\b|\bcbct\b|\bcios\b|\bspin\s+system\b|\blow\s+dose\s+spin\b",
+        text,
+    ):
+        equipment["cbct_used"] = True
+
+    if re.search(
+        r"(?i)\b3[-\s]?d\s+(?:reconstruction|reconstructions|rendering)\b|\b3d\s+(?:reconstruction|rendering)\b",
+        text,
+    ):
+        equipment["augmented_fluoroscopy"] = True
+
+    if equipment.get("cbct_used") is True or re.search(
+        r"(?i)\bfluoroscopy\b|\bunder\s+fluoroscopy\s+guidance\b",
+        text,
+    ):
+        equipment["fluoroscopy_used"] = True
+
+    return {"equipment": equipment} if equipment else {}
+
+
+def extract_fiducial_placement(note_text: str) -> Dict[str, Any]:
+    """Extract first-class fiducial placement when explicitly documented."""
+    text = _strip_cpt_definition_lines(_preferred_procedure_detail_text(note_text)[0] or note_text or "")
+    if not text.strip():
+        return {}
+    if not re.search(r"(?i)\bfiducial(?:\s+marker)?s?\b", text):
+        return {}
+    if re.search(r"(?i)\b(?:no|not|without|declined|deferred)\b[^.\n]{0,80}\bfiducial(?:\s+marker)?s?\b", text):
+        return {}
+    if not re.search(r"(?i)\b(?:place(?:d|ment)?|deploy(?:ed|ment)?|insert(?:ed|ion)?)\b", text):
+        return {}
+    return {"fiducial_placement": {"performed": True}}
+
+
+def extract_dye_marker_placement(note_text: str) -> Dict[str, Any]:
+    """Extract bronchoscopic dye-marking/localization procedures."""
+    text = _strip_cpt_definition_lines(_preferred_procedure_detail_text(note_text)[0] or note_text or "")
+    text_lower = text.lower()
+    if not text_lower.strip():
+        return {}
+    if not re.search(
+        r"(?i)\b(?:icg|indocyanine\s+green|methylene\s+blue|isosulfan\s+blue|dye)\b",
+        text,
+    ):
+        return {}
+    if not re.search(
+        r"(?i)\b(?:inject(?:ed|ion)?|instill(?:ed|ation)?|mark(?:ed|ing)?|tattoo(?:ed|ing)?)\b",
+        text,
+    ):
+        return {}
+    if not re.search(
+        r"(?i)\b(?:bronchoscop|navigat(?:ion|ional)|robotic|ion\b|radial\s+ebus|fluoroscopy)\b",
+        text,
+    ):
+        return {}
+
+    proc: dict[str, Any] = {"performed": True}
+    if re.search(r"(?i)\b(?:icg|indocyanine\s+green)\b", text):
+        proc["agent"] = "Indocyanine green"
+    elif re.search(r"(?i)\bmethylene\s+blue\b", text):
+        proc["agent"] = "Methylene blue"
+    elif re.search(r"(?i)\bisosulfan\s+blue\b", text):
+        proc["agent"] = "Isosulfan blue"
+    else:
+        proc["agent"] = "Other"
+
+    vol_match = re.search(
+        r"(?i)\b(?P<vol>\d+(?:\.\d+)?)\s*(?:ml|cc)\b[^.\n]{0,80}\b(?:icg|indocyanine\s+green|methylene\s+blue|isosulfan\s+blue|dye)\b"
+        r"|\b(?:icg|indocyanine\s+green|methylene\s+blue|isosulfan\s+blue|dye)\b[^.\n]{0,80}\b(?P<vol2>\d+(?:\.\d+)?)\s*(?:ml|cc)\b",
+        text,
+    )
+    raw_volume = vol_match.group("vol") if vol_match else None
+    if vol_match and raw_volume is None:
+        raw_volume = vol_match.group("vol2")
+    if raw_volume:
+        try:
+            proc["volume_ml"] = float(raw_volume)
+        except Exception:
+            pass
+
+    location = _extract_airway_location_summary(text)
+    if not location:
+        lung_locations = _extract_lung_locations_from_text(text)
+        if lung_locations:
+            location = ", ".join(lung_locations)
+    if location:
+        proc["target_location"] = location
+
+    return {"dye_marker_placement": proc}
+
+
+def extract_peg_insertion(note_text: str) -> Dict[str, Any]:
+    """Extract PEG placement when explicitly documented in combined cases."""
+    text = _strip_cpt_definition_lines(_preferred_procedure_detail_text(note_text)[0] or note_text or "")
+    if not text.strip():
+        return {}
+    if re.search(
+        r"(?i)\b(?:no|not|without|declined|deferred)\b[^.\n]{0,80}\b(?:peg|percutaneous\s+endoscopic\s+gastrostomy)\b",
+        text,
+    ):
+        return {}
+    if not re.search(r"(?i)\b(?:peg|percutaneous\s+endoscopic\s+gastrostomy)\b", text):
+        return {}
+    if not re.search(r"(?i)\b(?:place(?:d|ment)?|insert(?:ed|ion)?|performed)\b", text):
+        return {}
+    return {"peg_insertion": {"performed": True}}
 
 
 def extract_tbna_conventional(note_text: str) -> Dict[str, Any]:
@@ -4003,6 +4868,7 @@ def extract_linear_ebus(note_text: str) -> Dict[str, Any]:
     text_lower = (preferred_text or "").lower()
     if not text_lower.strip():
         return {}
+    text_stations = _extract_ln_stations_from_text(_mask_inline_eus_b_sampling(preferred_text))
 
     # Avoid misclassifying radial-only EBUS notes as linear EBUS.
     radial_only = bool(
@@ -4013,10 +4879,72 @@ def extract_linear_ebus(note_text: str) -> Dict[str, Any]:
         )
     )
 
-    stations = _extract_ln_stations_from_text(preferred_text)
+    detail_rows: list[dict[str, Any]] = []
+    try:
+        from app.registry.processing.linear_ebus_stations_detail import (
+            extract_linear_ebus_stations_detail,
+        )
+
+        parsed_rows = extract_linear_ebus_stations_detail(preferred_text or note_text)
+        if isinstance(parsed_rows, list):
+            detail_rows = [row for row in parsed_rows if isinstance(row, dict)]
+    except Exception:
+        detail_rows = []
+
+    station_token_re = re.compile(
+        r"(?i)^(?:2R|2L|3P|4R|4L|5|7|8|9|10R|10L|11R(?:S|I)?|11L(?:S|I)?|12R|12L)$"
+    )
+
+    detail_station_rows: list[dict[str, Any]] = []
+    detail_sampled_stations: list[str] = []
+    detail_has_elastography = False
+    detail_patterns: list[str] = []
+    for row in detail_rows:
+        station = str(row.get("station") or "").strip()
+        if not station or not station_token_re.match(station):
+            continue
+        detail_station_rows.append(row)
+
+        sampled = row.get("sampled") is True
+        passes = row.get("number_of_passes")
+        try:
+            passes_int = int(passes) if passes not in (None, "") else 0
+        except Exception:
+            passes_int = 0
+        if sampled or passes_int > 0:
+            if station not in detail_sampled_stations:
+                detail_sampled_stations.append(station)
+
+        pattern = row.get("elastography_pattern")
+        if row.get("elastography_performed") is True or (isinstance(pattern, str) and pattern.strip()):
+            detail_has_elastography = True
+        if isinstance(pattern, str):
+            cleaned = pattern.strip()
+            if cleaned and cleaned not in detail_patterns:
+                detail_patterns.append(cleaned)
+
+    if detail_station_rows:
+        payload: dict[str, Any] = {"performed": True}
+        combined_stations: list[str] = []
+        for station in list(detail_sampled_stations) + list(text_stations):
+            cleaned = str(station or "").strip()
+            if cleaned and cleaned not in combined_stations:
+                combined_stations.append(cleaned)
+        if combined_stations:
+            payload["stations_sampled"] = combined_stations
+        if detail_has_elastography or "elastograph" in text_lower:
+            payload["elastography_used"] = True
+        if len(detail_patterns) == 1:
+            payload["elastography_pattern"] = detail_patterns[0]
+        return {"linear_ebus": payload}
+
+    stations = text_stations
 
     if stations and re.search(r"\b(?:ebus|endobronchial\s+ultrasound)\b", text_lower, re.IGNORECASE):
-        return {"linear_ebus": {"performed": True, "stations_sampled": stations}}
+        payload: dict[str, Any] = {"performed": True, "stations_sampled": stations}
+        if "elastograph" in text_lower:
+            payload["elastography_used"] = True
+        return {"linear_ebus": payload}
 
     for pattern in LINEAR_EBUS_PATTERNS:
         if re.search(pattern, text_lower, re.IGNORECASE):
@@ -4028,6 +4956,8 @@ def extract_linear_ebus(note_text: str) -> Dict[str, Any]:
             payload: dict[str, Any] = {"performed": True}
             if stations:
                 payload["stations_sampled"] = stations
+            if "elastograph" in text_lower:
+                payload["elastography_used"] = True
             return {"linear_ebus": payload}
 
     return {}
@@ -4091,9 +5021,49 @@ def _extract_lung_locations_from_text(text: str) -> list[str]:
     return locations
 
 
+def _extract_airway_location_summary(text: str) -> str | None:
+    """Return a coarse airway location summary preserving central-airway sites."""
+    raw = text or ""
+    if not raw.strip():
+        return None
+
+    lowered = raw.lower()
+    locations: list[str] = []
+
+    def add(value: str) -> None:
+        if value and value not in locations:
+            locations.append(value)
+
+    if re.search(r"(?i)\btrachea(?:l)?\b", raw):
+        add("Trachea")
+    if re.search(r"(?i)\b(?:carina|tracheobronchial|y-?\s*stent)\b", raw):
+        add("Carina")
+    if re.search(r"(?i)\b(?:right\s+main(?:\s*|-)?stem|rms)\b", raw):
+        add("RMS")
+    if re.search(r"(?i)\b(?:left\s+main(?:\s*|-)?stem|lms)\b", raw):
+        add("LMS")
+    if re.search(r"(?i)\b(?:bronchus\s+intermedius|\bbi\b)\b", raw):
+        add("Bronchus Intermedius")
+
+    for location in _extract_lung_locations_from_text(raw):
+        add(location)
+
+    if not locations:
+        if "central airway" in lowered:
+            add("Central airway")
+        elif "airway" in lowered:
+            add("Airway")
+
+    return ", ".join(locations) if locations else None
+
+
 def extract_brushings(note_text: str) -> Dict[str, Any]:
     """Extract bronchial brushings indicator."""
-    text_lower = (note_text or "").lower()
+    preferred_text, _used_detail = _preferred_procedure_detail_text(note_text)
+    text = preferred_text or note_text or ""
+    text_lower = text.lower()
+    brushings_pattern = r"\b(?:cytology\s+)?brushings?\b"
+    fallback_brushings: dict[str, Any] | None = None
     for pattern in BRUSHINGS_PATTERNS:
         for match in re.finditer(pattern, text_lower, re.IGNORECASE):
             prefix = text_lower[max(0, match.start() - 120) : match.start()]
@@ -4102,16 +5072,33 @@ def extract_brushings(note_text: str) -> Dict[str, Any]:
                 prefix = prefix[boundary + 1 :]
             if re.search(r"\b(?:no|not|without|declined|deferred)\b", prefix, re.IGNORECASE):
                 continue
+            sentence = _sentence_window(text, int(match.start()), int(match.end()))
+            if _sentence_has_post_negation(sentence, brushings_pattern):
+                continue
+            if re.search(
+                r"(?i)\b(?:daily\s+)?brushing\s+protocol\b|\bpipe\s+cleaner\b|\breinstruct\w*\b|\bhygiene\b",
+                sentence,
+            ):
+                continue
+            if re.search(r"(?i)\b(?:montgomery\s+)?t[- ]?tube\b|\bsidearm\b", text) and re.search(
+                r"(?i)\b(?:daily\s+)?brushing\b",
+                sentence,
+            ):
+                continue
 
             brushings: dict[str, Any] = {"performed": True}
-            window_start = max(0, match.start() - 50)
-            window_end = min(len(note_text), match.end() + 50)
-            locations = _extract_lung_locations_from_text(note_text[window_start:window_end])
+            locations = _extract_lung_locations_from_text(sentence)
+            if not locations:
+                window_start = max(0, match.start() - 50)
+                window_end = min(len(text), match.end() + 80)
+                locations = _extract_lung_locations_from_text(text[window_start:window_end])
             if locations:
                 brushings["locations"] = locations
+                return {"brushings": brushings}
 
-            return {"brushings": brushings}
-    return {}
+            if fallback_brushings is None:
+                fallback_brushings = brushings
+    return {"brushings": fallback_brushings} if fallback_brushings else {}
 
 
 def extract_mechanical_debulking(note_text: str) -> Dict[str, Any]:
@@ -4125,6 +5112,38 @@ def extract_mechanical_debulking(note_text: str) -> Dict[str, Any]:
     text_lower = text.lower()
     if not text_lower.strip():
         return {}
+
+    def _infer_material_type(raw: str) -> str:
+        window = raw or ""
+        lowered = window.lower()
+        if re.search(r"(?i)\bgranulation\b", window):
+            return "granulation"
+        if re.search(r"(?i)\b(?:fungal(?:-appearing)?|fungal\s+ball|mycetoma|aspergill)\b", window):
+            return "fungal_material"
+        if re.search(r"(?i)\bhair\b", window):
+            return "hair"
+        if re.search(r"(?i)\b(?:foreign\s+body|dental\s+fragment|coin|tooth)\b", window):
+            return "foreign_body"
+        if re.search(r"(?i)\b(?:necrotic|slough|debris|necrosis|inflammatory)\b", window):
+            return "necrotic_inflammatory"
+        if re.search(r"(?i)\b(?:mucous?|mucus|secretions?|plug|blood\s+clot)\b", window):
+            return "mucus"
+        if re.search(r"(?i)\b(?:tumou?r|endobronchial\s+tumou?r|mass|fungating|exophytic)\b", window):
+            return "tumor"
+        if re.search(r"(?i)\b(?:scar|web|stenos(?:is|ed)|fibrotic)\b", window):
+            return "other_non_tumor"
+        return "unknown"
+
+    def _apply_location(proc: dict[str, Any], raw: str) -> None:
+        location = _extract_airway_location_summary(raw)
+        if location:
+            proc["location"] = location
+
+    if _has_populated_mechanical_debulking_table_row(text):
+        proc: dict[str, Any] = {"performed": True}
+        _apply_location(proc, text)
+        proc["material_type"] = _infer_material_type(text)
+        return {"mechanical_debulking": proc}
 
     # Guardrail: "debulking" can be used loosely for mucus/secretions clearance.
     mucus_only_context = bool(
@@ -4150,9 +5169,8 @@ def extract_mechanical_debulking(note_text: str) -> Dict[str, Any]:
     )
     if obstructing_material_context:
         proc: dict[str, Any] = {"performed": True}
-        locations = _extract_lung_locations_from_text(text)
-        if locations:
-            proc["locations"] = locations
+        _apply_location(proc, text)
+        proc["material_type"] = _infer_material_type(text)
         return {"mechanical_debulking": proc}
 
     for pattern in MECHANICAL_DEBULKING_PATTERNS:
@@ -4207,9 +5225,8 @@ def extract_mechanical_debulking(note_text: str) -> Dict[str, Any]:
                 continue
 
             proc: dict[str, Any] = {"performed": True}
-            locations = _extract_lung_locations_from_text(window)
-            if locations:
-                proc["locations"] = locations
+            _apply_location(proc, window)
+            proc["material_type"] = _infer_material_type(window)
 
             return {"mechanical_debulking": proc}
 
@@ -4415,7 +5432,8 @@ def extract_transbronchial_biopsy(note_text: str) -> Dict[str, Any]:
                 continue
 
             local = raw_text[max(0, match.start() - 220) : min(len(raw_text), match.end() + 220)]
-            if cryo_context_re.search(local):
+            sentence = _sentence_window(raw_text, match.start(), match.end()) or local
+            if cryo_context_re.search(sentence):
                 continue
             if ebus_context_re.search(local):
                 if _extract_ln_stations_from_text(local):
@@ -4445,7 +5463,8 @@ def extract_transbronchial_biopsy(note_text: str) -> Dict[str, Any]:
                 continue
 
             local = raw_text[max(0, match.start() - 220) : min(len(raw_text), match.end() + 220)]
-            if cryo_context_re.search(local):
+            sentence = _sentence_window(raw_text, match.start(), match.end()) or local
+            if cryo_context_re.search(sentence):
                 continue
             if ebus_context_re.search(local):
                 # If the local context has explicit nodal station tokens, treat it as nodal sampling.
@@ -4548,6 +5567,9 @@ def extract_peripheral_ablation(note_text: str) -> Dict[str, Any]:
     if not (has_mwa or has_rfa or has_cryo):
         return {}
 
+    if _is_percutaneous_nonbronchoscopic_ablation_context(text_lower):
+        return {}
+
     peripheral_context = bool(
         re.search(
             r"\b(?:peripheral|nodule|lesion|mass|parenchym|target\s+lesion|lung\s+nodule|pulmonary\s+nodule|"
@@ -4608,6 +5630,7 @@ def extract_thermal_ablation(note_text: str) -> Dict[str, Any]:
 
     modalities: list[str] = []
     performed_hit = False
+    location_windows: list[str] = []
 
     for pattern in THERMAL_ABLATION_PATTERNS:
         for match in re.finditer(pattern, text_lower, re.IGNORECASE):
@@ -4631,12 +5654,24 @@ def extract_thermal_ablation(note_text: str) -> Dict[str, Any]:
                     local,
                 )
             )
+            standby_or_planned = bool(
+                re.search(
+                    r"(?i)\b(?:on\s+standby|standby|stand-by|available\s+if\s+needed|if\s+needed|not\s+planned|deferred)\b",
+                    local,
+                )
+            )
+            if is_apc_or_laser and standby_or_planned and not re.search(
+                r"(?i)\b(?:performed|used|applied|treated|radial\s+incisions?|coagulat|hemostas|ablat|destruct)\b",
+                local,
+            ):
+                continue
             if not is_apc_or_laser:
                 # For generic electrocautery mentions, require airway + therapeutic intent.
                 if not (airway_context_re.search(local) and therapeutic_intent_re.search(local)):
                     continue
 
             performed_hit = True
+            location_windows.append(local)
             local_modalities: list[str] = []
             if re.search(r"\bapc\b|\bargon\s+plasma\b", local, re.IGNORECASE):
                 local_modalities.append("APC")
@@ -4659,6 +5694,9 @@ def extract_thermal_ablation(note_text: str) -> Dict[str, Any]:
     proc: dict[str, Any] = {"performed": True}
     if modalities:
         proc["modality"] = modalities
+    location = _extract_airway_location_summary(" ".join(location_windows) or raw_text)
+    if location:
+        proc["location"] = location
     return {"thermal_ablation": proc}
 
 
@@ -4669,7 +5707,9 @@ def extract_percutaneous_tracheostomy(note_text: str) -> Dict[str, Any]:
     """
     preferred_text, _used_detail = _preferred_procedure_detail_text(note_text)
     preferred_text = _strip_cpt_definition_lines(preferred_text)
+    raw_text = _maybe_unescape_newlines(note_text or "")
     text_lower = (preferred_text or "").lower()
+    raw_lower = raw_text.lower()
 
     change_cue = re.search(
         r"(?i)\btrach(?:eostomy)?\b[^.\n]{0,60}\b(?:change|exchange|tube\s+change|changed)\b|\bafter\s+establishment\b[^.\n]{0,60}\btract\b",
@@ -4688,6 +5728,16 @@ def extract_percutaneous_tracheostomy(note_text: str) -> Dict[str, Any]:
             change_cue = True
     if change_cue:
         return {}
+
+    history_only_pdt = bool(
+        re.search(
+            r"(?i)\b(?:day|pod)\s*\d{1,2}\b[^.\n]{0,40}\bpost[- ]?pdt\b"
+            r"|\b\d{1,2}\s+days?\s+post[- ]?pdt\b"
+            r"|\bstatus\s+post[- ]?pdt\b"
+            r"|\bpost[- ]?pdt\b",
+            raw_lower,
+        )
+    )
 
     patterns = [
         r"\bpercutaneous\s+(?:dilatational\s+)?tracheostomy\b",
@@ -4714,6 +5764,21 @@ def extract_percutaneous_tracheostomy(note_text: str) -> Dict[str, Any]:
         elif re.search(r"\bshiley\b", text_lower):
             proc["device_name"] = "Shiley"
 
+        return {"percutaneous_tracheostomy": proc}
+
+    if (
+        not history_only_pdt
+        and re.search(r"(?i)\b(?:ciaglia\s+blue\s+rhino|blue\s+rhino)\b", raw_lower)
+        and re.search(
+            r"(?i)\b(?:guidewire|dilator|single-step\s+pdt|trachea\s+dilated|shiley|portex|tube\s+placed|tube\s+secured)\b",
+            raw_lower,
+        )
+    ):
+        proc: dict[str, Any] = {"performed": True, "method": "percutaneous"}
+        if re.search(r"\bportex\b", raw_lower):
+            proc["device_name"] = "Portex"
+        elif re.search(r"\bshiley\b", raw_lower):
+            proc["device_name"] = "Shiley"
         return {"percutaneous_tracheostomy": proc}
 
     # Puncture-only (e.g., angiocath puncture for suture fixation / transtracheal access)
@@ -4743,6 +5808,7 @@ ESTABLISHED_TRACH_NEW_PATTERNS = [
     r"\bnew\s+trach(?:eostomy)?\b",
     r"\btrach(?:eostomy)?\s+(?:created|placed|inserted)\b",
     r"\btracheostomy\s+creation\b",
+    r"\b(?:ciaglia\s+blue\s+rhino|blue\s+rhino)\b",
 ]
 
 
@@ -4751,7 +5817,31 @@ def extract_established_tracheostomy_route(note_text: str) -> Dict[str, Any]:
     preferred_text, _used_detail = _preferred_procedure_detail_text(note_text)
     preferred_text = _strip_cpt_definition_lines(preferred_text)
     text_lower = (preferred_text or "").lower()
+    raw_text = _maybe_unescape_newlines(note_text or "")
+    raw_lower = raw_text.lower()
     if not text_lower.strip():
+        return {}
+
+    mature_cue = bool(
+        re.search(r"(?i)\b(?:mature|established)\s+(?:tract|stoma|tracheostomy)\b", raw_lower)
+    )
+    new_creation_same_session = bool(
+        re.search(r"(?i)\bpercutaneous\s+(?:dilatational\s+)?tracheostomy\b", raw_lower)
+        or (
+            re.search(r"(?i)\b(?:ciaglia\s+blue\s+rhino|blue\s+rhino)\b", raw_lower)
+            and re.search(
+                r"(?i)\b(?:guidewire|dilator|single-step\s+pdt|trachea\s+dilated|tube\s+placed|tube\s+secured|shiley|portex)\b",
+                raw_lower,
+            )
+            and not re.search(
+                r"(?i)\b(?:day|pod)\s*\d{1,2}\b[^.\n]{0,40}\bpost[- ]?pdt\b"
+                r"|\b\d{1,2}\s+days?\s+post[- ]?pdt\b"
+                r"|\bstatus\s+post[- ]?pdt\b",
+                raw_lower,
+            )
+        )
+    )
+    if new_creation_same_session:
         return {}
 
     immature_or_newly_reestablished = bool(
@@ -4762,44 +5852,70 @@ def extract_established_tracheostomy_route(note_text: str) -> Dict[str, Any]:
             r"|\b(?:day|pod)\s*(?:0?[1-9]|1[0-4])\b[^.\n]{0,80}\btrach(?:eostomy)?\b"
             r"|\bpartially\s+closed\b[^.\n]{0,60}\btract\b"
             r"|\burgent\s+(?:tube\s+)?reinsertion\b",
-            text_lower,
+            raw_lower,
         )
     )
+    if mature_cue:
+        immature_or_newly_reestablished = False
 
     change_cue = re.search(
         r"(?i)\btrach(?:eostomy)?\b[^.\n]{0,60}\b(?:change|exchange|tube\s+change|changed)\b|\bafter\s+establishment\b[^.\n]{0,60}\btract\b",
-        text_lower,
+        raw_lower,
     )
     if not change_cue:
         removed_tube = re.search(
             r"(?i)\b(?:trach(?:eostomy)?|tracheostomy)\s+tube\b[^.\n]{0,120}\b(?:removed|exchanged|changed)\b",
-            text_lower,
+            raw_lower,
         )
         placed_new_tube = re.search(
             r"(?i)\bnew\b[^.\n]{0,60}\b(?:trach(?:eostomy)?|tracheostomy)\s+tube\b[^.\n]{0,120}\b(?:placed|inserted)\b",
-            text_lower,
+            raw_lower,
         )
         if removed_tube and placed_new_tube:
             change_cue = True
     if immature_or_newly_reestablished:
         return {}
+    bronchoscopic_route_through_trach = bool(
+        re.search(
+            r"(?i)\b(?:tracheobronchoscop(?:y|e)|bronchoscop(?:e|y)?)\b[^\n]{0,140}\b(?:via|through|introduced\s+through|passed\s+through|advanced\s+through)\b"
+            r"[^\n]{0,80}\b(?:trach(?:eostomy)?|stoma|tube)\b",
+            raw_lower,
+        )
+        or re.search(
+            r"(?i)\b(?:via|through)\b[^\n]{0,80}\b(?:trach(?:eostomy)?|stoma)\b[^\n]{0,140}\b(?:tracheobronchoscop(?:y|e)|bronchoscop(?:e|y)?)\b",
+            raw_lower,
+        )
+        or (
+            bool(
+                re.search(
+                    r"(?i)\b(?:tracheobronchoscop(?:y|e)|bronchoscop(?:e|y)?)\b[^\n]{0,140}\bthrough\b[^\n]{0,80}\btube\b",
+                    raw_lower,
+                )
+            )
+            and bool(re.search(r"(?i)\btrach(?:eostomy)?\b|\bstoma\b", raw_lower))
+        )
+    )
     if change_cue:
-        return {"established_tracheostomy_route": True}
+        if _is_confirmation_only_trach_exchange_bronchoscopy(note_text):
+            return {}
+        if bronchoscopic_route_through_trach:
+            return {"established_tracheostomy_route": True}
+        return {}
 
     for pattern in ESTABLISHED_TRACH_NEW_PATTERNS:
-        if re.search(pattern, text_lower, re.IGNORECASE):
+        if re.search(pattern, raw_lower, re.IGNORECASE):
             return {}
 
     # Negation guardrail: avoid false positives from explicit "no trach" language, but
     # do not treat phrases like "Not assessed due to ... tracheostomy tube" as negation.
-    if re.search(r"\b(?:no|without)\b[^.\n]{0,60}\btrach(?:eostomy)?\b", text_lower) or re.search(
+    if re.search(r"\b(?:no|without)\b[^.\n]{0,60}\btrach(?:eostomy)?\b", raw_lower) or re.search(
         r"\bnot\s+(?:an?\s+)?(?:existing\s+)?trach(?:eostomy)?\b",
-        text_lower,
+        raw_lower,
     ):
         return {}
 
     for pattern in ESTABLISHED_TRACH_ROUTE_PATTERNS:
-        if re.search(pattern, text_lower, re.IGNORECASE):
+        if re.search(pattern, raw_lower, re.IGNORECASE):
             return {"established_tracheostomy_route": True}
 
     return {}
@@ -4945,6 +6061,24 @@ def extract_thoracentesis(note_text: str) -> Dict[str, Any]:
     if not re.search("|".join(THORACENTESIS_PATTERNS), text, re.IGNORECASE):
         return {}
 
+    aborted_or_no_return = bool(
+        re.search(
+            r"(?i)\b(?:thoracentesis|pleural\s+tap)\b[^.\n]{0,220}"
+            r"\b(?:aborted|not\s+performed|unsuccessful|unable\s+to|could\s+not|no\s+fluid\s+return|dry\s+tap|no\s+safe\s+(?:window|access|pocket)|unsafe)\b"
+            r"|\b(?:aborted|not\s+performed|unsuccessful|unable\s+to|could\s+not|no\s+fluid\s+return|dry\s+tap|no\s+safe\s+(?:window|access|pocket)|unsafe)\b"
+            r"[^.\n]{0,220}\b(?:thoracentesis|pleural\s+tap)\b",
+            text,
+        )
+    )
+    successful_drainage = bool(
+        re.search(
+            r"(?i)\b(?:removed|drained|aspirat(?:ed|ion))\b[^.\n]{0,60}\b(?:\d+(?:\.\d+)?\s*(?:ml|cc)|fluid|effusion)\b",
+            text,
+        )
+    )
+    if aborted_or_no_return and not successful_drainage:
+        return {}
+
     thora: dict[str, Any] = {"performed": True}
 
     side_match = re.search(r"(?im)^\s*(left|right|bilateral)\s+thoracentesis\b", text)
@@ -5053,7 +6187,26 @@ def extract_chest_tube(note_text: str) -> Dict[str, Any]:
     has_insertion = (
         re.search(r"(?i)\b(insert(?:ed)?|placed|placement|insertion|introduc(?:e|ed))\b", text) is not None
     )
+    performed_insertion_evidence = bool(
+        re.search(
+            r"(?i)\b(?:placed|inserted|introduced)\b[^.\n]{0,80}\b(?:a\s+|an\s+)?(?:left|right|bilateral\s+)?(?:chest\s+tube|pigtail(?:\s+catheter)?)\b"
+            r"|\b(?:chest\s+tube|pigtail(?:\s+catheter)?)\b[^.\n]{0,80}\b(?:was|were)\s+(?:successfully\s+)?(?:placed|inserted|introduced)\b"
+            r"|\b(?:successful(?:ly)?|completed)\b[^.\n]{0,60}\b(?:chest\s+tube|pigtail(?:\s+catheter)?)\s+(?:placement|insertion)\b",
+            text,
+        )
+    )
     has_incision = re.search(r"(?i)\bincision\b|\bincised\b|\bcut\s+down\b", text) is not None
+    conditional_only = bool(
+        re.search(
+            r"(?i)\b(?:observe|observation|conservative(?:ly)?)\b[^.\n]{0,120}\b(?:without|no)\b[^.\n]{0,40}\bchest\s+tube\b"
+            r"|\b(?:no|not)\b[^.\n]{0,60}\bchest\s+tube\b[^.\n]{0,60}\b(?:placed|needed|required|inserted)\b"
+            r"|\b(?:consider(?:ed|ing)?|would|plan(?:ned)?)\b[^.\n]{0,80}\b(?:place|placing|placement|insert(?:ing|ion)?)\b[^.\n]{0,80}\bchest\s+tube\b"
+            r"|\bchest\s+tube\b[^.\n]{0,80}\b(?:if|unless)\b",
+            text,
+        )
+    )
+    if conditional_only and not performed_insertion_evidence and not has_incision:
+        return {}
 
     maintenance_only = False
     if (has_pigtail or has_chest_tube) and not has_insertion and not has_incision:
@@ -5078,7 +6231,21 @@ def extract_chest_tube(note_text: str) -> Dict[str, Any]:
     side = _extract_checked_side(note_text, "Entry Site") or _extract_checked_side(
         note_text, "Hemithorax"
     )
-    if side in {"Left", "Right"}:
+    bilateral_sides: set[str] = set()
+    if re.search(r"(?i)\bleft\b[^.\n]{0,80}\b(?:chest\s+tube|pigtail)\b[^.\n]{0,80}\b(?:placed|inserted)\b", text) or re.search(
+        r"(?i)\b(?:placed|inserted)\b[^.\n]{0,80}\bleft\b[^.\n]{0,80}\b(?:chest\s+tube|pigtail)\b",
+        text,
+    ):
+        bilateral_sides.add("Left")
+    if re.search(r"(?i)\bright\b[^.\n]{0,80}\b(?:chest\s+tube|pigtail)\b[^.\n]{0,80}\b(?:placed|inserted)\b", text) or re.search(
+        r"(?i)\b(?:placed|inserted)\b[^.\n]{0,80}\bright\b[^.\n]{0,80}\b(?:chest\s+tube|pigtail)\b",
+        text,
+    ):
+        bilateral_sides.add("Right")
+
+    if len(bilateral_sides) == 2:
+        proc["side"] = "Bilateral"
+    elif side in {"Left", "Right"}:
         proc["side"] = side
 
     if not maintenance_only and ("pleural effusion" in text_lower or re.search(r"(?i)\beffusion\b", text)):
@@ -5145,7 +6312,23 @@ def extract_chest_tube_removal(note_text: str) -> Dict[str, Any]:
         r"|\b(?:chest\s+tube|tube\s+thoracostomy|thoracostomy\s+tube|pigtail\s+catheter|pleural\s+catheter)\b[^.\n]{0,120}"
         r"\b(?:removed|pulled|withdrawn|discontinued|d/c)\b"
     )
-    if not removal_re.search(text):
+    match = removal_re.search(text)
+    if not match:
+        return {}
+
+    local_window = text[max(0, match.start() - 180) : min(len(text), match.end() + 220)]
+    if re.search(
+        r"(?i)\b(?:ipc|pleurx|aspira|tunne(?:l|ll)ed\s+pleural\s+catheter|indwelling\s+pleural\s+catheter)\b",
+        local_window,
+    ) and re.search(
+        r"(?i)\b(?:place(?:d|ment)?|insert(?:ed|ion)?|advance(?:d|ment)?|tunnel(?:ed|ing)?|peel[-\s]?away\s+sheath|guidewire|seldinger)\b",
+        local_window,
+    ):
+        return {}
+    if re.search(
+        r"(?i)\b(?:history|prior|previous|existing|already)\b[^.\n]{0,120}\b(?:chest\s+tube|pigtail\s+catheter|pleural\s+catheter)\b",
+        local_window,
+    ) and not re.search(r"(?i)\b(?:removed|pulled|withdrawn|discontinued|d/c)\b", local_window):
         return {}
 
     proc: dict[str, Any] = {"performed": True}
@@ -5187,6 +6370,31 @@ def extract_ipc(note_text: str) -> Dict[str, Any]:
             break
 
     if matched_pattern is None:
+        recovered_ipc_insertion = bool(
+            re.search(
+                r"(?i)\b(?:tunne(?:l|ll)ed\s+(?:pleural\s+)?catheter|indwelling\s+pleural\s+catheter)\b",
+                text,
+            )
+            and re.search(
+                r"(?i)\b(?:pleural\s+space|pleur(?:al|oscopy)|thoracoscop|effusion)\b",
+                text,
+            )
+            and re.search(
+                r"(?i)\b(?:tunnel(?:ed|ing)?|seldinger|guidewire|serial\s+dilat(?:ion|ors?)|peel[-\s]?away\s+sheath|cuff|advanced\s+through)\b",
+                text,
+            )
+        )
+        post_confirmation_insertion = bool(
+            re.search(
+                r"(?i)\b(?:ipc|indwelling\s+pleural\s+catheter|pleuralx|pleurx|aspira|pleural\s+catheter)\b[^.\n]{0,80}\bin\s+place\b",
+                text,
+            )
+            and re.search(r"(?i)\b(?:post[-\s]?procedure|final|completion|conclusion|after\s+the\s+procedure)\b", text)
+        )
+        if recovered_ipc_insertion or post_confirmation_insertion:
+            matched_pattern = "__ipc_recovered_insertion__"
+
+    if matched_pattern is None:
         fallback_header = bool(
             re.search(r"(?is)\bprocedure\s*:\s*[^\n]{0,240}\b32552\b", text)
             or re.search(r"(?i)\b32552\b", text)
@@ -5215,7 +6423,7 @@ def extract_ipc(note_text: str) -> Dict[str, Any]:
         return {}
 
     proc: dict[str, Any] = {"performed": True}
-    if matched_pattern == r"\btunneling\s+device\b":
+    if matched_pattern in {r"\btunneling\s+device\b", "__ipc_recovered_insertion__"}:
         proc["action"] = "Insertion"
 
     device = r"(?:pleurx|aspira|tunne(?:l|ll)ed\s+pleural\s+catheter|tunnel(?:ing)?\s+pleural\s+catheter|tunne(?:l|ll)ed\s+catheter|tunnel(?:ing)?\s+catheter|indwelling\s+pleural\s+catheter|ipc)"
@@ -5275,7 +6483,7 @@ def extract_ipc(note_text: str) -> Dict[str, Any]:
     else:
         proc["catheter_brand"] = "Other"
 
-    if re.search(r"(?i)\btunne(?:l|ll)ed\b", text) or re.search(r"(?i)\bindwelling\b", text):
+    if matched_pattern == "__ipc_recovered_insertion__" or re.search(r"(?i)\btunne(?:l|ll)ed\b", text) or re.search(r"(?i)\bindwelling\b", text):
         proc["tunneled"] = True
 
     if re.search(r"(?i)\bmalignant\b", text) and re.search(r"(?i)\beffusion\b", text):
@@ -5358,6 +6566,62 @@ def extract_pleurodesis(note_text: str) -> Dict[str, Any]:
         proc["indication"] = "Recurrent benign effusion"
 
     return {"pleurodesis": proc}
+
+
+def extract_fibrinolytic_therapy(note_text: str) -> Dict[str, Any]:
+    """Extract intrapleural fibrinolytic therapy (32561/32562 family)."""
+    text = note_text or ""
+    text_lower = text.lower()
+    if not text_lower.strip():
+        return {}
+
+    has_code = re.search(r"\b3256[12]\b", text) is not None
+    has_fibrinolysis_word = re.search(r"(?i)\bfibrinolys(?:is|tic)\b", text) is not None
+    has_agents = re.search(r"(?i)\b(?:tpa|alteplase|dnase|dornase)\b", text) is not None
+    has_instillation = re.search(r"(?i)\binstillat(?:ion|e|ed|ing|ions)\b", text) is not None
+    has_catheter_context = re.search(r"(?i)\b(?:via|through)\b[^.\n]{0,60}\b(?:chest\s+tube|catheter)\b", text) is not None
+
+    if (
+        not has_code
+        and re.search(
+            r"(?i)\b(?:plan|consider|candidate\s+for)\b[^.\n]{0,60}\b(?:fibrinolys(?:is|tic)|tpa|alteplase|dnase|dornase)\b",
+            text,
+        )
+    ):
+        return {}
+
+    if not (has_code or has_fibrinolysis_word or (has_agents and (has_instillation or has_catheter_context))):
+        return {}
+
+    proc: dict[str, Any] = {"performed": True}
+
+    agents: list[str] = []
+    if re.search(r"(?i)\b(?:tpa|alteplase)\b", text):
+        agents.append("tPA")
+    if re.search(r"(?i)\b(?:dnase|dornase)\b", text):
+        agents.append("DNase")
+    if agents:
+        seen: set[str] = set()
+        proc["agents"] = [agent for agent in agents if not (agent in seen or seen.add(agent))]
+
+    dose_match = re.search(
+        r"(?is)\b(\d+(?:\.\d+)?)\s*mg\s*/\s*(\d+(?:\.\d+)?)\s*mg\b[^.\n]{0,60}"
+        r"\b(?:tpa|alteplase)\b[^.\n]{0,60}\b(?:dnase|dornase)\b",
+        text,
+    )
+    if dose_match:
+        proc["tpa_dose_mg"] = float(dose_match.group(1))
+        proc["dnase_dose_mg"] = float(dose_match.group(2))
+
+    dose_num = re.search(r"(?i)dose\s*#\s*[:=]?\s*[_ ]*(\d{1,2})(?=[_ ]|\b)", text)
+    if dose_num:
+        proc["number_of_doses"] = int(dose_num.group(1))
+    elif re.search(r"(?i)\bsubsequent\s+day\b", text) or re.search(r"\b32562\b", text):
+        proc["number_of_doses"] = 2
+    elif re.search(r"(?i)\binitial\s+day\b", text) or re.search(r"\b32561\b", text):
+        proc["number_of_doses"] = 1
+
+    return {"fibrinolytic_therapy": proc}
 
 
 def run_deterministic_extractors(note_text: str) -> Dict[str, Any]:
@@ -5461,6 +6725,10 @@ def run_deterministic_extractors(note_text: str) -> Dict[str, Any]:
     if dilation_data:
         seed_data.setdefault("procedures_performed", {}).update(dilation_data)
 
+    airway_device_action_data = _extract_airway_device_action(note_text)
+    if airway_device_action_data:
+        seed_data.setdefault("procedures_performed", {}).update(airway_device_action_data)
+
     stent_data = extract_airway_stent(note_text)
     if stent_data:
         seed_data.setdefault("procedures_performed", {}).update(stent_data)
@@ -5519,6 +6787,18 @@ def run_deterministic_extractors(note_text: str) -> Dict[str, Any]:
     if nav_data:
         seed_data.setdefault("procedures_performed", {}).update(nav_data)
 
+    navigation_equipment_data = extract_navigation_imaging_equipment(note_text)
+    if navigation_equipment_data:
+        seed_data.setdefault("equipment", {}).update(navigation_equipment_data.get("equipment") or {})
+
+    fiducial_data = extract_fiducial_placement(note_text)
+    if fiducial_data:
+        seed_data.setdefault("procedures_performed", {}).update(fiducial_data)
+
+    dye_marker_data = extract_dye_marker_placement(note_text)
+    if dye_marker_data:
+        seed_data.setdefault("procedures_performed", {}).update(dye_marker_data)
+
     tbna_data = extract_tbna_conventional(note_text)
     if tbna_data:
         seed_data.setdefault("procedures_performed", {}).update(tbna_data)
@@ -5551,6 +6831,10 @@ def run_deterministic_extractors(note_text: str) -> Dict[str, Any]:
     trach_data = extract_percutaneous_tracheostomy(note_text)
     if trach_data:
         seed_data.setdefault("procedures_performed", {}).update(trach_data)
+
+    peg_data = extract_peg_insertion(note_text)
+    if peg_data:
+        seed_data.setdefault("procedures_performed", {}).update(peg_data)
 
     established_trach = extract_established_tracheostomy_route(note_text)
     if established_trach:
@@ -5620,6 +6904,10 @@ def run_deterministic_extractors(note_text: str) -> Dict[str, Any]:
     pleurodesis_data = extract_pleurodesis(note_text)
     if pleurodesis_data:
         seed_data.setdefault("pleural_procedures", {}).update(pleurodesis_data)
+
+    fibrinolytic_data = extract_fibrinolytic_therapy(note_text)
+    if fibrinolytic_data:
+        seed_data.setdefault("pleural_procedures", {}).update(fibrinolytic_data)
 
     # ---------------------------------------------------------------------
     # Evidence spans for extracted attribute values (UI highlighting)
@@ -5729,6 +7017,29 @@ def run_deterministic_extractors(note_text: str) -> Dict[str, Any]:
                 if isinstance(target, str) and target.strip():
                     _add_airway_dilation_target_span(target)
 
+            airway_device_action = procs.get("airway_device_action")
+            if isinstance(airway_device_action, dict) and airway_device_action.get("performed") is True:
+                _add_balloon_occlusion_literal(
+                    "procedures_performed.airway_device_action.device_type",
+                    airway_device_action.get("device_type"),
+                )
+                _add_balloon_occlusion_literal(
+                    "procedures_performed.airway_device_action.action",
+                    airway_device_action.get("action"),
+                )
+                _add_balloon_occlusion_literal(
+                    "procedures_performed.airway_device_action.device_name",
+                    airway_device_action.get("device_name"),
+                )
+                _add_balloon_occlusion_literal(
+                    "procedures_performed.airway_device_action.device_size",
+                    airway_device_action.get("device_size"),
+                )
+                _add_balloon_occlusion_literal(
+                    "procedures_performed.airway_device_action.location",
+                    airway_device_action.get("location"),
+                )
+
             balloon_occ = procs.get("balloon_occlusion")
             if isinstance(balloon_occ, dict) and balloon_occ.get("performed") is True:
                 _add_balloon_occlusion_literal(
@@ -5787,6 +7098,9 @@ __all__ = [
     "extract_eus_b",
     "extract_cryotherapy",
     "extract_navigational_bronchoscopy",
+    "extract_fiducial_placement",
+    "extract_dye_marker_placement",
+    "extract_peg_insertion",
     "extract_tbna_conventional",
     "extract_brushings",
     "extract_transbronchial_cryobiopsy",
@@ -5802,6 +7116,7 @@ __all__ = [
     "extract_chest_tube_removal",
     "extract_ipc",
     "extract_pleurodesis",
+    "extract_fibrinolytic_therapy",
     "is_negated",
     "BAL_PATTERNS",
     "ENDOBRONCHIAL_BIOPSY_PATTERNS",

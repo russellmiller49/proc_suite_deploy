@@ -204,7 +204,18 @@ CPT_KEYWORDS: dict[str, list[str]] = {
     ],
     # Therapeutics: dilation
     "31630": ["balloon", "dilation", "dilate", "dilated"],
-    "31631": ["balloon", "dilation", "dilate", "dilated"],
+    "31631": [
+        "tracheal stent",
+        "stent placement",
+        "stent placed",
+        "stent deployed",
+        "stent inserted",
+        "silicone stent",
+        "metallic stent",
+        "dumon",
+        "ultraflex",
+        "aerostent",
+    ],
     # Therapeutics: airway stent
     "31636": ["stent", "silicone", "metal", "metallic", "hybrid", "y-stent", "dumon", "ultraflex", "aero"],
     "31637": ["stent", "silicone", "metal", "metallic", "hybrid", "y-stent", "dumon", "ultraflex", "aero"],
@@ -727,9 +738,16 @@ def _looks_like_ebus_nodal_context(note_text: str, match: re.Match[str]) -> bool
 
     if not _TBNA_EBUS_CONTEXT_RE.search(window):
         return False
+    if re.search(
+        r"(?i)\bendobronchial\s+ultrasound\b[^.\n]{0,180}\btransbronchial\s+biops(?:y|ies)\b",
+        window,
+    ):
+        return True
     if _EBUS_STATION_TOKEN_RE.search(window):
         return True
     if re.search(r"(?i)\blymph\s+node(?:s)?\b", window):
+        return True
+    if re.search(r"(?i)\bsite\s+\d+\b", window) and re.search(r"(?i)\btransbronchial\s+biops(?:y|ies)\b", window):
         return True
     return False
 
@@ -756,6 +774,39 @@ def _looks_like_endobronchial_ablation_context(note_text: str, match: re.Match[s
 
     if peripheral_positive:
         return False
+    return True
+
+
+def _looks_like_percutaneous_ablation_context(note_text: str, match: re.Match[str]) -> bool:
+    """Return True when ablation language is CT-guided/percutaneous rather than bronchoscopic."""
+    if not note_text:
+        return False
+
+    local_start = max(0, match.start() - 260)
+    local_end = min(len(note_text), match.end() + 260)
+    window = note_text[local_start:local_end]
+
+    percutaneous_context = bool(
+        re.search(
+            r"(?i)\b(?:ct[-\s]?guided|computed\s+tomography|transthoracic|percutaneous|coaxial|chest\s+wall|"
+            r"pleural[-\s]?based|microwave\s+antenna|ablation\s+antenna|ablation\s+probe|cryo\s*probe|"
+            r"cryo(?:genic)?\s+probe|electrode\s+placement|needle\s+path)\b",
+            window,
+        )
+    )
+    if not percutaneous_context:
+        return False
+
+    for bronch_match in re.finditer(
+        r"(?i)\b(?:bronchoscop|bronchoscope|navigation|navigational|robotic|ion\b|monarch|galaxy|"
+        r"radial\s+(?:ebus|probe)|tool[-\s]?in[-\s]?lesion|working\s+channel|cbct|cone\s*beam)\b",
+        window,
+    ):
+        lead = window[max(0, bronch_match.start() - 40) : bronch_match.start()]
+        if re.search(r"(?i)\b(?:no|not|without|declined|deferred)\b[^.\n]{0,24}$", lead):
+            continue
+        return False
+
     return True
 
 
@@ -842,6 +893,9 @@ def scan_for_omissions(note_text: str, record: RegistryRecord) -> list[str]:
                 if field_path == "procedures_performed.peripheral_ablation.performed":
                     if _looks_like_endobronchial_ablation_context(note_text or "", match):
                         continue
+                if field_path == "procedures_performed.cryotherapy.performed":
+                    if _looks_like_percutaneous_ablation_context(note_text or "", match):
+                        continue
                 warning = f"SILENT_FAILURE: {msg} (Pattern: '{pattern}')"
                 warnings.append(warning)
                 logger.warning(warning, extra={"field": field_path, "pattern": pattern})
@@ -892,6 +946,28 @@ def apply_required_overrides(note_text: str, record: RegistryRecord) -> tuple[Re
                     continue
             if field_path == "procedures_performed.peripheral_ablation.performed":
                 if _looks_like_endobronchial_ablation_context(note_text or "", match):
+                    continue
+            if field_path == "procedures_performed.cryotherapy.performed":
+                if _looks_like_percutaneous_ablation_context(note_text or "", match):
+                    continue
+            if field_path == "procedures_performed.brushings.performed":
+                window_start = max(0, match.start() - 180)
+                window_end = min(len(note_text or ""), match.end() + 180)
+                local_window = (note_text or "")[window_start:window_end]
+                ttube_context = bool(re.search(r"(?i)\b(?:montgomery\s+)?t[- ]?tube\b|\bsidearm\b", note_text or ""))
+                maintenance_brushing = bool(
+                    re.search(
+                        r"(?i)\b(?:daily\s+)?brushing\s+protocol\b|\bpipe\s+cleaner\b|\breinstruct\w*\b|\bhygiene\b",
+                        local_window,
+                    )
+                )
+                non_sampling_brush = ttube_context and bool(re.search(r"(?i)\bbrush(?:ing|ings?)\b", local_window)) and not bool(
+                    re.search(
+                        r"(?i)\b(?:cytology|obtained|performed|taken|sent|sample|specimen|collected)\b",
+                        local_window,
+                    )
+                )
+                if maintenance_brushing or non_sampling_brush:
                     continue
 
             if field_path == "pleural_procedures.fibrinolytic_therapy.performed":

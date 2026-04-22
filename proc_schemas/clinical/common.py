@@ -52,6 +52,7 @@ class OperativeShellInputs(BaseModel):
     preop_diagnosis_text: str | None = None
     postop_diagnosis_text: str | None = None
     procedures_summary: str | None = None
+    findings_text: str | None = None
     cpt_summary: str | None = None
     estimated_blood_loss: str | None = None
     complications_text: str | None = None
@@ -100,6 +101,7 @@ class ProcedureBundle(BaseModel):
     indication_text: str | None = None
     preop_diagnosis_text: str | None = None
     postop_diagnosis_text: str | None = None
+    findings_text: str | None = None
     impression_plan: str | None = None
     estimated_blood_loss: str | None = None
     complications_text: str | None = None

@@ -10,6 +10,7 @@ import re
 from datetime import datetime
 import logging
 
+from app.registry.quality_signals import make_quality_signal_warning
 from app.registry.schema import RegistryRecord
 
 logger = logging.getLogger(__name__)
@@ -169,6 +170,7 @@ __all__ = [
     "enrich_linear_ebus_needle_gauge",
     "enrich_eus_b_sampling_details",
     "enrich_medical_thoracoscopy_biopsies_taken",
+    "suppress_conditional_pleural_and_stent_procedures",
     "enrich_bal_from_procedure_detail",
 ]
 
@@ -2596,12 +2598,14 @@ POSTPROCESSORS: Dict[str, Callable[[Any], Any]] = {
 
 
 _EBUS_SAMPLING_INDICATORS_RE = re.compile(
-    r"\b(?:needle(?:s)?|tbna|fna|biops(?:y|ied|ies)|sampl(?:e|ed|es)|pass(?:es)?|aspirat(?:e|ed|ion)|core|forceps)\b",
+    r"\b(?:needle(?:s)?|tbna|fna|biops(?:y|ied|ies)|sampl(?:e|ed|es)|pass(?:es)?|aspirat(?:e|ed|ion)|core|forceps)\b"
+    r"|\b\d+\s*(?:of\s+)?passes?\b",
     re.IGNORECASE,
 )
 
 _EBUS_STRONG_SAMPLING_RE = re.compile(
-    r"\b(?:needle(?:s)?|tbna|fna|biops(?:y|ied|ies)|pass(?:es)?|aspirat(?:e|ed|ion)|core|forceps)\b",
+    r"\b(?:needle(?:s)?|tbna|fna|biops(?:y|ied|ies)|pass(?:es)?|aspirat(?:e|ed|ion)|core|forceps)\b"
+    r"|\b\d+\s*(?:of\s+)?passes?\b",
     re.IGNORECASE,
 )
 
@@ -2708,7 +2712,7 @@ def _ebus_station_pattern(station: str) -> re.Pattern[str] | None:
     if token.isdigit():
         # Station "7" is highly collision-prone; require "station 7" or a station-style line prefix.
         return re.compile(
-            rf"(?i)(?:\bstation\s*{re.escape(token)}\b|\b{re.escape(token)}\b\s*(?:(?:[:\-]|\(|,)|\band\b))"
+            rf"(?i)(?:\bstation\s*{re.escape(token)}\b|\b{re.escape(token)}\b\s*(?:(?:[:\-]|\(|,)|\band\b|\bx\s*\d{{1,2}}\b|\bpasses?\b))"
         )
     # Substations are frequently documented as 11Rs/11Ri and should match canonical
     # event station keys (11R/11L) during reconciliation.
@@ -2746,7 +2750,11 @@ def _station_has_sampling_negation(full_text: str, station: str) -> bool:
             continue
         if _EBUS_EXPLICIT_NEGATION_PHRASES_RE.search(line):
             return True
-        if _EBUS_MEASURE_ONLY_RE.search(line) and not _EBUS_SAMPLING_INDICATORS_RE.search(line):
+        if (
+            _EBUS_MEASURE_ONLY_RE.search(line)
+            and not _EBUS_SAMPLING_INDICATORS_RE.search(line)
+            and not station_has_sampling_positive
+        ):
             return True
         if _EBUS_BENIGN_ONLY_PHRASES_RE.search(line) and not station_has_sampling_positive:
             return True
@@ -2759,7 +2767,11 @@ def _station_has_sampling_negation(full_text: str, station: str) -> bool:
         snippet = text[match.start():end_of_line]
         if _EBUS_EXPLICIT_NEGATION_PHRASES_RE.search(snippet):
             return True
-        if _EBUS_MEASURE_ONLY_RE.search(snippet) and not _EBUS_SAMPLING_INDICATORS_RE.search(snippet):
+        if (
+            _EBUS_MEASURE_ONLY_RE.search(snippet)
+            and not _EBUS_SAMPLING_INDICATORS_RE.search(snippet)
+            and not station_has_sampling_positive
+        ):
             return True
         if _EBUS_BENIGN_ONLY_PHRASES_RE.search(snippet) and not station_has_sampling_positive:
             return True
@@ -2840,6 +2852,7 @@ def sanitize_ebus_events(record: RegistryRecord, full_text: str) -> list[str]:
     """
 
     warnings: list[str] = []
+    search_text = _mask_eus_b_content(full_text or "")
     procedures = getattr(record, "procedures_performed", None)
     linear = getattr(procedures, "linear_ebus", None) if procedures is not None else None
     node_events = getattr(linear, "node_events", None) if linear is not None else None
@@ -2869,19 +2882,28 @@ def sanitize_ebus_events(record: RegistryRecord, full_text: str) -> list[str]:
         if not isinstance(station, str) or not station.strip():
             continue
         station_token = station.strip().upper()
+        existing_quote = getattr(event, "evidence_quote", None)
+        if (
+            isinstance(existing_quote, str)
+            and existing_quote.strip()
+            and _EBUS_STRONG_SAMPLING_RE.search(existing_quote)
+            and not _EBUS_EXPLICIT_NEGATION_PHRASES_RE.search(existing_quote)
+            and _station_has_strong_sampling_evidence(search_text, station_token)
+        ):
+            continue
         reason: str | None = None
-        if _station_has_sampling_negation(full_text, station_token):
+        if _station_has_sampling_negation(search_text, station_token):
             reason = "Found negation for"
         elif station_token in unsampled_detail_stations:
             reason = "Granular detail marks unsampled for"
         elif (
-            not _station_has_strong_sampling_evidence(full_text, station_token)
-            and _station_has_measure_only_context(full_text, station_token)
+            not _station_has_strong_sampling_evidence(search_text, station_token)
+            and _station_has_measure_only_context(search_text, station_token)
         ):
             reason = "Criteria/measurement without sampling for"
 
         if reason:
-            original_quote = getattr(event, "evidence_quote", None)
+            original_quote = existing_quote
             setattr(event, "action", "inspected_only")
 
             # Evidence must remain verifiable (note-derived). Prefer the line that triggered
@@ -2930,6 +2952,17 @@ def sanitize_ebus_events(record: RegistryRecord, full_text: str) -> list[str]:
             else:
                 warnings.append(f"AUTO_CORRECTED_EBUS_CRITERIA_ONLY: {station_token}")
 
+    if hasattr(linear, "stations_sampled"):
+        sampled_from_events = sort_ebus_stations(
+            {
+                str(getattr(event, "station", "")).strip().upper()
+                for event in node_events
+                if getattr(event, "action", None) in sampling_actions
+                and str(getattr(event, "station", "")).strip()
+            }
+        )
+        setattr(linear, "stations_sampled", sampled_from_events or None)
+
     def _add_nonstation_target(value: str) -> None:
         cleaned = str(value or "").strip()
         if not cleaned:
@@ -2947,7 +2980,7 @@ def sanitize_ebus_events(record: RegistryRecord, full_text: str) -> list[str]:
             setattr(linear, "targets_sampled", merged or None)
 
     # Guardrail: cull hallucinated stations that do not appear in the note text at all.
-    if full_text:
+    if search_text:
         alias_patterns: dict[str, list[re.Pattern[str]]] = {
             "7": [re.compile(r"(?i)\bsubcarinal\b")],
             "4R": [re.compile(r"(?i)\bright\s+paratracheal\b")],
@@ -2978,12 +3011,19 @@ def sanitize_ebus_events(record: RegistryRecord, full_text: str) -> list[str]:
                 warnings.append(f"EBUS_NONSTATION_TARGET_CAPTURED: {target_phrase.lower()}")
                 kept_events.append(event)
                 continue
-            if pat.search(full_text):
+            if pat.search(search_text):
                 kept_events.append(event)
                 continue
+            if station_token.isdigit():
+                list_context_re = re.compile(
+                    rf"(?i)\bstations?\b[^.\n]{{0,120}}\b{re.escape(station_token)}\b"
+                )
+                if list_context_re.search(search_text):
+                    kept_events.append(event)
+                    continue
             # Allow common anatomic aliases when templates omit the numeric station token.
             aliases = alias_patterns.get(station_token)
-            if aliases and any(alias.search(full_text) for alias in aliases):
+            if aliases and any(alias.search(search_text) for alias in aliases):
                 kept_events.append(event)
                 continue
             warnings.append(f"AUTO_DROPPED_EBUS_STATION_NOT_IN_TEXT: {station_token}")
@@ -3010,11 +3050,20 @@ def sanitize_ebus_events(record: RegistryRecord, full_text: str) -> list[str]:
     if isinstance(stations_detail, list) and stations_detail:
         for detail in stations_detail:
             sampled_flag = getattr(detail, "sampled", None)
-            if sampled_flag is False:
+            passes = getattr(detail, "number_of_passes", None)
+            try:
+                passes_int = int(passes) if passes not in (None, "") else 0
+            except Exception:
+                passes_int = 0
+            if sampled_flag is False or (sampled_flag is not True and passes_int <= 0):
                 continue
             station = getattr(detail, "station", None)
             if isinstance(station, str) and station.strip():
-                sampled.append(station.strip().upper())
+                station_token = station.strip().upper()
+                pat = _ebus_station_pattern(station_token)
+                if pat is not None and not pat.search(search_text):
+                    continue
+                sampled.append(station_token)
     if hasattr(linear, "stations_sampled"):
         setattr(linear, "stations_sampled", sorted(set(sampled)) if sampled else None)
     if hasattr(linear, "targets_sampled"):
@@ -3034,6 +3083,72 @@ def sanitize_ebus_events(record: RegistryRecord, full_text: str) -> list[str]:
     return warnings
 
 
+def _mask_eus_b_content(text: str) -> str:
+    """Mask EUS-B-only sections while preserving offsets for EBUS matching.
+
+    Several EBUS reconciliation passes should only consider bronchoscopic EBUS
+    stations. EUS-B stations can appear in the same note and otherwise leak
+    into linear-EBUS sampled-station counts.
+    """
+
+    raw = text or ""
+    if not raw:
+        return raw
+
+    masked = list(raw)
+
+    def _blank(start: int, end: int) -> None:
+        for idx in range(max(0, start), min(len(masked), end)):
+            if masked[idx] not in "\r\n":
+                masked[idx] = " "
+
+    inline_eus_b_re = re.compile(r"(?i)\bEUS-?B\b\s*:[^\n]*")
+    eus_b_header_re = re.compile(r"(?i)^\s*EUS-?B(?:\s+(?:Findings|Sites\s+Sampled))?\b.*$")
+    next_section_re = re.compile(
+        r"(?i)^\s*(?:"
+        r"EBUS(?:\s+Findings)?"
+        r"|LYMPH\s+NODES\s+EVALUATED"
+        r"|SPECIMENS?"
+        r"|PROCEDURE(?:\s+IN\s+DETAIL)?"
+        r"|DESCRIPTION(?:\s+OF\s+PROCEDURE)?"
+        r"|FINDINGS"
+        r"|IMPRESSION(?:/PLAN)?"
+        r"|PLAN"
+        r"|COMPLICATIONS?"
+        r"|DISPOSITION"
+        r"|RECOMMENDATIONS?"
+        r")\b.*$"
+    )
+
+    for match in inline_eus_b_re.finditer(raw):
+        _blank(match.start(), match.end())
+
+    in_eus_b_section = False
+    offset = 0
+    for raw_line in raw.splitlines(keepends=True):
+        line = raw_line.rstrip("\r\n")
+        stripped = line.strip()
+
+        if in_eus_b_section and stripped and next_section_re.match(stripped):
+            in_eus_b_section = False
+
+        if stripped and eus_b_header_re.match(stripped):
+            in_eus_b_section = True
+
+        if in_eus_b_section:
+            _blank(offset, offset + len(line))
+        else:
+            inline = re.search(r"(?i)\bEUS-?B\b", line)
+            if inline:
+                sentence_boundary = max(line.rfind(".", 0, inline.start()), line.rfind(";", 0, inline.start()))
+                blank_start = offset if sentence_boundary == -1 else offset + sentence_boundary + 1
+                _blank(blank_start, offset + len(line))
+
+        offset += len(raw_line)
+
+    return "".join(masked)
+
+
 def reconcile_ebus_sampling_from_narrative(record: RegistryRecord, full_text: str) -> list[str]:
     """Upgrade linear_ebus node_events when sampling is documented in narrative text.
 
@@ -3051,6 +3166,9 @@ def reconcile_ebus_sampling_from_narrative(record: RegistryRecord, full_text: st
         return warnings
     if not full_text:
         return warnings
+    search_text = _mask_eus_b_content(full_text)
+
+    search_text = _mask_eus_b_content(full_text or "")
 
     strong_sampling_re = re.compile(
         r"\b(?:needle(?:s)?|tbna|fna|biops(?:y|ied|ies)|sampl(?:e|ed|es|ing)|pass(?:es)?|aspirat(?:e|ed|ion)|core|forceps)\b",
@@ -3068,6 +3186,8 @@ def reconcile_ebus_sampling_from_narrative(record: RegistryRecord, full_text: st
 
         This avoids misclassifying counts like "Total 7 samples..." as station 7 sampling.
         """
+        if _digit_station_token_looks_like_count(line, start, end):
+            return False
         before_char = line[start - 1] if start > 0 else ""
         after_char = line[end] if end < len(line) else ""
         if before_char in {"/", "-", "."} or after_char in {"/", "-", "."}:
@@ -3078,6 +3198,18 @@ def reconcile_ebus_sampling_from_narrative(record: RegistryRecord, full_text: st
             return False
         if re.search(r"(?i)\b(?:biops(?:y|ies)|passes?)\b", local) and re.search(r"(?i)\beach\s+station\b", local):
             return False
+
+        immediate_tail = line[end : min(len(line), end + 18)]
+        if re.match(r"(?i)^\s*(?:mm|cm|ml|mL|cc|gauge|g|fr|french)\b", immediate_tail):
+            return False
+
+        measurement_prefix = line[max(0, start - 48) : start]
+        if re.search(
+            r"(?i)\b(?:short\s+axis|long\s+axis|diameter|size|measuring|measured|approximately|approx|gauge|caliber|width|depth)\b[^.\n]{0,20}$",
+            measurement_prefix,
+        ):
+            return False
+
         if re.search(r"\b\d{1,2}[RL](?:[SI])?\b", local, re.IGNORECASE):
             return True
 
@@ -3088,7 +3220,7 @@ def reconcile_ebus_sampling_from_narrative(record: RegistryRecord, full_text: st
             or re.search(r"\b(?:node|ln|lymph|subcarinal|paratracheal)\b|\(", lookahead)
         )
 
-    flat_text = re.sub(r"\s+", " ", _strip_ebus_station_tables(full_text or "")).strip()
+    flat_text = re.sub(r"\s+", " ", _strip_ebus_station_tables(search_text)).strip()
     each_station_passes: int | None = None
     each_station_match = re.search(
         r"(?i)\b(?:a\s+total\s+of\s+)?(?P<n>\d{1,2})\s+(?:biops(?:y|ies)|passes?)\b[^.]{0,140}\b(?:at\s+)?each\s+station\b",
@@ -3115,19 +3247,21 @@ def reconcile_ebus_sampling_from_narrative(record: RegistryRecord, full_text: st
         )
         specimen_re = re.compile(r"(?i)\b(?:tbna|fna|passes?|sampled|sampling|aspirat(?:e|ed|ion))\b")
 
-        for raw_line in (full_text or "").splitlines():
-            line = (raw_line or "").strip()
+        for raw_search_line, raw_line in zip(search_text.splitlines(), (full_text or "").splitlines()):
+            line = (raw_search_line or "").strip()
+            orig_line = (raw_line or "").strip()
             if not line:
                 continue
             if station_line_re.search(line) and specimen_re.search(line):
-                return line
+                return orig_line
             if station_token_re.search(line) and specimen_re.search(line):
-                return line
+                return orig_line
         return None
 
     station_to_quote: dict[str, str] = {}
-    for raw_line in (full_text or "").splitlines():
-        line = (raw_line or "").strip()
+    for raw_search_line, raw_line in zip(search_text.splitlines(), (full_text or "").splitlines()):
+        line = (raw_search_line or "").strip()
+        orig_line = (raw_line or "").strip()
         if not line:
             continue
         if _EBUS_TABLE_HEADER_RE.search(line):
@@ -3157,7 +3291,7 @@ def reconcile_ebus_sampling_from_narrative(record: RegistryRecord, full_text: st
             station = validate_station_format(str(station)) or str(station).strip().upper()
             if not station:
                 continue
-            station_to_quote.setdefault(station, line)
+            station_to_quote.setdefault(station, orig_line)
 
     # Sentence-level backstop: handle sampling language + station lists split across newlines.
     if flat_text:
@@ -3200,7 +3334,7 @@ def reconcile_ebus_sampling_from_narrative(record: RegistryRecord, full_text: st
         re.IGNORECASE,
     )
 
-    site_headers = list(site_header_re.finditer(full_text or ""))
+    site_headers = list(site_header_re.finditer(search_text))
     for idx, match in enumerate(site_headers):
         start = match.start()
         end = site_headers[idx + 1].start() if idx + 1 < len(site_headers) else len(full_text)
@@ -3693,6 +3827,10 @@ def cull_hollow_ebus_claims(record: RegistryRecord, full_text: str) -> list[str]
     if isinstance(stations_sampled, list) and stations_sampled:
         return warnings
 
+    targets_sampled = getattr(linear, "targets_sampled", None)
+    if isinstance(targets_sampled, list) and targets_sampled:
+        return warnings
+
     text = full_text or ""
     match = _PROCEDURE_DETAIL_SECTION_PATTERN.search(text)
     if match:
@@ -3888,11 +4026,35 @@ _EBUS_SPECIMEN_SECTION_STOP_RE = re.compile(
 )
 
 
+def _digit_station_token_looks_like_count(line: str, start: int, end: int) -> bool:
+    token = (line or "")[start:end].strip()
+    if not token.isdigit():
+        return False
+    if re.search(
+        rf"(?i)^\s*{re.escape(token)}\s*(?:[:\-]\s*)?(?:x\s*\d+|\d+\s*passes?|passes?)\b",
+        line or "",
+    ):
+        return False
+
+    prefix = (line or "")[max(0, start - 12) : start]
+    suffix = (line or "")[end : min(len(line or ""), end + 20)]
+    if re.search(r"[-–/]\s*$", prefix):
+        return True
+    if re.search(r"(?i)^\s*(?:passes?|biops(?:y|ies)|samples?)\b", suffix):
+        prior_window = (line or "")[max(0, start - 28) : start]
+        if _EBUS_STATION_TOKEN_RE.search(prior_window):
+            return True
+    if re.search(r"(?i)^\s*[)\]\"']", suffix) and re.search(r"[-–/]\s*\d{1,2}\s*$", prefix):
+        return True
+    return False
+
+
 def _extract_tbna_stations_from_specimen_log(full_text: str) -> dict[str, dict[str, object]]:
     if not full_text:
         return {}
 
-    header = _EBUS_SPECIMEN_SECTION_HEADER_RE.search(full_text)
+    search_text = _mask_eus_b_content(full_text)
+    header = _EBUS_SPECIMEN_SECTION_HEADER_RE.search(search_text)
     if not header:
         return {}
 
@@ -3900,18 +4062,18 @@ def _extract_tbna_stations_from_specimen_log(full_text: str) -> dict[str, dict[s
 
     stations: dict[str, dict[str, object]] = {}
     tail = full_text[header.end() :]
+    search_tail = search_text[header.end() :]
     cursor = header.end()
-    for raw_line in tail.splitlines(keepends=True):
+    for raw_search_line, raw_line in zip(search_tail.splitlines(keepends=True), tail.splitlines(keepends=True)):
         line = raw_line.rstrip("\r\n")
-        stripped = line.strip()
+        search_line = raw_search_line.rstrip("\r\n")
+        stripped = search_line.strip()
         if not stripped:
-            if stations:
-                break
             cursor += len(raw_line)
             continue
-        if _EBUS_SPECIMEN_SECTION_STOP_RE.search(line) and stations:
+        if _EBUS_SPECIMEN_SECTION_STOP_RE.search(search_line) and stations:
             break
-        if not _EBUS_SPECIMEN_TBNA_LINE_RE.search(line):
+        if not _EBUS_SPECIMEN_TBNA_LINE_RE.search(search_line):
             cursor += len(raw_line)
             continue
 
@@ -3921,7 +4083,9 @@ def _extract_tbna_stations_from_specimen_log(full_text: str) -> dict[str, dict[s
         line_start = cursor + leading_ws
         line_end = cursor + trailing_len
 
-        for match in _EBUS_STATION_TOKEN_RE.finditer(line):
+        for match in _EBUS_STATION_TOKEN_RE.finditer(search_line):
+            if _digit_station_token_looks_like_count(search_line, match.start(1), match.end(1)):
+                continue
             station = normalize_station(match.group(1) or "")
             if not station:
                 continue
@@ -3935,7 +4099,7 @@ def _extract_tbna_stations_from_specimen_log(full_text: str) -> dict[str, dict[s
                 station,
                 {
                     "station": station,
-                    "evidence_quote": stripped,
+                    "evidence_quote": line.strip(),
                     "token_start": int(token_start),
                     "token_end": int(token_end),
                     "line_start": int(line_start),
@@ -3966,7 +4130,7 @@ def reconcile_ebus_sampling_from_specimen_log(record: RegistryRecord, full_text:
     if not station_to_meta:
         return warnings
 
-    confirmed = sorted(station_to_meta.keys())
+    confirmed = sort_ebus_stations(station_to_meta.keys())
     existing = getattr(linear, "node_events", None)
     node_events = list(existing) if isinstance(existing, list) else []
 
@@ -4095,11 +4259,7 @@ def enrich_specimens_from_specimen_section(record: RegistryRecord, full_text: st
         return warnings
 
     existing_spec = getattr(record, "specimens", None)
-    existing_list = (
-        getattr(existing_spec, "specimens_collected", None) if existing_spec is not None else None
-    )
-    if isinstance(existing_list, list) and existing_list:
-        return warnings
+    existing_list = getattr(existing_spec, "specimens_collected", None) if existing_spec is not None else None
 
     header = _SPECIMEN_SECTION_HEADER_RE.search(full_text)
     if not header:
@@ -4116,6 +4276,13 @@ def enrich_specimens_from_specimen_section(record: RegistryRecord, full_text: st
     lobe_re = re.compile(r"(?i)\b(RUL|RML|RLL|LUL|LLL|LINGULA)\b")
     segment_re = re.compile(r"(?i)\b([LR]B\d{1,2})\b")
     bal_re = re.compile(r"(?i)\bBAL\b|bronchial\s+alveolar\s+lavage")
+    tbna_re = re.compile(
+        r"(?i)\b(?:ebus[- ]?tbna|tbna|fna|transbronchial\s+needle\s+aspirat)\w*\b"
+    )
+    station_re = re.compile(
+        rf"\b({_EBUS_STATION_TOKEN_PATTERN})\b",
+        re.IGNORECASE,
+    )
 
     def _normalize_location(raw: str) -> str | None:
         token = (raw or "").strip().upper()
@@ -4124,6 +4291,20 @@ def enrich_specimens_from_specimen_section(record: RegistryRecord, full_text: st
         if token == "LINGULA":
             return "Lingula"
         return token
+
+    def _normalize_station(raw: str) -> str | None:
+        token = (raw or "").strip()
+        if not token:
+            return None
+        try:
+            from app.ner.entity_types import normalize_station
+        except Exception:  # pragma: no cover
+            normalize_station = None  # type: ignore[assignment]
+
+        if normalize_station is not None:
+            token = normalize_station(token) or token
+        token = validate_station_format(str(token)) or str(token).strip().upper()
+        return str(token).strip().upper() or None
 
     def _map_sent_for_token(raw: str) -> str | None:
         t = (raw or "").strip().lower()
@@ -4155,19 +4336,12 @@ def enrich_specimens_from_specimen_section(record: RegistryRecord, full_text: st
     for raw_line in tail.splitlines():
         line = (raw_line or "").strip()
         if not line:
-            if candidates:
-                break
             continue
 
         # Strip common bullet prefixes ("-", "--", "*", "•").
         line = re.sub(r"^[\s\-\*\u2022]+", "", line).strip()
         if not line:
             continue
-        if not bal_re.search(line):
-            continue
-
-        loc_match = lobe_re.search(line) or segment_re.search(line)
-        location = _normalize_location(loc_match.group(1)) if loc_match else None
 
         sent_for: list[str] = []
         paren = re.search(r"\(([^)]{1,200})\)", line)
@@ -4178,12 +4352,27 @@ def enrich_specimens_from_specimen_section(record: RegistryRecord, full_text: st
                 if mapped and mapped not in sent_for:
                     sent_for.append(mapped)
 
-        item: dict[str, object] = {"type": "BAL"}
-        if location:
-            item["location"] = location
-        if sent_for:
-            item["sent_for"] = sent_for
-        candidates.append(item)
+        if bal_re.search(line):
+            loc_match = lobe_re.search(line) or segment_re.search(line)
+            location = _normalize_location(loc_match.group(1)) if loc_match else None
+
+            item: dict[str, object] = {"type": "BAL"}
+            if location:
+                item["location"] = location
+            if sent_for:
+                item["sent_for"] = sent_for
+            candidates.append(item)
+            continue
+
+        if tbna_re.search(line):
+            station_match = station_re.search(line)
+            station = _normalize_station(station_match.group(1)) if station_match else None
+            if not station:
+                continue
+            item = {"type": "TBNA", "location": station}
+            if sent_for:
+                item["sent_for"] = sent_for
+            candidates.append(item)
 
     if not candidates:
         return warnings
@@ -4199,15 +4388,25 @@ def enrich_specimens_from_specimen_section(record: RegistryRecord, full_text: st
 
         validated: list[object] = []
         seen: set[tuple[str, str]] = set()
+        if isinstance(existing_list, list):
+            for item in existing_list:
+                item_type = str(getattr(item, "type", "") or "").strip() or "Other"
+                loc = str(getattr(item, "location", "") or "").strip()
+                seen.add((item_type, loc.upper()))
+                validated.append(item)
+
+        added = 0
         for cand in candidates:
+            item_type = str(cand.get("type") or "Other").strip()
             loc = str(cand.get("location") or "").strip()
-            key = ("BAL", loc.upper())
+            key = (item_type, loc.upper())
             if key in seen:
                 continue
             seen.add(key)
             validated.append(item_cls.model_validate(cand))
+            added += 1
 
-        if not validated:
+        if not validated or added == 0:
             return warnings
 
         record.specimens = spec_cls.model_validate({"specimens_collected": validated})
@@ -4474,6 +4673,7 @@ def populate_ebus_node_events_fallback(record: RegistryRecord, full_text: str) -
 
     if not full_text:
         return warnings
+    search_text = _mask_eus_b_content(full_text)
 
     from app.ner.entity_types import normalize_station
     from app.registry.schema import NodeInteraction
@@ -4481,6 +4681,7 @@ def populate_ebus_node_events_fallback(record: RegistryRecord, full_text: str) -
     station_events: dict[str, NodeInteraction] = {}
     station_evidence: dict[str, dict[str, int]] = {}
     stations_sampled: list[str] = []
+    existing_station_tokens: list[str] = []
     in_sampled_section = False
     in_station_list = False
     station_list_default_sampling = False
@@ -4488,13 +4689,34 @@ def populate_ebus_node_events_fallback(record: RegistryRecord, full_text: str) -
 
     passes_re = re.compile(r"(?i)\b(\d{1,2})\s*(?:pass|passes)\b")
     rose_re = re.compile(r"(?i)\brose\s*(?:showed|revealed|:|was)?\s*([^.\\n]{1,180})")
+    sampling_order_header_re = re.compile(r"(?i)^\s*sampling(?:\s+order)?\s*:?\s*$")
+    each_station_passes_re = re.compile(
+        r"(?i)\b(?P<n>\d{1,2})\s+(?:passes?|biops(?:y|ies))\b[^.\n]{0,40}\beach\s+station\b"
+        r"|\b(?P<n2>\d{1,2})\s+(?:passes?|biops(?:y|ies))\s+each\b"
+    )
+    global_station_sampling_re = re.compile(
+        r"(?is)\b(?:tbna|fna|sampling|sampled|passes?)\b.{0,140}\b(?:all\s+(?:one|two|three|four|five|six|\d+)\s+stations?|\d+\s+stations?)\b"
+        r"|\b(?:all\s+(?:one|two|three|four|five|six|\d+)\s+stations?|\d+\s+stations?)\b.{0,140}\b(?:tbna|fna|sampling|sampled|passes?)\b"
+    )
+
+    for value in getattr(linear, "stations_sampled", None) or []:
+        token = normalize_station(str(value or "").strip())
+        if not token:
+            continue
+        token = validate_station_format(str(token)) or str(token).strip().upper()
+        token = token.strip().upper()
+        if token and token not in existing_station_tokens:
+            existing_station_tokens.append(token)
 
     cursor = 0
-    for raw_line in full_text.splitlines(keepends=True):
+    for masked_line, raw_line in zip(search_text.splitlines(keepends=True), full_text.splitlines(keepends=True)):
         line_offset = cursor
         cursor += len(raw_line)
-        line = raw_line.rstrip("\r\n")
+        line = masked_line.rstrip("\r\n")
+        quote_line = raw_line.rstrip("\r\n")
         if _EBUS_SAMPLED_SECTION_RE.search(line):
+            in_sampled_section = True
+        if sampling_order_header_re.search(line):
             in_sampled_section = True
 
         if _EBUS_STATION_LIST_HEADER_RE.search(line):
@@ -4514,8 +4736,11 @@ def populate_ebus_node_events_fallback(record: RegistryRecord, full_text: str) -
                 continue
             station_list_default_sampling = False
 
+        station_token_with_sampling = bool(
+            _EBUS_STATION_TOKEN_RE.search(line) and _EBUS_SAMPLING_INDICATORS_RE.search(line)
+        )
         if not _EBUS_FALLBACK_STATION_RE.search(line):
-            if not (in_sampled_section or in_station_list or "lymph node" in line.lower()):
+            if not (in_sampled_section or in_station_list or "lymph node" in line.lower() or station_token_with_sampling):
                 continue
 
         has_station_token = bool(_EBUS_STATION_TOKEN_RE.search(line)) or bool(
@@ -4586,11 +4811,19 @@ def populate_ebus_node_events_fallback(record: RegistryRecord, full_text: str) -
                 token = match.group(1) or ""
                 if token.isdigit():
                     prefix = line[: match.start(1)]
+                    measurement_prefix = line[max(0, match.start(1) - 48) : match.start(1)]
                     if re.search(r"(?i)\b(?:site|case|patient)\s+#?\s*$", prefix):
                         continue
                     before_char = line[match.start(1) - 1] if match.start(1) > 0 else ""
                     after_char = line[match.end(1)] if match.end(1) < len(line) else ""
                     if before_char in {"/", "-"} or after_char in {"/", "-"}:
+                        continue
+                    if re.match(r"(?i)^\s*(?:mm|cm|ml|mL|cc|gauge|g|fr|french)\b", line[match.end(1) :]):
+                        continue
+                    if re.search(
+                        r"(?i)\b(?:short\s+axis|long\s+axis|diameter|size|measuring|measured|approximately|approx|gauge|caliber|width|depth)\b[^.\n]{0,20}$",
+                        measurement_prefix,
+                    ):
                         continue
                     lookbehind = line[max(0, match.start(1) - 24) : match.start(1)].lower()
                     lookahead = line[match.end(1) : match.end(1) + 42].lower()
@@ -4616,7 +4849,7 @@ def populate_ebus_node_events_fallback(record: RegistryRecord, full_text: str) -
             if existing:
                 if existing.action == "inspected_only" and action != "inspected_only":
                     existing.action = action
-                    existing.evidence_quote = line.strip()
+                    existing.evidence_quote = quote_line.strip()
                     stations_sampled.append(station)
                     station_evidence[station] = {
                         "token_start": int(token_start),
@@ -4643,7 +4876,7 @@ def populate_ebus_node_events_fallback(record: RegistryRecord, full_text: str) -
                 outcome=None,
                 passes=passes_val,
                 rose_result=rose_val,
-                evidence_quote=line.strip(),
+                evidence_quote=quote_line.strip(),
             )
             station_evidence[station] = {
                 "token_start": int(token_start),
@@ -4676,6 +4909,44 @@ def populate_ebus_node_events_fallback(record: RegistryRecord, full_text: str) -
             if target:
                 return target
         return snippet[:120] if snippet else None
+
+    if not station_events:
+        aggregate_match = global_station_sampling_re.search(full_text)
+        if aggregate_match and existing_station_tokens:
+            aggregate_quote = re.sub(r"\s+", " ", (aggregate_match.group(0) or "").strip())
+            aggregate_passes: int | None = None
+            passes_match = each_station_passes_re.search(aggregate_match.group(0) or "")
+            if passes_match:
+                raw_passes = passes_match.group("n") or passes_match.group("n2")
+                try:
+                    aggregate_passes = int(raw_passes) if raw_passes else None
+                except Exception:
+                    aggregate_passes = None
+
+            for station in existing_station_tokens:
+                pat = _ebus_station_pattern(station)
+                token_match = pat.search(search_text) if pat is not None else None
+                token_start = int(token_match.start()) if token_match is not None else int(aggregate_match.start())
+                token_end = int(token_match.end()) if token_match is not None else int(aggregate_match.end())
+                station_events[station] = NodeInteraction(
+                    station=station,
+                    action="needle_aspiration",
+                    outcome=None,
+                    passes=aggregate_passes,
+                    evidence_quote=aggregate_quote[:280] if aggregate_quote else None,
+                )
+                station_evidence[station] = {
+                    "token_start": token_start,
+                    "token_end": token_end,
+                    "quote_start": int(aggregate_match.start()),
+                    "quote_end": int(aggregate_match.end()),
+                }
+                if aggregate_passes is not None:
+                    stations_sampled.append(station)
+            if station_events:
+                warnings.append(
+                    f"EBUS_NODE_FALLBACK_FROM_AGGREGATE_STATIONS: stations={existing_station_tokens}"
+                )
 
     if not station_events:
         # Some notes clearly document EBUS-TBNA sampling but omit station tokens
@@ -5241,6 +5512,7 @@ _EUS_B_NEEDLE_GAUGE_RE = re.compile(r"(?i)\b(19|21|22|25)\s*[- ]?(?:g|gauge)\b")
 _EUS_B_PASSES_RE = re.compile(
     r"(?i)\b(?:a\s+total\s+of\s+)?(?P<count>\d{1,2})\s+(?:needle\s+)?passes?\b"
     r"|\bpasses?\s*(?:x|=|:)?\s*(?P<count2>\d{1,2})\b"
+    r"|\bx\s*(?P<count4>\d{1,2})\s*passes?\b"
     r"|\b(?:a\s+total\s+of\s+)?(?P<count3>\d{1,2})\s+(?:endoscopic\s+ultrasound\s+guided\s+)?"
     r"transbronchial\s+(?:needle\s+aspiration\s+)?biops(?:y|ies)\b"
 )
@@ -5348,10 +5620,19 @@ def enrich_eus_b_sampling_details(record: RegistryRecord, full_text: str) -> lis
                     pass
 
     if getattr(eus_b, "passes", None) in (None, 0):
-        match = _EUS_B_PASSES_RE.search(section)
+        match = None
+        for raw_line in section.splitlines():
+            if not _EUS_B_MARKER_RE.search(raw_line):
+                continue
+            line_match = _EUS_B_PASSES_RE.search(raw_line)
+            if line_match:
+                match = line_match
+                break
+        if match is None:
+            match = _EUS_B_PASSES_RE.search(section)
         if match:
             try:
-                raw_count = match.group("count") or match.group("count2") or match.group("count3")
+                raw_count = match.group("count") or match.group("count2") or match.group("count3") or match.group("count4")
                 count = int(raw_count) if raw_count is not None else None
             except Exception:
                 count = None
@@ -5409,9 +5690,130 @@ def enrich_eus_b_sampling_details(record: RegistryRecord, full_text: str) -> lis
 _PLEURAL_THORACOSCOPY_BIOPSY_RE = re.compile(
     r"\bbiops(?:y|ies)\b[^.\n]{0,120}\bpleur(?:a|al|e)?\b"
     r"|\bpleur(?:a|al|e)?\b[^.\n]{0,120}\bbiops(?:y|ies)\b"
+    r"|\b(?:parietal|diaphragmatic|visceral|chest\s+wall)\s+pleur(?:a|al|e)?\b[^.\n]{0,140}\b(?:forceps\s+)?biops(?:y|ies)\b"
+    r"|\b(?:forceps\s+)?biops(?:y|ies)\b[^.\n]{0,140}\b(?:parietal|diaphragmatic|visceral|chest\s+wall)\s+pleur(?:a|al|e)?\b"
     r"|\b(?:one|two|three|four|five|six|seven|eight|nine|ten|\d{1,2})\s+biops(?:y|ies)\s+specimens?\b",
     re.IGNORECASE,
 )
+
+
+def suppress_conditional_pleural_and_stent_procedures(record: RegistryRecord, full_text: str) -> list[str]:
+    """Suppress conditional/planned pleural and stent procedures that were not completed."""
+    warnings: list[str] = []
+    text = full_text or ""
+    if not text.strip():
+        return warnings
+
+    procedures = getattr(record, "procedures_performed", None)
+    pleural = getattr(record, "pleural_procedures", None)
+
+    def _clear_fields(obj: Any, field_names: tuple[str, ...]) -> None:
+        for field_name in field_names:
+            if hasattr(obj, field_name):
+                setattr(obj, field_name, None)
+
+    chest_tube = getattr(pleural, "chest_tube", None) if pleural is not None else None
+    chest_tube_conditional = bool(
+        re.search(
+            r"(?i)\b(?:observe|observation|conservative(?:ly)?)\b[^.\n]{0,120}\b(?:without|no)\b[^.\n]{0,40}\bchest\s+tube\b"
+            r"|\b(?:no|not)\b[^.\n]{0,60}\bchest\s+tube\b[^.\n]{0,60}\b(?:placed|needed|required|inserted)\b"
+            r"|\b(?:consider(?:ed|ing)?|would|plan(?:ned)?)\b[^.\n]{0,80}\b(?:place|placing|placement|insert(?:ing|ion)?)\b[^.\n]{0,80}\bchest\s+tube\b"
+            r"|\bchest\s+tube\b[^.\n]{0,80}\b(?:if|unless)\b",
+            text,
+        )
+    )
+    if chest_tube is not None and getattr(chest_tube, "performed", None) is True and chest_tube_conditional:
+        setattr(chest_tube, "performed", False)
+        _clear_fields(chest_tube, ("action", "side", "indication", "tube_type", "tube_size_fr", "guidance"))
+        warnings.append("AUTO_SUPPRESSED: conditional/planned chest tube language did not set performed=true")
+        warnings.append(
+            make_quality_signal_warning(
+                "conditional_chest_tube_suppressed",
+                field="pleural_procedures.chest_tube",
+                action="suppressed",
+                detail="Conditional/observation-only chest tube language was suppressed as not performed.",
+                source="postprocess",
+            )
+        )
+
+    thoracentesis = getattr(pleural, "thoracentesis", None) if pleural is not None else None
+    thoracentesis_aborted = bool(
+        re.search(
+            r"(?i)\b(?:thoracentesis|pleural\s+tap)\b[^.\n]{0,220}"
+            r"\b(?:aborted|not\s+performed|unsuccessful|unable\s+to|could\s+not|no\s+fluid\s+return|dry\s+tap|no\s+safe\s+(?:window|access|pocket)|unsafe)\b"
+            r"|\b(?:aborted|not\s+performed|unsuccessful|unable\s+to|could\s+not|no\s+fluid\s+return|dry\s+tap|no\s+safe\s+(?:window|access|pocket)|unsafe)\b"
+            r"[^.\n]{0,220}\b(?:thoracentesis|pleural\s+tap)\b",
+            text,
+        )
+    )
+    if thoracentesis is not None and getattr(thoracentesis, "performed", None) is True and thoracentesis_aborted:
+        setattr(thoracentesis, "performed", False)
+        _clear_fields(
+            thoracentesis,
+            (
+                "side",
+                "guidance",
+                "indication",
+                "fluid_appearance",
+                "volume_removed_ml",
+                "manometry_performed",
+                "opening_pressure_cmh2o",
+                "closing_pressure_cmh2o",
+            ),
+        )
+        warnings.append("AUTO_SUPPRESSED: aborted/no-return thoracentesis language did not set performed=true")
+        warnings.append(
+            make_quality_signal_warning(
+                "aborted_thoracentesis_suppressed",
+                field="pleural_procedures.thoracentesis",
+                action="suppressed",
+                detail="Aborted or no-return thoracentesis language was suppressed as not performed.",
+                source="postprocess",
+            )
+        )
+
+    airway_stent = getattr(procedures, "airway_stent", None) if procedures is not None else None
+    stent_planned_only = bool(
+        re.search(
+            r"(?i)\b(?:consider(?:ed|ing)?|candidate\s+for|plan(?:ned)?|possible|would|if\s+needed)\b"
+            r"[^.\n]{0,120}\b(?:stent|y-?\s*stent|tracheobronchial\s+stent|airway\s+stent)\b",
+            text,
+        )
+        and not re.search(
+            r"(?i)\b(?:deploy(?:ed|ment)?|insert(?:ed|ion)?|place(?:d|ment)?|implant(?:ed|ation)?)\b[^.\n]{0,120}\b(?:stent|y-?\s*stent|tracheobronchial\s+stent)\b"
+            r"|\b(?:stent|y-?\s*stent|tracheobronchial\s+stent)\b[^.\n]{0,120}\b(?:deploy(?:ed|ment)?|insert(?:ed|ion)?|place(?:d|ment)?|implant(?:ed|ation)?)\b",
+            text,
+        )
+    )
+    if airway_stent is not None and getattr(airway_stent, "performed", None) is True and stent_planned_only:
+        setattr(airway_stent, "performed", False)
+        _clear_fields(
+            airway_stent,
+            (
+                "action",
+                "airway_stent_removal",
+                "stent_type",
+                "stent_brand",
+                "location",
+                "device_size",
+                "diameter_mm",
+                "length_mm",
+                "deployment_successful",
+                "action_type",
+            ),
+        )
+        warnings.append("AUTO_SUPPRESSED: planned-only airway stent language did not set performed=true")
+        warnings.append(
+            make_quality_signal_warning(
+                "planned_only_airway_stent_suppressed",
+                field="procedures_performed.airway_stent",
+                action="suppressed",
+                detail="Planned/considered airway stent language was suppressed as not performed.",
+                source="postprocess",
+            )
+        )
+
+    return warnings
 
 
 def enrich_medical_thoracoscopy_biopsies_taken(record: RegistryRecord, full_text: str) -> list[str]:
@@ -5551,6 +5953,12 @@ def enrich_procedure_success_status(record: RegistryRecord, full_text: str) -> l
         for fail_match in _OUTCOMES_FAIL_RE.finditer(text):
             s, e = _sentence_span(fail_match.start(), fail_match.end())
             snippet = text[s:e].strip()
+            local_substep_limitation = bool(
+                re.search(
+                    r"(?i)\b(?:attempt(?:ed|s)?|trial|reposition|position|sample|sampling|pass(?:es)?|access|navigation|probe|radial|stent|target|fiducial|marker|locali[sz]ation|mapping)\b",
+                    snippet or "",
+                )
+            )
             traverse_baseline = bool(
                 re.search(r"(?i)\b(?:could\s+not|cannot|unable\s+to)\s+(?:traverse|bypass|pass)\b", snippet or "")
             )
@@ -5599,6 +6007,11 @@ def enrich_procedure_success_status(record: RegistryRecord, full_text: str) -> l
             # If the note documents a failed sub-step but the overall procedure
             # is completed, classify as partial success instead of full failure.
             if procedure_completed_flag or completion_language_present or strong_progressed_after:
+                status = "Partial success"
+            elif local_substep_limitation and not re.search(
+                r"(?i)\b(?:procedure\s+failed|unable\s+to\s+complete|could\s+not\s+complete)\b",
+                snippet or "",
+            ):
                 status = "Partial success"
             break
 
@@ -5791,9 +6204,9 @@ def enrich_outcomes_complication_details(record: RegistryRecord, full_text: str)
 
 _BAL_STANDARD_LINE_RE = re.compile(
     r"(?i)\b(?:bronch(?:ial)?\s+alveolar\s+lavage|broncho[-\s]?alveolar\s+lavage|BAL)\b"
-    r"[^.\n]{0,80}\b(?:was\s+)?performed\b[^.\n]{0,80}\b(?:at|in)\b\s+"
+    r"[^.\n]{0,80}(?:\b(?:was\s+)?performed\b[^.\n]{0,80})?\b(?:at|in)\b\s+"
     r"(?P<loc>[^.\n]{3,220}?)"
-    r"(?=\s*(?:,|;|\n|\.|\b(?:and\s+)?sent\s+for\b|\b\d{1,4}\s*(?:cc|ml)\b))"
+    r"(?=\s*(?:,|;|\n|\.|\bwith\b|\b(?:and\s+)?sent\s+for\b|\b\d{1,4}\s*(?:cc|ml)\b))"
 )
 _BAL_MINI_PREFIX_RE = re.compile(r"(?i)\bmini\s+(?:bronch(?:ial)?\s+alveolar\s+lavage|bal)\b")
 _BAL_INSTILLED_RE = re.compile(
@@ -5802,8 +6215,8 @@ _BAL_INSTILLED_RE = re.compile(
 )
 _BAL_RETURN_RE = re.compile(
     r"(?i)\b(?:"
-    r"(?:suction\s*returned(?:\s+with)?|returned\s+with|returned|recovered)\s+(?P<num>\d{1,4})\s*(?:cc|ml)\b"
-    r"|(?P<num2>\d{1,4})\s*(?:cc|ml)\b(?:\s*(?:was|were|is|are))?\s*(?:returned|recovered)\b"
+    r"(?:suction\s*returned(?:\s+with)?|returned\s+with|return(?:ed)?|recovered)\s+(?P<num>\d{1,4})\s*(?:cc|ml)\b"
+    r"|(?P<num2>\d{1,4})\s*(?:cc|ml)\b(?:\s*(?:was|were|is|are))?\s*(?:return(?:ed)?|recovered)\b"
     r")"
 )
 
@@ -6156,5 +6569,5 @@ def enrich_bal_from_procedure_detail(record: RegistryRecord, full_text: str) -> 
     if not changed:
         return warnings
 
-    warnings.append("AUTO_BAL_DETAIL: set BAL location/volumes from explicit 'performed at' statement")
+    warnings.append("AUTO_BAL_DETAIL: set BAL location/volumes from explicit BAL sentence")
     return warnings

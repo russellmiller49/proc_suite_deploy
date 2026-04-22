@@ -28,6 +28,7 @@ class StationExtractionResult:
     node_events: List[NodeInteraction]
     stations_sampled: List[str]
     stations_inspected_only: List[str]
+    non_station_targets: List[str]
     warnings: List[str]
 
 
@@ -87,10 +88,16 @@ class EBUSStationExtractor:
         stations = ner_result.entities_by_type.get("ANAT_LN_STATION", [])
         actions = ner_result.entities_by_type.get("PROC_ACTION", [])
         rose_entities = ner_result.entities_by_type.get("OBS_ROSE", [])
+        anatomy_targets = (
+            ner_result.entities_by_type.get("ANAT_AIRWAY", [])
+            + ner_result.entities_by_type.get("ANAT_LUNG_LOC", [])
+            + ner_result.entities_by_type.get("ANAT_PLEURA", [])
+        )
 
         node_events: List[NodeInteraction] = []
         stations_sampled: Set[str] = set()
         stations_inspected_only: Set[str] = set()
+        non_station_targets: List[str] = []
         warnings: List[str] = []
         best_by_station: dict[str, tuple[NodeInteraction, int]] = {}
 
@@ -123,13 +130,13 @@ class EBUSStationExtractor:
                     f"No scope found for station '{station_entity.text}'"
                 )
 
-            # Find action within the same scope; if missing, broaden to paragraph/window.
+            # Find action within the same scope only; broader paragraph association
+            # tends to turn surveyed-only stations into sampled stations.
             nearby_action = self._find_nearest_in_scope(
                 station_entity,
                 actions,
                 scope,
             )
-
             if nearby_action is None and paragraph_scopes:
                 paragraph_scope = self._find_scope_for_entity(
                     station_entity,
@@ -137,11 +144,21 @@ class EBUSStationExtractor:
                     [],
                     [],
                 )
-                nearby_action = self._find_nearest_in_scope(
-                    station_entity,
-                    actions,
-                    paragraph_scope,
-                )
+                if paragraph_scope is not None:
+                    paragraph_action = self._find_nearest_in_scope(
+                        station_entity,
+                        actions,
+                        paragraph_scope,
+                    )
+                    local_station_context = raw_text[
+                        max(0, int(station_entity.start_char) - 120) : min(len(raw_text), int(station_entity.end_char) + 180)
+                    ]
+                    paragraph_action_type = self._classify_action(paragraph_action, context_text=paragraph_scope.text)
+                    if paragraph_action_type != "inspected_only" and not re.search(
+                        r"(?i)\b(?:sampling\s+criteria|benign\s+ultrasound|ultrasound\s+characteristics|not\s+biops(?:ied|y)|not\s+sampled|inspected)\b",
+                        local_station_context,
+                    ):
+                        nearby_action = paragraph_action
 
             # Use a local context window as an additional backstop when the action
             # entity is missing or the note spans multiple lines.
@@ -165,6 +182,8 @@ class EBUSStationExtractor:
                 scope,
             )
             outcome = self._classify_outcome(nearby_rose)
+            rose_result = (nearby_rose.text or "").strip() if nearby_rose is not None else None
+            passes = self._extract_pass_count(" ".join(context_parts) or None)
 
             # Build evidence quote
             evidence = station_entity.evidence_quote or ""
@@ -173,6 +192,9 @@ class EBUSStationExtractor:
                 station=station_name,
                 action=action_type,
                 outcome=outcome,
+                passes=passes,
+                pass_count=passes,
+                rose_result=rose_result or None,
                 evidence_quote=evidence,
             )
             candidate_pos = int(getattr(station_entity, "start_char", 0) or 0)
@@ -207,16 +229,61 @@ class EBUSStationExtractor:
                     best_by_station[station_name] = (candidate, candidate_pos)
 
         node_events = [event for event, _pos in sorted(best_by_station.values(), key=lambda pair: pair[1])]
+
+        seen_non_station_targets: set[str] = set()
+        for action_entity in actions:
+            scope = self._find_scope_for_entity(
+                action_entity,
+                bullet_scopes,
+                sentence_scopes,
+                line_scopes,
+            )
+            if scope is None:
+                continue
+            if any(scope.contains(station_entity) for station_entity in stations):
+                continue
+            action_type = self._classify_action(action_entity, context_text=scope.text)
+            if action_type == "inspected_only":
+                continue
+            target_entity = self._find_nearest_in_scope(action_entity, anatomy_targets, scope)
+            if target_entity is None:
+                continue
+            target_text = str(target_entity.text or "").strip()
+            if not target_text:
+                continue
+            normalized_target = target_text.lower()
+            if normalized_target in seen_non_station_targets:
+                continue
+            nearby_rose = self._find_nearest_in_scope(action_entity, rose_entities, scope)
+            rose_result = (nearby_rose.text or "").strip() if nearby_rose is not None else None
+            passes = self._extract_pass_count(scope.text)
+            node_events.append(
+                NodeInteraction(
+                    station=None,
+                    target_text=target_text,
+                    action=action_type,
+                    outcome=self._classify_outcome(nearby_rose),
+                    passes=passes,
+                    pass_count=passes,
+                    rose_result=rose_result or None,
+                    evidence_quote=target_entity.evidence_quote or target_text,
+                )
+            )
+            non_station_targets.append(target_text)
+            seen_non_station_targets.add(normalized_target)
+
         for event in node_events:
             if event.action != "inspected_only":
-                stations_sampled.add(event.station)
-            else:
+                if event.station:
+                    stations_sampled.add(event.station)
+            elif event.station:
                 stations_inspected_only.add(event.station)
 
         return StationExtractionResult(
             node_events=node_events,
             stations_sampled=sorted(stations_sampled),
             stations_inspected_only=sorted(stations_inspected_only),
+            non_station_targets=non_station_targets,
             warnings=warnings,
         )
 
@@ -443,3 +510,31 @@ class EBUSStationExtractor:
             return "nondiagnostic"
 
         return "deferred_to_final_path"
+
+    def _extract_pass_count(self, text: str | None) -> int | None:
+        raw = str(text or "").strip()
+        if not raw:
+            return None
+        numeric_match = re.search(r"(?i)\b(\d{1,2})\s+passes?\b", raw)
+        if numeric_match:
+            try:
+                return int(numeric_match.group(1))
+            except Exception:
+                return None
+
+        word_to_int = {
+            "one": 1,
+            "two": 2,
+            "three": 3,
+            "four": 4,
+            "five": 5,
+            "six": 6,
+            "seven": 7,
+            "eight": 8,
+            "nine": 9,
+            "ten": 10,
+        }
+        word_match = re.search(r"(?i)\b(one|two|three|four|five|six|seven|eight|nine|ten)\s+passes?\b", raw)
+        if word_match:
+            return word_to_int.get((word_match.group(1) or "").strip().lower())
+        return None

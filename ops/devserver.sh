@@ -146,7 +146,7 @@ else
   echo "[devserver] PHI_DATABASE_URL=<unset>"
 fi
 if [[ "${REGISTRY_STORE_DB_DEFAULTED}" == "1" ]]; then
-  echo "[devserver] REGISTRY_STORE_DATABASE_URL=${REGISTRY_STORE_DATABASE_URL} (local dev default)"
+echo "[devserver] REGISTRY_STORE_DATABASE_URL=${REGISTRY_STORE_DATABASE_URL} (local dev default)"
 elif [[ -n "${REGISTRY_STORE_DATABASE_URL-}" ]]; then
   if [[ "${REGISTRY_STORE_DATABASE_URL}" == sqlite* ]]; then
     echo "[devserver] REGISTRY_STORE_DATABASE_URL=${REGISTRY_STORE_DATABASE_URL}"
@@ -157,7 +157,22 @@ else
   echo "[devserver] REGISTRY_STORE_DATABASE_URL=<unset>"
 fi
 echo "[devserver] OMP_NUM_THREADS=${OMP_NUM_THREADS}"
+echo "[devserver] Open UI at http://localhost:${PORT:-8000}/ui/"
+echo "[devserver] Reporter Builder: http://localhost:${PORT:-8000}/ui/reporter_builder.html"
 echo "[devserver] =============================================="
+
+# Fast fail with a clear message when new API dependencies are missing from the
+# interpreter that will actually launch uvicorn.
+if ! python - <<'PY' >/dev/null 2>&1
+import multipart
+PY
+then
+  echo "[devserver] ERROR: python-multipart is not installed in the active Python environment." >&2
+  echo "[devserver] python=$(python -c 'import sys; print(sys.executable)')" >&2
+  echo "[devserver] Install updated runtime deps in this environment, for example:" >&2
+  echo "[devserver]   python -m pip install -r requirements.txt" >&2
+  exit 1
+fi
 
 # Use 'python -m uvicorn' to ensure we use the conda environment's Python
 # --reload enables hot-reload for development

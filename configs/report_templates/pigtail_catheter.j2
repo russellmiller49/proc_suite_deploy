@@ -1,6 +1,14 @@
 {% set _hint_upper = (free_text_hint | default("")) | upper %}
 {% set _side = (proc.side or "unspecified") | lower %}
+{% set _fibrinolytic_only = (proc.fibrinolytic_agents or proc.tpa_dose_mg is not none or proc.dnase_dose_mg is not none) and (("32561" in _hint_upper) or ("32562" in _hint_upper) or ("DOSE NUMBER" in _hint_upper) or ("DOSE #" in _hint_upper) or ("SUBSEQUENT FIBRINOLYTIC" in _hint_upper) or ("RIGHT-SIDED TUBE" in _hint_upper) or ("LEFT-SIDED TUBE" in _hint_upper) or ("EXISTING" in _hint_upper) or ("VIA THE TUBE" in _hint_upper) or ("FIBRINOLYTIC INSTILLATION" in _hint_upper)) and ("INSERT" not in _hint_upper) and ("PLACEMENT" not in _hint_upper) %}
 
+{% if _fibrinolytic_only %}
+Pleural drain patency was confirmed in the {{ proc.side | title }} hemithorax before intrapleural therapy.
+{% if proc.fibrinolytic_agents or proc.tpa_dose_mg is not none or proc.dnase_dose_mg is not none %}
+Intrapleural fibrinolytic therapy was instilled through the existing pigtail catheter{% if proc.fibrinolytic_agents %} using {{ proc.fibrinolytic_agents | join(' + ') }}{% endif %}{% if proc.tpa_dose_mg is not none %} (tPA {{ proc.tpa_dose_mg }} mg{% if proc.dnase_dose_mg is not none %}, DNase {{ proc.dnase_dose_mg }} mg{% endif %}){% elif proc.dnase_dose_mg is not none %} (DNase {{ proc.dnase_dose_mg }} mg){% endif %}{% if proc.fibrinolytic_schedule %}, schedule {{ proc.fibrinolytic_schedule }}{% endif %}{% if proc.fibrinolytic_number_of_doses is not none %}, dose number {{ proc.fibrinolytic_number_of_doses }}{% endif %}{% if proc.fibrinolytic_indication %}; indication: {{ proc.fibrinolytic_indication }}{% endif %}.
+{% endif %}
+{% if proc.fluid_removed_ml is not none %}Drainage documented: {{ proc.fluid_removed_ml }} mL{% if proc.fluid_appearance %} ({{ proc.fluid_appearance | title }}){% endif %}.{% endif %}
+{% else %}
 Pigtail Catheter Placement (Modified for Drainage) The insertion site was prepped and draped in sterile fashion. Anesthesia: Lidocaine 1% was used for local anesthesia.{% if proc.side %} Entry Site: {{ proc.side | title }} hemithorax.{% endif %}
 
 Findings and Technique: A {{ proc.size_fr }} pigtail catheter was utilized. A pigtail catheter was inserted using the Seldinger technique. Entry into the pleural space was confirmed with the easy removal of pleural fluid. A guidewire was inserted using the introducer needle. The introducer needle was then removed. A dilator was then inserted over the wire with a twisting motion in order to form a tract for catheter insertion. The dilator was removed and the pigtail catheter (with trocar) was advanced over the guidewire.
@@ -23,6 +31,7 @@ Intrapleural fibrinolytic therapy was documented{% if proc.fibrinolytic_agents %
 Following adequate drainage, the pigtail catheter was removed. The site was dressed with occlusive gauze.
 {% else %}
 The catheter was secured and sterile dressings were applied.
+{% endif %}
 {% endif %}
 
 The patient tolerated the procedure well without immediate complications.

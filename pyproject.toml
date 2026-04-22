@@ -40,9 +40,14 @@ dependencies = [
 [project.optional-dependencies]
 api = [
   "fastapi>=0.115",
+  "python-multipart>=0.0.26,<1",
   "uvicorn>=0.30",
 ]
+agents = [
+  "openai-agents<1",
+]
 dev = [
+  "openai-agents<1",
   "pytest",
   "pytest-cov",
   "ruff",

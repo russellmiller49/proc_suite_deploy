@@ -15,6 +15,7 @@ from app.registry.schema.granular_logic import (
     validate_ebus_consistency,
 )
 from app.registry.schema.granular_models import (
+    AirwayDeviceActionProcedure,
     AirwayStentProcedure,
     BLVRChartisMeasurement,
     BLVRValvePlacement,
@@ -35,6 +36,7 @@ __all__ = [
     "IPCProcedure",
     "ClinicalContext",
     "PatientDemographics",
+    "AirwayDeviceActionProcedure",
     "AirwayStentProcedure",
     # Per-site models
     "EBUSStationDetail",
@@ -53,4 +55,3 @@ __all__ = [
     "derive_aggregate_fields",
     "derive_procedures_from_granular",
 ]
-

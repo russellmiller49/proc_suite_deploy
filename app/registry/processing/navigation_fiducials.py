@@ -82,6 +82,18 @@ def apply_navigation_fiducials(data: dict[str, Any], text: str) -> bool:
         }
 
     def _extract_target_location() -> str:
+        explicit_target_patterns = (
+            r"\btarget(?:ed)?\s+lesion\s+(?:is\s+)?(?:in|at)\s+([^\n.]{3,200}?)(?:\s+was\s+(?:reached|accessed|localized|confirmed)\b|[.;,\n]|$)",
+            r"\btarget\s+in\s+(?:the\s+)?([^\n.]{3,200}?)(?:\s+was\s+(?:reached|accessed|localized|confirmed)\b|[.;,\n]|$)",
+        )
+        for pattern in explicit_target_patterns:
+            match = re.search(pattern, text, re.IGNORECASE)
+            if not match:
+                continue
+            loc = match.group(1).strip()
+            loc = re.sub(r"(?i)^(?:the|a|an)\s+", "", loc).strip()
+            if loc:
+                return loc
         for pattern in (
             r"\bengage(?:d)?\s+the\s+([^\n.]{3,200})",
             r"\bnavigate(?:d|ion)?\s+to\s+([^\n.]{3,200})",

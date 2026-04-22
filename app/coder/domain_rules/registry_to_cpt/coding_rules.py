@@ -13,6 +13,7 @@ import re
 from datetime import date
 from typing import Any
 
+from app.registry.quality_signals import make_quality_signal_warning
 from app.registry.schema import RegistryRecord
 
 
@@ -253,8 +254,22 @@ def _airway_site_tokens(value: Any) -> set[str]:
     return tokens
 
 
+def _airway_or_lobe_tokens(value: Any) -> set[str]:
+    text = str(value or "").strip()
+    if not text:
+        return set()
+    return _airway_site_tokens(text) | _lobe_tokens([text])
+
+
 def _is_tracheal_stent_location(value: Any) -> bool:
-    return "Trachea" in _airway_site_tokens(value)
+    tokens = _airway_site_tokens(value)
+    text = str(value or "").strip().upper()
+    return (
+        "Trachea" in tokens
+        or "Carina" in tokens
+        or "TRACHEOBRONCH" in text
+        or bool(re.search(r"\bY[-\s]?STENT\b", text))
+    )
 
 
 def _is_topical_bronchoscopic_hemostatic_injection(proc: Any) -> bool:
@@ -476,6 +491,8 @@ def _normalize_pleural_side(value: Any) -> str | None:
         return "Right"
     if text.startswith("l"):
         return "Left"
+    if text.startswith("bilat"):
+        return "Bilateral"
     return None
 
 
@@ -551,7 +568,11 @@ def derive_all_codes_with_meta(
     codes: list[str] = []
     rationales: dict[str, str] = {}
     warnings: list[str] = []
-    header_code_text = _evidence_text_for_prefixes(record, ("code_evidence",))
+    header_code_text = _evidence_text_for_prefixes(record, ("header_code_hints",))
+    if not header_code_text:
+        # Backward-compatibility for older tests/fixtures that still inject header numerals
+        # through code_evidence directly.
+        header_code_text = _evidence_text_for_prefixes(record, ("code_evidence",))
 
     # --- Airway management ---
     if _performed(_proc(record, "intubation")):
@@ -567,8 +588,6 @@ def derive_all_codes_with_meta(
             "endobronchial_biopsy",
             "tbna_conventional",
             "linear_ebus",
-            "radial_ebus",
-            "navigational_bronchoscopy",
             "transbronchial_biopsy",
             "transbronchial_cryobiopsy",
             "therapeutic_aspiration",
@@ -694,6 +713,20 @@ def derive_all_codes_with_meta(
     if added_31629 and _performed(peripheral_tbna):
         targets = _get(peripheral_tbna, "targets_sampled") or []
         lobes = _lobe_tokens([str(x) for x in targets if x])
+        if len(lobes) < 2:
+            for target in _navigation_targets(record):
+                used_needle = (int(_get(target, "number_of_needle_passes") or 0) > 0) or any(
+                    "needle" in str(tool).lower() for tool in (_get(target, "sampling_tools_used") or [])
+                )
+                if not used_needle:
+                    continue
+                target_lobe = _get(target, "target_lobe")
+                if isinstance(target_lobe, str) and target_lobe.strip():
+                    lobes |= _lobe_tokens([target_lobe])
+                    continue
+                target_location = _get(target, "target_location_text")
+                if isinstance(target_location, str) and target_location.strip():
+                    lobes |= _lobe_tokens([target_location])
         if len(lobes) >= 2:
             codes.append("31633")
             rationales["31633"] = f"peripheral_tbna.targets_sampled spans lobes={sorted(lobes)}"
@@ -714,15 +747,23 @@ def derive_all_codes_with_meta(
                 f"from {station_source}"
             )
         elif ebus_target_count >= 1:
-            codes.append("31652")
-            rationales["31652"] = (
-                "linear_ebus.performed=true and sampled_station_count=0; "
-                f"derived from non-station targets count={ebus_target_count} from {target_source}"
+            warnings.append(
+                "linear_ebus.performed=true with non-station EBUS targets only; "
+                "cannot derive 31652/31653 without sampled nodal stations"
             )
             warnings.append(
-                f"Derived 31652 from non-station EBUS target sampling ({ebus_target_count} target"
-                + ("" if ebus_target_count == 1 else "s")
-                + ")."
+                make_quality_signal_warning(
+                    "nonstation_ebus_targets_do_not_derive_nodal_cpt",
+                    field="procedures_performed.linear_ebus",
+                    action="suppressed",
+                    detail=(
+                        f"Non-station EBUS target sampling ({ebus_target_count} target"
+                        + ("" if ebus_target_count == 1 else "s")
+                        + f") was preserved structurally but did not derive 31652/31653."
+                    ),
+                    source="registry_to_cpt",
+                    extra={"target_source": target_source, "target_count": ebus_target_count},
+                )
             )
         else:
             if station_source == "node_events":
@@ -745,7 +786,7 @@ def derive_all_codes_with_meta(
                 # explicit node/station tokens (e.g., "11L", "Station 7").
                 evidence_text = _evidence_text_for_prefixes(
                     record,
-                    ("procedures_performed.linear_ebus", "procedures_performed.linear_ebus.node_events", "code_evidence"),
+                    ("procedures_performed.linear_ebus", "procedures_performed.linear_ebus.node_events"),
                 )
                 has_station_token = bool(
                     re.search(
@@ -847,7 +888,7 @@ def derive_all_codes_with_meta(
                 "Suppressed 31645: therapeutic aspiration is bundled into EBUS-TBNA (31652/31653) per NCCI (no modifier allowed)."
             )
         else:
-            evidence = _evidence_text_for_prefixes(record, ("code_evidence",)) + "\n" + _evidence_text_for_prefixes(
+            evidence = header_code_text + "\n" + _evidence_text_for_prefixes(
                 record,
                 (
                     "procedures_performed.therapeutic_aspiration.is_subsequent",
@@ -870,13 +911,49 @@ def derive_all_codes_with_meta(
     # Therapeutic instillation/injection (31573)
     therapeutic_injection = _proc(record, "therapeutic_injection")
     if _performed(therapeutic_injection):
-        if _is_topical_bronchoscopic_hemostatic_injection(therapeutic_injection):
+        injection_eligible = _get(therapeutic_injection, "cpt31573_eligible")
+        if injection_eligible is True:
+            codes.append("31573")
+            rationales["31573"] = "therapeutic_injection.cpt31573_eligible=true"
+        elif _is_topical_bronchoscopic_hemostatic_injection(therapeutic_injection):
             warnings.append(
                 "Therapeutic injection medication appears to be topical bronchoscopic hemostasis (e.g. TXA/epinephrine); suppressing 31573."
             )
+            warnings.append(
+                make_quality_signal_warning(
+                    "therapeutic_injection_topical_hemostasis_suppressed",
+                    field="procedures_performed.therapeutic_injection",
+                    action="suppressed",
+                    detail="Topical TXA/epinephrine hemostasis should not derive CPT 31573.",
+                    source="registry_to_cpt",
+                )
+            )
+        elif injection_eligible is False:
+            warnings.append(
+                "Therapeutic injection was documented but marked CPT-ineligible; suppressing 31573."
+            )
+            warnings.append(
+                make_quality_signal_warning(
+                    "therapeutic_injection_cpt31573_ineligible",
+                    field="procedures_performed.therapeutic_injection",
+                    action="suppressed",
+                    detail="Structured therapeutic injection is present but explicitly marked cpt31573_eligible=false.",
+                    source="registry_to_cpt",
+                )
+            )
         else:
-            codes.append("31573")
-            rationales["31573"] = "therapeutic_injection.performed=true"
+            warnings.append(
+                "Therapeutic injection was documented without cpt31573_eligible=true; suppressing 31573."
+            )
+            warnings.append(
+                make_quality_signal_warning(
+                    "therapeutic_injection_missing_cpt31573_eligibility",
+                    field="procedures_performed.therapeutic_injection",
+                    action="suppressed",
+                    detail="CPT 31573 now requires therapeutic_injection.cpt31573_eligible=true.",
+                    source="registry_to_cpt",
+                )
+            )
 
     # Foreign body removal
     if _performed(_proc(record, "foreign_body_removal")):
@@ -967,9 +1044,29 @@ def derive_all_codes_with_meta(
     _derive_stent_codes(stent_revision, field_prefix="procedures_performed.airway_stent_revision")
 
     # Mechanical debulking (tumor excision) → 31640
-    if _performed(_proc(record, "mechanical_debulking")):
-        codes.append("31640")
-        rationales["31640"] = "mechanical_debulking.performed=true"
+    mechanical_debulking = _proc(record, "mechanical_debulking")
+    if _performed(mechanical_debulking):
+        material_type = str(_get(mechanical_debulking, "material_type") or "").strip().lower()
+        if material_type == "tumor":
+            codes.append("31640")
+            rationales["31640"] = "mechanical_debulking.material_type=tumor"
+        else:
+            detail = (
+                f"Mechanical debulking material_type={material_type!r} is not billable as 31640."
+                if material_type
+                else "Mechanical debulking is missing material_type=tumor; suppressing 31640."
+            )
+            warnings.append(detail)
+            warnings.append(
+                make_quality_signal_warning(
+                    "mechanical_debulking_non_tumor_31640_suppressed",
+                    field="procedures_performed.mechanical_debulking",
+                    action="suppressed",
+                    detail=detail,
+                    source="registry_to_cpt",
+                    extra={"material_type": material_type or None},
+                )
+            )
 
     # Thermal ablation (tumor destruction) → 31641
     if _performed(_proc(record, "thermal_ablation")):
@@ -1009,7 +1106,7 @@ def derive_all_codes_with_meta(
     ):
         codes.append("31641")
         rationales["31641"] = (
-            "code_evidence lists 31641 and transbronchial_cryobiopsy.performed=true "
+            "header code hint lists 31641 and transbronchial_cryobiopsy.performed=true "
             "(header-explicit fallback)"
         )
         warnings.append(
@@ -1166,7 +1263,7 @@ def derive_all_codes_with_meta(
     balloon_occlusion = _proc(record, "balloon_occlusion")
     balloon_evidence = _evidence_text_for_prefixes(
         record,
-        ("procedures_performed.balloon_occlusion", "code_evidence"),
+        ("procedures_performed.balloon_occlusion",),
     ).lower()
     blvr_evidence = _evidence_text_for_prefixes(
         record,
@@ -1210,13 +1307,17 @@ def derive_all_codes_with_meta(
             warnings.append(
                 "Suppressed 31634: balloon occlusion documented as leak localization integral to valve placement."
             )
+        elif occlusion_source != "Chartis":
+            warnings.append(
+                f"Suppressed 31634: non-Chartis {occlusion_source.lower()} documented; keep clinical signal without billing code."
+            )
         elif not chartis_lobes:
             codes.append("31634")
-            rationales["31634"] = f"{occlusion_source} documented (target lobe missing)"
+            rationales["31634"] = "Chartis documented (target lobe missing)"
             warnings.append(
-                f"{occlusion_source} documented but target lobe missing; verify documentation supports 31634 and consider modifiers/bundling when applicable."
+                "Chartis documented but target lobe missing; verify documentation supports 31634 and consider modifiers/bundling when applicable."
             )
-        elif valve_lobes and occlusion_source == "Chartis":
+        elif valve_lobes:
             overlap = chartis_lobes & valve_lobes
             distinct = chartis_lobes - valve_lobes
             if not distinct:
@@ -1235,11 +1336,7 @@ def derive_all_codes_with_meta(
                     )
         else:
             codes.append("31634")
-            rationales["31634"] = f"{occlusion_source} documented (lobes={sorted(chartis_lobes)})"
-            if valve_lobes and occlusion_source != "Chartis":
-                warnings.append(
-                    f"31634 ({occlusion_source}) performed alongside valve work; ensure documentation supports separate billing and consider modifier -59/-XS when appropriate."
-                )
+            rationales["31634"] = f"Chartis documented (lobes={sorted(chartis_lobes)})"
 
     # Bronchial thermoplasty: 31660 initial + 31661 additional lobes.
     bt = _proc(record, "bronchial_thermoplasty")
@@ -1302,7 +1399,7 @@ def derive_all_codes_with_meta(
     if re.search(r"(?i)\b31502\b", header_code_text or "") and immature_trach_change_supported and not pt_performed:
         if "31502" not in codes:
             codes.append("31502")
-            rationales["31502"] = "code_evidence lists 31502 with immature-tract tracheostomy tube change support"
+            rationales["31502"] = "header code hint lists 31502 with immature-tract tracheostomy tube change support"
         if "31615" in codes:
             codes = [code for code in codes if code != "31615"]
             rationales.pop("31615", None)
@@ -1314,6 +1411,7 @@ def derive_all_codes_with_meta(
         (
             "procedures_performed.tracheal_puncture",
             "procedures_performed.percutaneous_tracheostomy",
+            "header_code_hints",
             "code_evidence",
         ),
     )
@@ -1321,6 +1419,34 @@ def derive_all_codes_with_meta(
         re.search(
             r"(?i)\b31612\b|\btranstracheal\b|\bangiocat|\bpunctur\w*\b",
             puncture_evidence or "",
+        )
+    )
+    stent_support_evidence = "\n".join(
+        part
+        for part in (
+            _evidence_text_for_prefixes(
+                record,
+                ("procedures_performed.airway_stent", "procedures_performed.airway_stent_revision"),
+            )
+            or "",
+            puncture_evidence or "",
+        )
+        if part
+    )
+    stent_fixation_context = bool(
+        re.search(
+            r"(?i)\b(?:stent|bonostent|y-?\s*stent)\b[^.\n]{0,160}\b(?:sutur|secure|fixat|anch(?:or|oring)|through\s+the\s+stent)\b"
+            r"|\b(?:sutur|secure|fixat|anch(?:or|oring))\b[^.\n]{0,160}\b(?:stent|bonostent|y-?\s*stent)\b",
+            stent_support_evidence,
+        )
+        or (
+            (_performed(stent) or _performed(stent_revision))
+            and bool(
+                re.search(
+                    r"(?i)\b(?:sutur|secure|fixat|anch(?:or|oring)|through\s+the\s+trachea)\b",
+                    puncture_evidence or "",
+                )
+            )
         )
     )
 
@@ -1336,7 +1462,20 @@ def derive_all_codes_with_meta(
             pt_evidence or "",
         )
     )
-    if puncture_only and not explicit_trach_creation:
+    if puncture_only and stent_fixation_context:
+        warnings.append(
+            "Suppressed 31612: tracheal puncture evidence appears to reflect trans-tracheal stent fixation, not a distinct puncture-only procedure."
+        )
+        warnings.append(
+            make_quality_signal_warning(
+                "tracheal_puncture_stent_fixation_suppressed",
+                field="procedures_performed.tracheal_puncture",
+                action="suppressed",
+                detail="Angiocath/tracheal puncture language was used to secure an airway stent rather than support standalone 31612 billing.",
+                source="registry_to_cpt",
+            )
+        )
+    elif puncture_only and not explicit_trach_creation:
         codes.append("31612")
         rationales["31612"] = "tracheal puncture evidence present (puncture-only; not tracheostomy creation)"
         if pt_performed and not established_trach_route:
@@ -1436,7 +1575,11 @@ def derive_all_codes_with_meta(
             if _performed(thoracoscopy):
                 thor_side = _normalize_pleural_side(_get(thoracoscopy, "side"))
                 tube_side = _normalize_pleural_side(_get(chest_tube, "side"))
-                contralateral = bool(thor_side and tube_side and thor_side != tube_side)
+                contralateral = bool(
+                    thor_side
+                    and tube_side
+                    and (tube_side == "Bilateral" or thor_side != tube_side)
+                )
                 if not contralateral:
                     warnings.append(
                         "Suppressed chest tube insertion CPT: bundled with medical thoracoscopy unless contralateral/distinct site is documented."
@@ -1681,24 +1824,33 @@ def derive_all_codes_with_meta(
             )
 
     # Bundling: Destruction (31641) is integral to Excision (31640) on the same lesion.
-    # Default (safe): assume same lesion unless granular/anatomic location proves otherwise.
+    # Only bundle when same-site evidence is explicit; otherwise retain both.
     if "31640" in derived and "31641" in derived:
         excision_loc = _get(_proc(record, "mechanical_debulking"), "location")
         destruction_loc = _get(_proc(record, "thermal_ablation"), "location")
 
-        excision_lobes = _lobe_tokens([str(excision_loc)]) if excision_loc else set()
-        destruction_lobes = _lobe_tokens([str(destruction_loc)]) if destruction_loc else set()
-        distinct_locations = bool(excision_lobes and destruction_lobes and excision_lobes.isdisjoint(destruction_lobes))
+        excision_tokens = _airway_or_lobe_tokens(excision_loc)
+        destruction_tokens = _airway_or_lobe_tokens(destruction_loc)
+        explicit_same_site = bool(
+            excision_tokens and destruction_tokens and not excision_tokens.isdisjoint(destruction_tokens)
+        )
+        distinct_locations = bool(
+            excision_tokens and destruction_tokens and excision_tokens.isdisjoint(destruction_tokens)
+        )
 
-        if distinct_locations:
+        if explicit_same_site:
+            derived = [c for c in derived if c != "31641"]
+            rationales.pop("31641", None)
+            warnings.append(
+                "31641 (destruction) bundled into 31640 (excision) because both were documented at the same anatomic site."
+            )
+        elif distinct_locations:
             warnings.append(
                 "31641 requires Modifier 59: destruction performed on distinct lesion from excision (31640)."
             )
         else:
-            derived = [c for c in derived if c != "31641"]
-            rationales.pop("31641", None)
             warnings.append(
-                "31641 (destruction) bundled into 31640 (excision). If performed on separate lesion, add 31641 with modifier 59/XS."
+                "31640 and 31641 both retained because same-site destruction/excision overlap was not explicit. Add modifier 59/XS only when distinct-site documentation is present."
             )
 
     # Bundling: Dilation (31630) vs Destruction (31641) / Excision (31640)
@@ -1956,6 +2108,13 @@ def derive_units_for_codes(record: RegistryRecord, codes: list[str]) -> dict[str
         lobes = _blvr_valve_lobes(record, blvr_proc=_proc(record, "blvr"))
         if len(lobes) >= 2:
             units["31649"] = max(1, min(len(lobes) - 1, 4))
+
+    chest_tube = _pleural(record, "chest_tube")
+    chest_tube_side = _normalize_pleural_side(_get(chest_tube, "side"))
+    if chest_tube_side == "Bilateral":
+        for code in ("32551", "32556", "32557"):
+            if code in codes:
+                units[code] = 2
 
     return units
 

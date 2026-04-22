@@ -138,6 +138,43 @@ def _hash_note_text(text: str) -> str:
     return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
 
 
+def _normalize_clock_time(value: str | None) -> str | None:
+    raw = (value or "").strip()
+    if not raw:
+        return None
+
+    compact = re.fullmatch(r"(?i)(\d{3,4})(?:\s*([AP]M))?", raw)
+    if compact:
+        digits = compact.group(1)
+        meridiem = (compact.group(2) or "").upper()
+        if len(digits) == 3:
+            hour = int(digits[0])
+            minute = int(digits[1:])
+        else:
+            hour = int(digits[:2])
+            minute = int(digits[2:])
+    else:
+        colon = re.fullmatch(r"(?i)(\d{1,2}):(\d{2})(?:\s*([AP]M))?", raw)
+        if not colon:
+            return None
+        hour = int(colon.group(1))
+        minute = int(colon.group(2))
+        meridiem = (colon.group(3) or "").upper()
+
+    if minute < 0 or minute > 59:
+        return None
+
+    if meridiem:
+        if 1 <= hour <= 12:
+            if meridiem == "AM":
+                hour = 0 if hour == 12 else hour
+            else:
+                hour = 12 if hour == 12 else hour + 12
+    if hour < 0 or hour > 23:
+        return None
+    return f"{hour:02d}:{minute:02d}"
+
+
 def _append_self_correction_log(path: str, payload: dict[str, Any]) -> None:
     if not path:
         return
@@ -862,6 +899,44 @@ class RegistryService:
                 filtered.append(reason)
             return filtered
 
+        def _filter_stale_linear_ebus_station_warning(
+            record_in: RegistryRecord,
+            warning_list: list[str] | None,
+        ) -> list[str]:
+            warning_text = "procedures_performed.linear_ebus.performed=true but stations_sampled is empty/missing"
+            warnings_in = [str(w) for w in (warning_list or []) if str(w).strip()]
+            if warning_text not in warnings_in:
+                return warnings_in
+
+            try:
+                procedures = getattr(record_in, "procedures_performed", None)
+                linear = getattr(procedures, "linear_ebus", None) if procedures is not None else None
+                if linear is None or getattr(linear, "performed", None) is not True:
+                    return warnings_in
+                if getattr(linear, "stations_sampled", None):
+                    return warnings_in
+
+                sampling_actions = {"needle_aspiration", "core_biopsy", "forceps_biopsy"}
+                node_events = getattr(linear, "node_events", None) or []
+                has_stationed_node_event = False
+                has_sampling_node_event = False
+                for event in node_events:
+                    station = getattr(event, "station", None)
+                    if not isinstance(station, str) or not station.strip():
+                        continue
+                    has_stationed_node_event = True
+                    action = str(getattr(event, "action", None) or "").strip().lower()
+                    if action in sampling_actions:
+                        has_sampling_node_event = True
+                        break
+
+                if has_stationed_node_event and not has_sampling_node_event:
+                    return [w for w in warnings_in if w != warning_text]
+            except Exception:
+                return warnings_in
+
+            return warnings_in
+
         text_for_extraction = masked_note_text
         if extraction_engine == "engine":
             pass
@@ -991,10 +1066,12 @@ class RegistryService:
                     seed = run_deterministic_extractors(seed_text)
                     seed_procs = seed.get("procedures_performed") if isinstance(seed, dict) else None
                     seed_pleural = seed.get("pleural_procedures") if isinstance(seed, dict) else None
+                    seed_equipment = seed.get("equipment") if isinstance(seed, dict) else None
                     seed_established_trach = (
                         seed.get("established_tracheostomy_route") is True if isinstance(seed, dict) else False
                     )
                     seed_has_context = False
+                    seed_has_equipment = False
                     if isinstance(seed, dict):
                         for key in (
                             "primary_indication",
@@ -1011,6 +1088,11 @@ class RegistryService:
                             if val not in (None, "", [], {}):
                                 seed_has_context = True
                                 break
+                        if isinstance(seed_equipment, dict):
+                            for value in seed_equipment.values():
+                                if value not in (None, "", [], {}):
+                                    seed_has_equipment = True
+                                    break
                     fiducial_candidate = "fiducial" in (masked_note_text or "").lower()
                     tracheal_puncture_candidate = any(
                         re.search(pat, masked_note_text or "", re.IGNORECASE)
@@ -1020,6 +1102,7 @@ class RegistryService:
                     if (
                         (isinstance(seed_procs, dict) and seed_procs)
                         or (isinstance(seed_pleural, dict) and seed_pleural)
+                        or seed_has_equipment
                         or seed_established_trach
                         or fiducial_candidate
                         or seed_has_context
@@ -1035,6 +1118,11 @@ class RegistryService:
                         if not isinstance(record_pleural, dict):
                             record_pleural = {}
                             record_data["pleural_procedures"] = record_pleural
+
+                        record_equipment = record_data.get("equipment")
+                        if not isinstance(record_equipment, dict):
+                            record_equipment = {}
+                            record_data["equipment"] = record_equipment
 
                         evidence = record_data.get("evidence")
                         if not isinstance(evidence, dict):
@@ -1428,35 +1516,39 @@ class RegistryService:
 
                                 if not sedation.get("start_time"):
                                     match = re.search(
-                                        r"(?i)\b(?:anesthesia|sedation)\s+start\s+time\b[^0-9]{0,40}(\d{1,2}:\d{2})\b",
+                                        r"(?i)\b(?:anesthesia|sedation)\s+start\s+time\b[^0-9]{0,40}(\d{1,2}:\d{2}(?:\s*[AP]M)?|\d{3,4}(?:\s*[AP]M)?)\b",
                                         raw_note_text or "",
                                     )
                                     if match:
-                                        sedation["start_time"] = match.group(1)
-                                        record_data["sedation"] = sedation
-                                        other_modified = True
-                                        _add_first_span_skip_cpt_headers(
-                                            "sedation.start_time",
-                                            [
-                                                r"\b(?:anesthesia|sedation)\s+start\s+time\b[^\n]{0,60}\b\d{1,2}:\d{2}\b"
-                                            ],
-                                        )
+                                        start_time = _normalize_clock_time(match.group(1))
+                                        if start_time:
+                                            sedation["start_time"] = start_time
+                                            record_data["sedation"] = sedation
+                                            other_modified = True
+                                            _add_first_span_skip_cpt_headers(
+                                                "sedation.start_time",
+                                                [
+                                                    r"\b(?:anesthesia|sedation)\s+start\s+time\b[^\n]{0,60}\b(?:\d{1,2}:\d{2}(?:\s*[AP]M)?|\d{3,4}(?:\s*[AP]M)?)\b"
+                                                ],
+                                            )
 
                                 if not sedation.get("end_time"):
                                     match = re.search(
-                                        r"(?i)\b(?:anesthesia|sedation)\s+(?:stop|end)\s+time\b[^0-9]{0,40}(\d{1,2}:\d{2})\b",
+                                        r"(?i)\b(?:anesthesia|sedation)\s+(?:stop|end)\s+time\b[^0-9]{0,40}(\d{1,2}:\d{2}(?:\s*[AP]M)?|\d{3,4}(?:\s*[AP]M)?)\b",
                                         raw_note_text or "",
                                     )
                                     if match:
-                                        sedation["end_time"] = match.group(1)
-                                        record_data["sedation"] = sedation
-                                        other_modified = True
-                                        _add_first_span_skip_cpt_headers(
-                                            "sedation.end_time",
-                                            [
-                                                r"\b(?:anesthesia|sedation)\s+(?:stop|end)\s+time\b[^\n]{0,60}\b\d{1,2}:\d{2}\b"
-                                            ],
-                                        )
+                                        end_time = _normalize_clock_time(match.group(1))
+                                        if end_time:
+                                            sedation["end_time"] = end_time
+                                            record_data["sedation"] = sedation
+                                            other_modified = True
+                                            _add_first_span_skip_cpt_headers(
+                                                "sedation.end_time",
+                                                [
+                                                    r"\b(?:anesthesia|sedation)\s+(?:stop|end)\s+time\b[^\n]{0,60}\b(?:\d{1,2}:\d{2}(?:\s*[AP]M)?|\d{3,4}(?:\s*[AP]M)?)\b"
+                                                ],
+                                            )
 
                             # Procedure setting: apply airway_type only if explicitly evidenced.
                             airway_type = seed_data.get("airway_type")
@@ -1513,6 +1605,35 @@ class RegistryService:
                                     record_data["outcomes"] = outcomes
                                     other_modified = True
 
+                        def _apply_seed_equipment(seed_data: dict[str, Any]) -> None:
+                            """Merge deterministic equipment/imaging flags used by coding."""
+
+                            nonlocal other_modified
+
+                            equipment_seed = seed_data.get("equipment") if isinstance(seed_data, dict) else None
+                            if not isinstance(equipment_seed, dict) or not equipment_seed:
+                                return
+
+                            equipment_local = record_data.get("equipment") or {}
+                            if not isinstance(equipment_local, dict):
+                                equipment_local = {}
+
+                            equipment_changed = False
+
+                            navigation_platform = equipment_seed.get("navigation_platform")
+                            if navigation_platform and not equipment_local.get("navigation_platform"):
+                                equipment_local["navigation_platform"] = navigation_platform
+                                equipment_changed = True
+
+                            for field in ("cbct_used", "augmented_fluoroscopy", "fluoroscopy_used"):
+                                if equipment_seed.get(field) is True and equipment_local.get(field) is not True:
+                                    equipment_local[field] = True
+                                    equipment_changed = True
+
+                            if equipment_changed:
+                                record_data["equipment"] = equipment_local
+                                other_modified = True
+
                         def _populate_diagnostic_bronchoscopy_findings() -> None:
                             """Fill diagnostic bronchoscopy findings/abnormalities when missing."""
                             nonlocal proc_modified
@@ -1530,7 +1651,11 @@ class RegistryService:
                                 full_lower = full_text.lower()
                                 if "bronchoscop" not in full_lower:
                                     return
-                                non_bronch_keys = {"percutaneous_tracheostomy", "peg_insertion"}
+                                non_bronch_keys = {
+                                    "airway_device_action",
+                                    "percutaneous_tracheostomy",
+                                    "peg_insertion",
+                                }
                                 other_bronch_proc_present = any(
                                     isinstance(v, dict)
                                     and v.get("performed") is True
@@ -1636,6 +1761,21 @@ class RegistryService:
 
                             # Endobronchial lesions/tumors. Use the schema enum value
                             # "Endobronchial lesion" (covers tumor/mass language).
+                            raw_diag_text = raw_note_text or full_text or masked_note_text or ""
+                            negated_endobronchial_disease = bool(
+                                re.search(
+                                    r"(?i)\b(?:airways?\s+(?:otherwise\s+)?)?(?:with\s+)?(?:no|without)\s+(?:focal\s+|visible\s+|obvious\s+)?"
+                                    r"endobronchial\s+(?:lesions?|tumou?rs?|mass(?:es)?|abnormalit(?:y|ies)|disease)\b",
+                                    raw_diag_text,
+                                )
+                            )
+                            explicit_positive_endobronchial_disease = bool(
+                                re.search(
+                                    r"(?i)\b(?:there\s+(?:was|were)|found|noted|seen|visualized)\b[^.\n]{0,120}\bendobronchial\b[^.\n]{0,120}\b(?:lesion|tumou?r|mass)\b"
+                                    r"|\bendobronchial\b[^.\n]{0,120}\b(?:lesion|tumou?r|mass)\b[^.\n]{0,120}\b(?:was|were)\b",
+                                    raw_diag_text,
+                                )
+                            )
                             if "Endobronchial lesion" not in abnormalities:
                                 lesion_match = _first_nonnegated_match(
                                     r"\bendobronchial\b[^.\n]{0,120}\b(?:lesion|tumou?r|tumors?|mass)\b",
@@ -1645,7 +1785,9 @@ class RegistryService:
                                     r"\b(?:tumou?r|tumors?|mass|lesion)\b[^.\n]{0,120}\b(?:endobronch|airway|trachea|carina|bronch(?:us|ial))\b",
                                     full_text,
                                 )
-                                if lesion_match or airway_lesion_match:
+                                if (lesion_match or airway_lesion_match) and not (
+                                    negated_endobronchial_disease and not explicit_positive_endobronchial_disease
+                                ):
                                     abnormalities.append("Endobronchial lesion")
                                     found.append("endobronchial_lesion")
 
@@ -1774,6 +1916,12 @@ class RegistryService:
                                     r"\bsecretions?\b[^.\n]{0,160}",
                                 ]
                                 for pat in patterns:
+                                    if (
+                                        pat in (r"\bendobronchial\b[^.\n]{0,160}", r"\b(?:tumou?r|tumors?|mass|lesion)\b[^.\n]{0,160}")
+                                        and negated_endobronchial_disease
+                                        and not explicit_positive_endobronchial_disease
+                                    ):
+                                        continue
                                     match = re.search(pat, masked_note_text or "", re.IGNORECASE)
                                     if match:
                                         snippet = re.sub(r"\s+", " ", (match.group(0) or "").strip())
@@ -2240,6 +2388,47 @@ class RegistryService:
                                 if evidence.get(tracheal_puncture_key):
                                     other_modified = True
 
+                        def _add_header_code_hint(code: str) -> bool:
+                            if not raw_note_text:
+                                return False
+                            header_start = _HEADER_START_RE.search(raw_note_text)
+                            if not header_start:
+                                return False
+                            after_start = header_start.end()
+                            header_tail = raw_note_text[after_start:]
+                            header_end_match = _HEADER_END_RE.search(header_tail)
+                            header_end = (
+                                after_start + header_end_match.start()
+                                if header_end_match
+                                else min(len(raw_note_text), after_start + 1500)
+                            )
+                            header_body = raw_note_text[after_start:header_end]
+                            if not header_body:
+                                return False
+                            for match in re.finditer(rf"\b{re.escape(code)}\b", header_body):
+                                start = after_start + match.start()
+                                end = after_start + match.end()
+                                existing = evidence.setdefault("header_code_hints", [])
+                                if any(
+                                    getattr(span, "start", None) == start
+                                    and getattr(span, "end", None) == end
+                                    and getattr(span, "text", None) == match.group(0)
+                                    for span in existing
+                                    if not isinstance(span, dict)
+                                ):
+                                    return False
+                                if any(
+                                    span.get("start") == start
+                                    and span.get("end") == end
+                                    and (span.get("text") or span.get("quote")) == match.group(0)
+                                    for span in existing
+                                    if isinstance(span, dict)
+                                ):
+                                    return False
+                                existing.append(Span(text=match.group(0), start=start, end=end))
+                                return True
+                            return False
+
                         def _mark_subsequent_aspiration() -> None:
                             """Attach an evidence marker when header/body indicates subsequent aspiration (31646)."""
                             nonlocal other_modified
@@ -2266,25 +2455,48 @@ class RegistryService:
                             if not (has_header_31646 or has_body_signal):
                                 return
 
-                            # Prefer anchoring to the explicit code when present; otherwise to the phrase.
+                            # Prefer keeping header numerals in the hint channel, but still add a structured
+                            # subsequent-episode evidence marker so downstream rules/tests can rely on it.
                             if has_header_31646:
-                                _add_first_literal(
-                                    "procedures_performed.therapeutic_aspiration.is_subsequent",
-                                    "31646",
-                                )
-                            else:
-                                _add_first_span_skip_cpt_headers(
-                                    "procedures_performed.therapeutic_aspiration.is_subsequent",
-                                    [
-                                        r"\bsubsequent\s+aspirat\w*\b",
-                                        r"\brepeat\s+aspirat\w*\b",
-                                        r"\bsubsequent\s+episode(?:s)?\b",
-                                    ],
-                                )
-                            other_modified = True
+                                other_modified = _add_header_code_hint("31646") or other_modified
+                            _add_first_span(
+                                "procedures_performed.therapeutic_aspiration.is_subsequent",
+                                [
+                                    r"\btherapeutic\s+aspiration\s+subsequent\s+episode(?:s)?\b",
+                                    r"\bsubsequent\s+aspirat\w*\b",
+                                    r"\brepeat\s+aspirat\w*\b",
+                                    r"\bsubsequent\s+episode(?:s)?\b",
+                                ],
+                            )
+                            if has_header_31646 and not evidence.get(
+                                "procedures_performed.therapeutic_aspiration.is_subsequent"
+                            ):
+                                for pat in (
+                                    r"\btherapeutic\s+aspiration\s+subsequent\s+episode(?:s)?\b",
+                                    r"\bsubsequent\s+aspirat\w*\b",
+                                    r"\brepeat\s+aspirat\w*\b",
+                                    r"\bsubsequent\s+episode(?:s)?\b",
+                                ):
+                                    match = re.search(pat, raw_note_text or "", re.IGNORECASE)
+                                    if not match:
+                                        continue
+                                    evidence.setdefault(
+                                        "procedures_performed.therapeutic_aspiration.is_subsequent",
+                                        [],
+                                    ).append(
+                                        Span(
+                                            text=match.group(0).strip(),
+                                            start=match.start(),
+                                            end=match.end(),
+                                        )
+                                    )
+                                    break
+                            if evidence.get("procedures_performed.therapeutic_aspiration.is_subsequent"):
+                                other_modified = True
 
                         # Fill common missing clinical context/sedation/demographics from deterministic extractors.
                         _apply_seed_context(seed)
+                        _apply_seed_equipment(seed)
 
                         # Backstop diagnostic bronchoscopy findings/abnormalities when present.
                         _populate_diagnostic_bronchoscopy_findings()
@@ -2295,15 +2507,11 @@ class RegistryService:
                         # Backstop navigation/CBCT imaging signals for downstream coding.
                         _populate_navigation_equipment()
 
-                        # Prefer real code evidence when explicit CPT codes appear in the procedure header.
+                        # Preserve explicit header codes as guarded hints, not as primary narrative evidence.
                         header_codes = _scan_header_for_codes(raw_note_text)
                         if header_codes:
                             for code in sorted(header_codes):
-                                match = re.search(rf"\b{re.escape(code)}\b", raw_note_text or "")
-                                if match:
-                                    evidence.setdefault("code_evidence", []).append(
-                                        Span(text=match.group(0), start=match.start(), end=match.end())
-                                    )
+                                other_modified = _add_header_code_hint(code) or other_modified
 
                         if fiducial_candidate:
                             from app.registry.processing.navigation_fiducials import (
@@ -2375,6 +2583,7 @@ class RegistryService:
 
                 record, pathology_warnings = apply_pathology_extraction(record, masked_note_text)
                 warnings.extend(pathology_warnings)
+                warnings = _filter_stale_linear_ebus_station_warning(record, warnings)
 
                 # Add review warnings if parallel pathway flagged discrepancies
                 if parallel_result.needs_review:
@@ -2424,6 +2633,7 @@ class RegistryService:
 
         record, pathology_warnings = apply_pathology_extraction(record, masked_note_text)
         warnings.extend(pathology_warnings)
+        warnings = _filter_stale_linear_ebus_station_warning(record, warnings)
 
         record = _apply_disease_burden_overrides(record)
         return record, warnings, meta
@@ -2480,6 +2690,57 @@ class RegistryService:
         if isinstance(meta.get("masked_note_text"), str):
             masked_note_text = meta["masked_note_text"]
 
+        extract_record_equipment_seed: dict[str, Any] = {}
+        try:
+            if getattr(record, "equipment", None) is not None:
+                extract_record_equipment_seed = record.equipment.model_dump(exclude_none=True)
+        except Exception:
+            extract_record_equipment_seed = {}
+
+        navigation_equipment_seed: dict[str, Any] = {}
+        try:
+            from app.registry.deterministic_extractors import extract_navigation_imaging_equipment
+            from app.registry.processing.masking import mask_offset_preserving
+
+            navigation_seed = extract_navigation_imaging_equipment(mask_offset_preserving(raw_note_text or ""))
+            equipment_seed = navigation_seed.get("equipment") if isinstance(navigation_seed, dict) else None
+            if isinstance(equipment_seed, dict):
+                navigation_equipment_seed = dict(equipment_seed)
+        except Exception:
+            navigation_equipment_seed = {}
+
+        def _merge_navigation_equipment_seed(record_in: RegistryRecord) -> RegistryRecord:
+            seed_sources = []
+            if extract_record_equipment_seed:
+                seed_sources.append(extract_record_equipment_seed)
+            if navigation_equipment_seed:
+                seed_sources.append(navigation_equipment_seed)
+            if not seed_sources:
+                return record_in
+
+            record_data = record_in.model_dump()
+            equipment = record_data.get("equipment") or {}
+            if not isinstance(equipment, dict):
+                equipment = {}
+
+            changed = False
+            for equipment_seed in seed_sources:
+                navigation_platform = equipment_seed.get("navigation_platform")
+                if navigation_platform and not equipment.get("navigation_platform"):
+                    equipment["navigation_platform"] = navigation_platform
+                    changed = True
+
+                for field in ("cbct_used", "augmented_fluoroscopy", "fluoroscopy_used"):
+                    if equipment_seed.get(field) is True and equipment.get(field) is not True:
+                        equipment[field] = True
+                        changed = True
+
+            if not changed:
+                return record_in
+
+            record_data["equipment"] = equipment
+            return RegistryRecord(**record_data)
+
         record, override_warnings = apply_required_overrides(masked_note_text, record)
         if override_warnings:
             extraction_warnings.extend(override_warnings)
@@ -2529,6 +2790,8 @@ class RegistryService:
             reconcile_ebus_sampling_from_specimen_log,
             reconcile_peripheral_tbna_against_nodal_context,
             sanitize_ebus_events,
+            sort_ebus_stations,
+            suppress_conditional_pleural_and_stent_procedures,
         )
 
         ebus_fallback_warnings = populate_ebus_node_events_fallback(record, masked_note_text)
@@ -2573,6 +2836,26 @@ class RegistryService:
         ebus_hollow_warnings = cull_hollow_ebus_claims(record, masked_note_text)
         if ebus_hollow_warnings:
             extraction_warnings.extend(ebus_hollow_warnings)
+
+        try:
+            procedures = record.procedures_performed if record.procedures_performed else None
+            linear = procedures.linear_ebus if procedures is not None else None
+            node_events = getattr(linear, "node_events", None) if linear is not None else None
+            if linear is not None and isinstance(node_events, list):
+                sampling_actions = {"needle_aspiration", "core_biopsy", "forceps_biopsy"}
+                sampled_from_events = sort_ebus_stations(
+                    {
+                        str(getattr(event, "station", "")).strip().upper()
+                        for event in node_events
+                        if getattr(event, "action", None) in sampling_actions
+                        and str(getattr(event, "station", "")).strip()
+                    }
+                )
+                if hasattr(linear, "stations_sampled"):
+                    setattr(linear, "stations_sampled", sampled_from_events or None)
+        except Exception:
+            pass
+
         pleural_biopsy_warnings = enrich_medical_thoracoscopy_biopsies_taken(record, masked_note_text)
         if pleural_biopsy_warnings:
             extraction_warnings.extend(pleural_biopsy_warnings)
@@ -2585,6 +2868,9 @@ class RegistryService:
         aborted_target_warnings = reconcile_aborted_targets(record, masked_note_text)
         if aborted_target_warnings:
             extraction_warnings.extend(aborted_target_warnings)
+        conditional_proc_warnings = suppress_conditional_pleural_and_stent_procedures(record, masked_note_text)
+        if conditional_proc_warnings:
+            extraction_warnings.extend(conditional_proc_warnings)
         outcomes_status_warnings = enrich_procedure_success_status(record, masked_note_text)
         if outcomes_status_warnings:
             extraction_warnings.extend(outcomes_status_warnings)
@@ -2614,6 +2900,8 @@ class RegistryService:
         if verifier_warnings:
             extraction_warnings.extend(verifier_warnings)
 
+        record = _merge_navigation_equipment_seed(record)
+
         # Narrative supersedes templated summary: preserve explicitly documented complications
         # even when a final "COMPLICATIONS: None" line exists.
         from app.registry.postprocess.complications_reconcile import (
@@ -2629,6 +2917,7 @@ class RegistryService:
             extraction_warnings = [
                 w for w in extraction_warnings if not (isinstance(w, str) and w in removed_granular_warnings)
             ]
+        record = _merge_navigation_equipment_seed(record)
 
         # Omission detection: flag "silent failures" where high-value terms are present
         # in the text but the corresponding registry fields are missing/false.
@@ -2700,6 +2989,34 @@ class RegistryService:
                 derived_code_set = {str(c) for c in (current_codes or [])}
                 missing_header_codes = sorted(header_codes - derived_code_set)
                 if missing_header_codes:
+                    masked_header_block = _extract_procedure_header_block(masked_note_text) or ""
+                    non_header_evidence = masked_note_text
+                    if masked_header_block:
+                        non_header_evidence = masked_note_text.replace(masked_header_block, " ", 1)
+
+                    combined_warnings = [
+                        str(w)
+                        for w in [*(base_warnings or []), *(getattr(derivation, "warnings", []) or []), *(audit_warnings or [])]
+                        if isinstance(w, str) and str(w).strip()
+                    ]
+                    combined_warning_text = "\n".join(combined_warnings)
+
+                    procedures = record.procedures_performed if record.procedures_performed else None
+                    pleural = record.pleural_procedures if record.pleural_procedures else None
+                    equipment_obj = record.equipment if getattr(record, "equipment", None) is not None else None
+
+                    def _proc_obj(name: str) -> Any | None:
+                        return getattr(procedures, name, None) if procedures is not None else None
+
+                    def _proc_performed(name: str) -> bool:
+                        return bool(getattr(_proc_obj(name), "performed", False))
+
+                    def _pleural_obj(name: str) -> Any | None:
+                        return getattr(pleural, name, None) if pleural is not None else None
+
+                    def _pleural_performed(name: str) -> bool:
+                        return bool(getattr(_pleural_obj(name), "performed", False))
+
                     # Suppress known "header template" codes that are intentionally dropped by
                     # deterministic bundling/mutual-exclusion rules.
                     suppressed: set[str] = set()
@@ -2709,32 +3026,105 @@ class RegistryService:
                         suppressed.add("31645")
                     if "76982" in derived_code_set or "76983" in derived_code_set:
                         suppressed.add("76981")
+                    if (
+                        "31622" in missing_header_codes
+                        and "Diagnostic bronchoscopy present but bundled into another bronchoscopic procedure"
+                        in combined_warning_text
+                    ):
+                        suppressed.add("31622")
+                    if (
+                        "31630" in missing_header_codes
+                        and any(w.startswith("31630 (dilation) bundled into") for w in combined_warnings)
+                    ):
+                        suppressed.add("31630")
+                    if (
+                        "31641" in missing_header_codes
+                        and any(w.startswith("31641 (destruction) bundled into 31640") for w in combined_warnings)
+                    ):
+                        suppressed.add("31641")
+                    if (
+                        "31635" in missing_header_codes
+                        and "31645" in derived_code_set
+                        and _proc_performed("therapeutic_aspiration")
+                        and not _proc_performed("foreign_body_removal")
+                    ):
+                        aspiration_material = str(getattr(_proc_obj("therapeutic_aspiration"), "material", "") or "").lower()
+                        if any(token in aspiration_material for token in ("blood", "clot", "mucus", "mucous")):
+                            suppressed.add("31635")
+                    if "31631" in missing_header_codes and not _proc_performed("airway_stent"):
+                        if not re.search(
+                            r"(?i)\b(?:tracheal\s+stent|stent\s+(?:placement|placed|deployed|inserted)|"
+                            r"silicone\s+stent|metal(?:lic)?\s+stent|dumon|ultraflex|aero(?:stent)?|y-?\s*stent)\b",
+                            non_header_evidence or "",
+                        ):
+                            suppressed.add("31631")
+                    thoracentesis_header_codes = {"32554", "32555", "32556", "32557"} & set(missing_header_codes)
+                    if thoracentesis_header_codes and not _pleural_performed("thoracentesis"):
+                        if not re.search(
+                            r"(?i)\bthoracentesis\b|\bpleural\s+tap\b|\bfluid\b[^.\n]{0,80}\b(?:removed|drained|aspirat(?:ed|ion))\b",
+                            non_header_evidence or "",
+                        ):
+                            suppressed.update(thoracentesis_header_codes)
+                    if "31899" in missing_header_codes:
+                        suppressed.add("31899")
+                    if (
+                        "31615" in missing_header_codes
+                        and getattr(record, "established_tracheostomy_route", None) is not True
+                    ):
+                        if not re.search(
+                            r"(?i)\b(?:through|via)\s+(?:an?\s+)?(?:existing\s+)?tracheostom\w*\s+(?:tube|incision|stoma)\b"
+                            r"|\btracheobronchoscopy\s+through\s+established\s+tracheostomy\b",
+                            non_header_evidence or "",
+                        ):
+                            suppressed.add("31615")
+                    if "31633" in missing_header_codes and "31629" not in derived_code_set:
+                        suppressed.add("31633")
+                    if "76981" in missing_header_codes:
+                        linear_ebus = _proc_obj("linear_ebus")
+                        if bool(getattr(linear_ebus, "elastography_used", False)):
+                            suppressed.add("76981")
+                    if "77012" in missing_header_codes and not bool(getattr(equipment_obj, "cbct_used", False)):
+                        suppressed.add("77012")
+                    if "76377" in missing_header_codes:
+                        has_augmented = bool(getattr(equipment_obj, "augmented_fluoroscopy", False))
+                        has_cbct = bool(getattr(equipment_obj, "cbct_used", False))
+                        has_nav_platform = bool(getattr(equipment_obj, "navigation_platform", None))
+                        if not (has_augmented and (has_cbct or has_nav_platform)):
+                            suppressed.add("76377")
                     if suppressed:
                         missing_header_codes = [c for c in missing_header_codes if c not in suppressed]
                 if missing_header_codes:
-                    warning = (
-                        "HEADER_EXPLICIT: header lists "
-                        f"{missing_header_codes} but deterministic derivation missed them"
-                    )
-                    if warning not in audit_warnings:
-                        logger.info(
-                            "HEADER_EXPLICIT mismatch: header has %s but derivation missed them.",
-                            missing_header_codes,
-                        )
-                        audit_warnings.append(warning)
-
                     existing = {p.cpt for p in (report.high_conf_omissions or [])}
                     # Only promote header-listed codes to high-conf omissions when there is
                     # independent narrative support. Exception: for very short headers, treat
                     # the header as authoritative (tests + common short templates).
+                    # Keep imaging/elastography adjuncts out of this short-header shortcut:
+                    # they are especially prone to menu/header leakage and should not be
+                    # elevated to primary omission findings from the header alone.
                     supported: list[str] = []
                     if len(header_codes) <= 3:
-                        supported = list(missing_header_codes)
+                        supported = [
+                            code
+                            for code in missing_header_codes
+                            if code not in {"76981", "77012", "76377"}
+                        ]
                     else:
                         for missing in missing_header_codes:
-                            passes, _reason = keyword_guard_check(cpt=missing, evidence_text=masked_note_text)
+                            passes, _reason = keyword_guard_check(cpt=missing, evidence_text=non_header_evidence)
                             if passes:
                                 supported.append(missing)
+
+                    if supported:
+                        warning = (
+                            "HEADER_EXPLICIT: header lists "
+                            f"{supported} but deterministic derivation missed them"
+                        )
+                        if warning not in audit_warnings:
+                            logger.info(
+                                "HEADER_EXPLICIT mismatch: header has %s but derivation missed them.",
+                                supported,
+                            )
+                            audit_warnings.append(warning)
 
                     for missing in supported:
                         if missing in existing:
@@ -3077,8 +3467,15 @@ class RegistryService:
         derivation_warnings = list(derivation.warnings)
         code_rationales = {c.code: c.rationale for c in derivation.codes}
 
+        quality_signal_warnings = (
+            list(base_warnings)
+            + list(derivation_warnings)
+            + list(self_correct_warnings)
+            + list(coverage_warnings)
+        )
+
         # Populate billing CPT codes deterministically (never from the LLM).
-        if derived_codes:
+        if derived_codes or quality_signal_warnings:
             from app.registry.application.coding_support_builder import (
                 build_coding_support_payload,
                 build_traceability_for_code,
@@ -3164,8 +3561,9 @@ class RegistryService:
                     item["modifiers"] = mods
                 cpt_payload.append(item)
 
-            billing["cpt_codes"] = cpt_payload
-            record_data["billing"] = billing
+            if derived_codes:
+                billing["cpt_codes"] = cpt_payload
+                record_data["billing"] = billing
 
             record_data["coding_support"] = build_coding_support_payload(
                 record=record,
@@ -3173,6 +3571,7 @@ class RegistryService:
                 code_units=code_units,
                 code_rationales=code_rationales,
                 derivation_warnings=derivation_warnings,
+                quality_signal_warnings=quality_signal_warnings,
                 kb_repo=kb_repo,
             )
 

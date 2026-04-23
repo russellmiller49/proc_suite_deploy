@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import re
@@ -71,6 +72,7 @@ _ALLOWED_AUDIO_EXTENSIONS: Final[tuple[str, ...]] = (
     ".mp3",
     ".m4a",
 )
+_RETRYABLE_TRANSCRIBE_STATUS_CODES: Final[frozenset[int]] = frozenset({400, 404, 415, 422})
 
 
 def _truthy_env(name: str, *, default: bool = False) -> bool:
@@ -173,6 +175,13 @@ def _resolve_provider_is_openai() -> bool:
     return (os.getenv("LLM_PROVIDER") or "gemini").strip().lower() == "openai_compat"
 
 
+def _safe_error_preview(text: str, *, limit: int = 500) -> str:
+    preview = " ".join(str(text or "").split())
+    if len(preview) <= limit:
+        return preview
+    return f"{preview[: limit - 1]}…"
+
+
 def _validate_audio_input(
     filename: str | None,
     content_type: str | None,
@@ -221,6 +230,177 @@ class ReporterSpeechUnsafeInput(RuntimeError):
     """Raised when speech cleanup receives text that appears unsanitized."""
 
 
+@dataclass(frozen=True)
+class _ReporterSpeechTranscribeAttempt:
+    model: str
+    response_format: str
+    include_prompt: bool
+    include_language: bool
+
+
+def _resolve_transcribe_models() -> list[str]:
+    primary = _resolve_transcribe_model()
+    raw_fallbacks = (os.getenv("REPORTER_SPEECH_TRANSCRIBE_FALLBACK_MODELS") or "").strip()
+    fallback_models = [part.strip() for part in raw_fallbacks.split(",") if part.strip()]
+    if not fallback_models and primary != "whisper-1":
+        fallback_models = ["whisper-1"]
+
+    ordered: list[str] = []
+    for candidate in [primary, *fallback_models]:
+        if candidate and candidate not in ordered:
+            ordered.append(candidate)
+    return ordered
+
+
+def _build_transcribe_attempts_for_model(model: str) -> list[_ReporterSpeechTranscribeAttempt]:
+    normalized = str(model or "").strip().lower()
+    if normalized in {"gpt-4o-mini-transcribe", "gpt-4o-transcribe"}:
+        return [
+            _ReporterSpeechTranscribeAttempt(
+                model=model,
+                response_format="text",
+                include_prompt=True,
+                include_language=True,
+            ),
+            _ReporterSpeechTranscribeAttempt(
+                model=model,
+                response_format="json",
+                include_prompt=True,
+                include_language=True,
+            ),
+            _ReporterSpeechTranscribeAttempt(
+                model=model,
+                response_format="text",
+                include_prompt=False,
+                include_language=True,
+            ),
+            _ReporterSpeechTranscribeAttempt(
+                model=model,
+                response_format="text",
+                include_prompt=False,
+                include_language=False,
+            ),
+        ]
+
+    return [
+        _ReporterSpeechTranscribeAttempt(
+            model=model,
+            response_format="text",
+            include_prompt=False,
+            include_language=True,
+        ),
+        _ReporterSpeechTranscribeAttempt(
+            model=model,
+            response_format="json",
+            include_prompt=False,
+            include_language=True,
+        ),
+        _ReporterSpeechTranscribeAttempt(
+            model=model,
+            response_format="text",
+            include_prompt=False,
+            include_language=False,
+        ),
+    ]
+
+
+def _build_transcribe_form_data(attempt: _ReporterSpeechTranscribeAttempt) -> dict[str, str]:
+    data: dict[str, str] = {
+        "model": attempt.model,
+        "response_format": attempt.response_format,
+    }
+    if attempt.include_language:
+        data["language"] = "en"
+    if attempt.include_prompt:
+        data["prompt"] = _resolve_transcribe_prompt()
+    return data
+
+
+def _extract_provider_error_message(text: str) -> str:
+    source = str(text or "").strip()
+    if not source:
+        return ""
+    try:
+        payload = json.loads(source)
+    except Exception:
+        return _safe_error_preview(source, limit=240)
+
+    if isinstance(payload, dict):
+        error = payload.get("error")
+        if isinstance(error, dict):
+            message = error.get("message")
+            if isinstance(message, str) and message.strip():
+                return _safe_error_preview(message, limit=240)
+        message = payload.get("message")
+        if isinstance(message, str) and message.strip():
+            return _safe_error_preview(message, limit=240)
+    return _safe_error_preview(source, limit=240)
+
+
+def _is_model_rejection_error(message: str) -> bool:
+    normalized = str(message or "").strip().lower()
+    if not normalized:
+        return False
+    return (
+        "model" in normalized
+        and (
+            "does not exist" in normalized
+            or "not found" in normalized
+            or "not available" in normalized
+            or "do not have access" in normalized
+            or "don't have access" in normalized
+            or "unsupported model" in normalized
+            or "invalid model" in normalized
+        )
+    )
+
+
+def _should_retry_transcribe_status(status_code: int) -> bool:
+    return int(status_code) in _RETRYABLE_TRANSCRIBE_STATUS_CODES
+
+
+def _extract_transcript_text(response: httpx.Response) -> str:
+    raw_text = str(response.text or "").strip()
+    if raw_text:
+        try:
+            payload = json.loads(raw_text)
+        except Exception:
+            payload = None
+        if isinstance(payload, dict):
+            transcript = str(payload.get("text") or "").strip()
+            if transcript:
+                return transcript
+        if not raw_text.startswith("{"):
+            return raw_text
+    return ""
+
+
+def _build_transcribe_success_warnings(
+    *,
+    primary_model: str,
+    attempt: _ReporterSpeechTranscribeAttempt,
+    model_index: int,
+    attempt_index: int,
+) -> list[str]:
+    warnings: list[str] = []
+    if model_index > 0 and attempt.model != primary_model:
+        warnings.append(
+            f"Cloud transcription used {attempt.model} after the primary model was rejected."
+        )
+    elif attempt_index > 0:
+        warnings.append("Cloud transcription retried with a compatibility request shape.")
+    return warnings
+
+
+def _build_transcribe_failure_message(provider_message: str) -> str:
+    if provider_message:
+        return (
+            "Reporter cloud transcription was rejected by the transcription provider: "
+            f"{provider_message}"
+        )
+    return "Reporter cloud transcription was rejected by the transcription provider"
+
+
 async def transcribe_reporter_audio(
     *,
     audio_bytes: bytes,
@@ -249,7 +429,8 @@ async def transcribe_reporter_audio(
 
     _validate_audio_input(filename=filename, content_type=content_type, audio_bytes=audio_bytes)
 
-    model = _resolve_transcribe_model()
+    models = _resolve_transcribe_models()
+    primary_model = models[0]
     url = f"{_normalize_openai_base_url(os.getenv('OPENAI_BASE_URL'))}/v1/audio/transcriptions"
     timeout = _resolve_openai_timeout("structurer")
     headers = {"Authorization": f"Bearer {api_key}"}
@@ -260,57 +441,93 @@ async def transcribe_reporter_audio(
             content_type or "audio/webm",
         )
     }
-    data = {
-        "model": model,
-        "language": "en",
-        "response_format": "json",
-        "prompt": _resolve_transcribe_prompt(),
-    }
+    last_provider_message = ""
+    last_status_code = 0
 
     try:
         async with httpx.AsyncClient(timeout=timeout) as client:
-            response = await client.post(url, headers=headers, data=data, files=files)
+            for model_index, model in enumerate(models):
+                attempts = _build_transcribe_attempts_for_model(model)
+                for attempt_index, attempt in enumerate(attempts):
+                    data = _build_transcribe_form_data(attempt)
+                    response = await client.post(url, headers=headers, data=data, files=files)
+
+                    if response.status_code >= 400:
+                        request_id = (
+                            response.headers.get("x-request-id")
+                            or response.headers.get("request-id")
+                        )
+                        provider_message = _extract_provider_error_message(response.text)
+                        last_provider_message = provider_message
+                        last_status_code = int(response.status_code)
+                        can_retry = _should_retry_transcribe_status(response.status_code)
+                        is_model_rejection = _is_model_rejection_error(provider_message)
+
+                        log_method = _logger.warning if can_retry else _logger.error
+                        log_method(
+                            "Reporter speech transcription API error",
+                            extra={
+                                "model": attempt.model,
+                                "source": source or "unknown",
+                                "status_code": response.status_code,
+                                "request_id": request_id or "",
+                                "response_body": _safe_error_preview(response.text),
+                                "attempt_index": attempt_index,
+                                "model_index": model_index,
+                                "response_format": attempt.response_format,
+                                "include_prompt": attempt.include_prompt,
+                                "include_language": attempt.include_language,
+                            },
+                        )
+
+                        if not can_retry:
+                            raise ReporterSpeechUnavailable(
+                                _build_transcribe_failure_message(provider_message)
+                            )
+                        if is_model_rejection:
+                            break
+                        if attempt_index < len(attempts) - 1:
+                            continue
+                        break
+
+                    transcript = _extract_transcript_text(response)
+                    if not transcript:
+                        last_provider_message = (
+                            "The transcription provider returned an empty transcript."
+                        )
+                        if attempt_index < len(attempts) - 1:
+                            continue
+                        break
+
+                    warnings = _build_transcribe_success_warnings(
+                        primary_model=primary_model,
+                        attempt=attempt,
+                        model_index=model_index,
+                        attempt_index=attempt_index,
+                    )
+                    return ReporterSpeechTranscriptionResult(
+                        transcript=transcript,
+                        provider="openai",
+                        model=attempt.model,
+                        fallback_used=bool(model_index or attempt_index),
+                        warnings=warnings,
+                    )
+    except ReporterSpeechUnavailable:
+        raise
     except Exception as exc:  # noqa: BLE001
         _logger.error(
             "Reporter speech transcription request failed",
             extra={
-                "model": model,
+                "model": primary_model,
                 "source": source or "unknown",
                 "error_type": type(exc).__name__,
             },
         )
         raise ReporterSpeechUnavailable("Reporter cloud transcription request failed") from exc
 
-    if response.status_code >= 400:
-        _logger.error(
-            "Reporter speech transcription API error",
-            extra={
-                "model": model,
-                "source": source or "unknown",
-                "status_code": response.status_code,
-            },
-        )
-        raise ReporterSpeechUnavailable(
-            "Reporter cloud transcription was rejected by the transcription provider"
-        )
-
-    try:
-        payload = response.json()
-    except Exception as exc:  # noqa: BLE001
-        raise ReporterSpeechUnavailable(
-            "Reporter cloud transcription returned an invalid response"
-        ) from exc
-
-    transcript = str(payload.get("text") or "").strip()
-    if not transcript:
-        raise ReporterSpeechUnavailable("Reporter cloud transcription returned an empty transcript")
-
-    return ReporterSpeechTranscriptionResult(
-        transcript=transcript,
-        provider="openai",
-        model=model,
-        fallback_used=False,
-    )
+    if last_status_code:
+        raise ReporterSpeechUnavailable(_build_transcribe_failure_message(last_provider_message))
+    raise ReporterSpeechUnavailable("Reporter cloud transcription returned an empty transcript")
 
 
 def _resolve_cleanup_llm() -> tuple[OpenAILLM, str]:

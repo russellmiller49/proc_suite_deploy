@@ -47,6 +47,7 @@ from app.reporting.engine import (
 from app.reporting.inference import InferenceEngine
 from app.reporting.macro_registry import get_macro_registry
 from app.reporting.normalization.normalize import normalize_bundle
+from app.reporting.normalization.robotic_prompt_fidelity import has_source_supported_ebus_stations
 from app.reporting.quality_gate import build_reporter_quality_flags
 from app.reporting.seed_pipeline import (
     seed_outcome_from_llm_findings_seed,
@@ -605,6 +606,12 @@ async def report_seed_from_text(
         from app.registry.completeness import generate_missing_field_prompts
 
         completeness_prompts = generate_missing_field_prompts(seed_record_for_completeness)
+        if has_source_supported_ebus_stations(bundle, seed_text_for_bundle):
+            completeness_prompts = [
+                prompt
+                for prompt in completeness_prompts
+                if prompt.path != "granular_data.linear_ebus_stations_detail[*].station"
+            ]
         if completeness_prompts:
             missing_field_prompts = [
                 {

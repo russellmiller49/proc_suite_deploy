@@ -5,9 +5,11 @@ from typing import Any
 
 from pydantic import BaseModel
 
+from app.reporting.normalization.robotic_prompt_fidelity import (
+    ebus_detail_gaps,
+    has_source_supported_ebus_stations,
+)
 from proc_schemas.clinical import ProcedureBundle, ProcedureInput
-
-from app.reporting.normalization.robotic_prompt_fidelity import ebus_detail_gaps
 
 FLAG_VERSION = "reporter_seed_flag.v1"
 
@@ -87,6 +89,16 @@ def build_reporter_quality_flags(
     flags = list(prior_flags or [])
     source = str(source_text or bundle.free_text_hint or "")
     rendered = str(markdown or "")
+
+    if has_source_supported_ebus_stations(bundle, source):
+        flags = [
+            flag
+            for flag in flags
+            if flag.get("message") != (
+                "procedures_performed.linear_ebus.performed=true "
+                "but stations_sampled is empty/missing"
+            )
+        ]
 
     flags.extend(_placeholder_flags(rendered))
     flags.extend(_complication_contradiction_flags(source, bundle, rendered))

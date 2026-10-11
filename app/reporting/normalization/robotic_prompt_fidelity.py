@@ -372,6 +372,31 @@ def ebus_detail_gaps(source: str) -> list[str]:
     return _assess_nodal(nodal)[2] if nodal else []
 
 
+def has_source_supported_ebus_stations(bundle: ProcedureBundle, source: str) -> bool:
+    """Whether short-prompt reconstruction resolved every sampled station label.
+
+    Used only to retire stale upstream station warnings. Other missing details
+    and partially ambiguous station lists must continue to request review.
+    """
+    if not is_short_peripheral_prompt(source):
+        return False
+    _, nodal = split_peripheral_nodal(normalize_prompt(source))
+    stations, survey_only, gaps, _ = _assess_nodal(nodal)
+    if not stations or survey_only or gaps:
+        return False
+    expected = {s["station_name"].upper() for s in stations}
+    actual = set()
+    for procedure in bundle.procedures:
+        if procedure.proc_type != "ebus_tbna":
+            continue
+        data = procedure.data
+        if hasattr(data, "model_dump"):
+            data = data.model_dump()
+        for station in data.get("stations", []):
+            actual.add(str(station.get("station_name") or "").upper())
+    return expected == actual
+
+
 def _lavages(text: str, location: str, index: int) -> list[ProcedureInput]:
     site = re.search(r"(?i)\b(" + _SEGMENT + r")\s+(?:BAL|lavage)", text)
     if site:

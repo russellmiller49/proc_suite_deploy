@@ -25,6 +25,9 @@ def observed_slots(bundle: dict) -> dict:
 
     return {
         "no_stent": not data("airway_stent_placement"),
+        "generic_peripheral_biopsy": "Peripheral lung biopsy"
+        in (bundle.get("findings_text") or ""),
+        "cbct_guidance": "CBCT guidance:" in (bundle.get("findings_text") or ""),
         "tbna_counts": [
             p.get("samples_collected") for p in data("transbronchial_needle_aspiration")
         ],

@@ -452,6 +452,17 @@ def reconcile_robotic_prompt(bundle: ProcedureBundle, source: str) -> ProcedureB
     nav_explicit = bool(platform or re.search(r"(?i)\brobot\w*|\bnavigat\w*", source))
     shared_counts = bool(re.search(r"(?i)\b(?:both|each)\b", peripheral)) and len(targets) > 1
     observations = []
+    imaging = re.search(
+        r"(?i)\b(?:used|acquired|obtained|performed)\s+"
+        r"(?:(?:sequential|repeat|multiple)\s+)?cone[- ]beam\s+spins?\b[^.;]*",
+        peripheral,
+    )
+    if imaging and not re.search(
+        r"(?i)\b(?:not|never|planned to|did not)\s*$", peripheral[: imaging.start()]
+    ):
+        # Preserve the documented imaging/confirmation clause without inventing
+        # a spin count, radiation dose, ventilation settings, or reconstruction.
+        observations.append(f"CBCT guidance: {imaging[0].strip()}.")
     # Device deployment in these prompts usually concerns a fiducial. A stent
     # still requires its own explicitly documented placement action.
     if not re.search(
@@ -579,9 +590,19 @@ def reconcile_robotic_prompt(bundle: ProcedureBundle, source: str) -> ProcedureB
         )
         if re.search(r"(?i)\b(?:mini[- ]?)?BAL(?=\b|\d)|lavag\w*|wash(?:ed|es)?\b", lavage_text):
             new.extend(_lavages(lavage_text, location, index * 10))
-        if not any(
-            p.proc_type in _MODALITIES and p.data.get("lung_segment") == location for p in new
-        ) and re.search(r"(?i)\bbiops(?:y|ies|ied)\b", local):
+        if (
+            not any(
+                p.proc_type in (_MODALITIES.keys() - {"bronchial_brushings"})
+                and p.data.get("lung_segment") == location
+                for p in new
+            )
+            and re.search(r"(?i)\bbiops(?:y|ies|ied)\b", local)
+            and not re.search(
+                r"(?i)\bforceps\b|brush\s+biops|\b(?:no|without)\s+biops|"
+                r"\bnot\s+biopsied|\bbiopsy\s+(?:not performed|not obtained)",
+                local,
+            )
+        ):
             observations.append(
                 f"Peripheral lung biopsy at {location}; sampling technique unspecified."
             )

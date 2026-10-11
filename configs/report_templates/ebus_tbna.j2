@@ -1,3 +1,14 @@
+{% if source_only | default(false) %}
+Linear EBUS-TBNA
+{% if proc.needle_gauge %}Needle: {{ proc.needle_gauge }}.{% endif %}
+{% for st in proc.stations %}
+Station {{ st.station_name }}:{% if st.passes is not none %} {{ st.passes }} passes.{% else %} Pass count not documented.{% endif %}
+{% if st.size_mm %}Size: {{ st.size_mm }} mm.{% endif %}
+{% if st.rose_result %}ROSE: {{ st.rose_result }}.{% endif %}
+{% if st.echo_features %}{{ st.echo_features }}{% endif %}
+{% if st.comments %}{{ st.comments }}{% endif %}
+{% endfor %}
+{% else %}
 {# Golden-ish EBUS staging block (deterministic; no LLM). #}
 
 {% set _note = free_text_hint | default("", true) %}
@@ -52,6 +63,7 @@ Biopsy Tools: {{ st.biopsy_tools | join(", ") }}
 {% if st.rose_result %}
 ROSE Results: {{ st.rose_result }}
 {% endif %}
+{% if st.comments %}{{ st.comments }}.{% endif %}
 
 {% endif %}
 {% endfor %}
@@ -82,6 +94,8 @@ Result: {{ _rose }}.
 {% else %}
 Station {{ _st }}{% if _loc %} ({{ _loc }}){% endif %}:{% if st.size_mm %} The node measured {{ st.size_mm | fmt_unit("mm") }} by EBUS.{% endif %}{% if st.passes %} {{ st.passes }} passes were performed.{% endif %}
 {% if st.biopsy_tools %}Biopsy Tools: {{ st.biopsy_tools | join(", ") }}.{% endif %}
+{% if st.echo_features %}Echo Features: {{ st.echo_features }}.{% endif %}
+{% if st.comments %}{{ st.comments }}.{% endif %}
 {% if _rose %}ROSE Results: {{ _rose }}.{% endif %}
 {% endif %}
 
@@ -92,4 +106,6 @@ Station {{ _st }}{% if _loc %} ({{ _loc }}){% endif %}:{% if st.size_mm %} The n
 Prior to withdrawal of the bronchoscope, inspection demonstrated no evidence of bleeding. The patient tolerated the procedure well. There were no immediate complications.
 
 {% if proc.overall_rose_diagnosis %}ROSE Results (Nodes): {{ proc.overall_rose_diagnosis }}.{% endif %}
+{% endif %}
+
 {% endif %}

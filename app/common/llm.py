@@ -23,7 +23,7 @@ except ImportError:  # google-auth is optional unless OAuth is used
 
 from app.common.logger import get_logger
 from app.common.exceptions import LLMError
-from app.common.model_capabilities import filter_payload_for_model, is_gpt5
+from app.common.model_capabilities import filter_payload_for_model, is_gpt5, is_gpt6_luna
 from app.common.openai_responses import (
     get_primary_api,
     is_fallback_enabled,
@@ -679,12 +679,19 @@ class OpenAILLM:
         timeout = self._get_timeout(task)
 
         wants_json = True
-        outgoing_prompt = _prepend_json_object_instruction(prompt) if is_gpt5(self.model) and wants_json else prompt
+        outgoing_prompt = (
+            _prepend_json_object_instruction(prompt)
+            if wants_json and (is_gpt5(self.model) or is_gpt6_luna(self.model))
+            else prompt
+        )
 
         payload: dict[str, Any] = {
             "model": self.model,
             "messages": [{"role": "user", "content": outgoing_prompt}],
         }
+        if is_gpt6_luna(self.model):
+            # Match the Responses path, including a 404 fallback to Chat.
+            payload["reasoning_effort"] = "none"
 
         # Prefer native structured outputs where supported; GPT-5 rejects response_format.
         if wants_json and not is_gpt5(self.model):

@@ -826,6 +826,14 @@ def _add_compat_flat_fields(raw: dict[str, Any]) -> dict[str, Any]:
             raw["source_text"] = cleaned
 
             field_labels = [
+                # Full operative headings must delimit values before short labels
+                # such as "procedure" or "diagnosis" are considered.
+                "procedure in detail",
+                "preoperative diagnosis",
+                "postoperative diagnosis",
+                "estimated blood loss",
+                "specimen(s)",
+                "impression/plan",
                 "primary",
                 "category",
                 "indication",

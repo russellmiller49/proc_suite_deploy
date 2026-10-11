@@ -11,6 +11,7 @@ from proc_schemas.clinical import OperativeShellInputs, ProcedureBundle, Procedu
 
 from app.reporting.metadata import ProcedureAutocodeResult, ProcedureMetadata, ReportMetadata, StructuredReport
 from app.reporting.normalization.normalize import normalize_bundle
+from app.reporting.normalization.robotic_prompt_fidelity import is_short_peripheral_prompt
 
 from .engine import (
     _dedupe_labels,
@@ -755,7 +756,7 @@ class ReportPipeline:
                     needle_gauge = _as_text(data.get("needle_gauge"))
                     gauge_num = None
                     if needle_gauge:
-                        match = re.search(r"(\d{1,2})", needle_gauge)
+                        match = re.search(r"(\d{1,2}(?:[/+]\d{1,2})*)", needle_gauge)
                         if match:
                             gauge_num = match.group(1)
 
@@ -925,6 +926,13 @@ class ReportPipeline:
                 return "\n".join(_dedupe_labels(procedure_labels)) if procedure_labels else "Procedure details documented below"
 
             label_summary = _build_procedure_summary()
+            if is_short_peripheral_prompt(bundle.free_text_hint):
+                label_summary = re.sub(
+                    r"Cone-beam CT imaging with [^\n]+", "Cone-beam CT imaging", label_summary
+                )
+                label_summary = label_summary.replace(
+                    "Linear Endobronchial Ultrasound (EBUS) nodal staging", "Linear EBUS-TBNA"
+                )
             cpt_summary = _summarize_cpt_candidates(state.procedures_metadata, unmatched_autocode)
             shell_indication_text = _clean_shell_text(bundle.indication_text)
             if not shell_indication_text:

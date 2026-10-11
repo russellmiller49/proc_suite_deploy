@@ -9,7 +9,7 @@ required_fields:
   - lung_segment
   - samples_collected
   - forceps_tools
+optional_fields:
   - tests
-optional_fields: []
 proc_types:
   - transbronchial_lung_biopsy

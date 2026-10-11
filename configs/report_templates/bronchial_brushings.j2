@@ -1,3 +1,9 @@
+{% if source_only | default(false) %}
+Bronchial brushing{% if proc.lung_segment %} at {{ proc.lung_segment }}{% endif %}.{% if proc.samples_collected is not none %} Samples: {{ proc.samples_collected }}.{% endif %}
+{% if proc.tests %}Samples sent for {{ proc.tests | join(', ') }}.{% endif %}
+{% else %}
 Brush: Endobronchial/transbronchial brushings were obtained and submitted.{% if proc.samples_collected is not none %} A total of {{ proc.samples_collected }} sample{% if proc.samples_collected != 1 %}s{% endif %} were collected.{% endif %}{% if proc.lung_segment %} Location: {{ proc.lung_segment }}.{% endif %}
 {% if proc.brush_tool %}Performed with {{ proc.brush_tool }}.{% endif %}
 {% if proc.tests %}Samples were sent for {{ proc.tests | join(', ') }}.{% endif %}
+
+{% endif %}

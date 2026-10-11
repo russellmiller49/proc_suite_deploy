@@ -1,0 +1,30 @@
+INTERVENTIONAL PULMONOLOGY OPERATIVE REPORT
+
+DATE OF PROCEDURE: {{ encounter.date or "Not documented" }}
+
+INDICATION FOR OPERATION
+{{ proc.indication_text or indication_text or "Not documented" }}
+
+PROCEDURE
+{{ proc.procedures_summary or procedures_summary or "See documented findings" }}
+
+{% if proc.findings_text %}
+FINDINGS
+{{ proc.findings_text }}
+{% endif %}
+
+ANESTHESIA: {% if anesthesia and anesthesia.type %}{{ anesthesia.type }}{% elif sedation and sedation.type %}{{ sedation.type }}{% else %}Not documented{% endif %}
+
+ESTIMATED BLOOD LOSS: {{ proc.estimated_blood_loss or "Not documented" }}
+COMPLICATIONS: {{ proc.complications_text or "Not documented" }}
+
+PROCEDURE IN DETAIL
+{{ procedure_details_block }}
+
+{% if proc.specimens_text %}
+SPECIMENS
+{{ proc.specimens_text }}
+{% endif %}
+
+IMPRESSION AND PLAN
+{{ proc.impression_plan or "Follow-up plan not documented in the supplied text." }}

@@ -48,6 +48,11 @@ from app.reporting.metadata import (
 )
 from app.reporting.inference import InferenceEngine, PatchResult
 from app.reporting.normalization.compat_enricher import _add_compat_flat_fields
+from app.reporting.normalization.robotic_ebus_fidelity import reconcile_operative_blocks
+from app.reporting.normalization.robotic_prompt_fidelity import (
+    is_short_peripheral_prompt,
+    reconcile_robotic_prompt,
+)
 from app.reporting.normalization.text_enricher import (
     parse_dilation_sizes_mm,
     parse_ebl_ml,
@@ -280,6 +285,7 @@ _APPROVED_REDACTION_PLACEHOLDERS = frozenset(
 )
 _ALLOWED_LITERAL_NONE_LINE_PATTERNS = (
     re.compile(r"(?i)^\s*COMPLICATIONS\s*:?\s*None(?:[\s.;]|$)"),
+    re.compile(r"(?i)^\s*ESTIMATED BLOOD LOSS\s*:?\s*None(?:[\s.;]|$)"),
 )
 
 
@@ -698,6 +704,7 @@ class ReporterEngine:
             "acknowledged_omissions": bundle.acknowledged_omissions,
             "free_text_hint": bundle.free_text_hint,
             "render_style": self.render_style,
+            "source_only": is_short_peripheral_prompt(bundle.free_text_hint),
         }
         if extra_context:
             context.update(extra_context)
@@ -1803,6 +1810,14 @@ def _extract_explicit_complications(note_text: str) -> str | None:
     snippets: list[str] = []
     for pattern in patterns:
         for match in re.finditer(pattern, note_text):
+            if re.match(r"(?i)(?:bleeding|oozing)\b", match.group(0)):
+                prefix = note_text[max(0, match.start() - 80):match.start()]
+                if re.search(
+                    r"(?i)\b(?:no|without|absence of|no evidence of)\s+"
+                    r"(?:(?:active|significant|ongoing)\s+|(?:mass|lesions?)\s*,\s*)*$",
+                    prefix,
+                ):
+                    continue
             snippet = re.sub(r"\s+", " ", match.group(0)).strip().rstrip(".")
             if not snippet:
                 continue
@@ -2257,6 +2272,12 @@ def _extract_planned_not_performed_lines(note_text: str) -> list[str]:
     for sentence in re.split(r"(?<=[\.\n;])\s+", note_text):
         sentence_clean = sentence.strip()
         if not sentence_clean or not _PLANNED_NOT_PERFORMED_PATTERN.search(sentence_clean):
+            continue
+        if re.search(r"(?i)\bROSE\b[^.\n]*\bnot performed\b", sentence_clean) and not re.search(
+            r"(?i)\b(?:bronchoscopy|biopsy|procedure)\s+(?:was\s+)?(?:aborted|not performed)\b",
+            sentence_clean,
+        ):
+            # ROSE availability is independent of whether sampling occurred.
             continue
         code_match = _CPT_CODE_PATTERN.search(sentence_clean)
         if code_match:
@@ -5168,7 +5189,7 @@ def build_procedure_bundle_from_extraction(
         pre_anesthesia=pre_anesthesia,
         free_text_hint=raw.get("source_text") or raw.get("note_text") or raw.get("raw_note"),
     )
-    return bundle
+    return reconcile_robotic_prompt(reconcile_operative_blocks(bundle, note_text), note_text)
 
 
 def _infer_and_validate_bundle(

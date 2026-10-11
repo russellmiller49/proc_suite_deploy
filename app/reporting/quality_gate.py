@@ -7,6 +7,8 @@ from pydantic import BaseModel
 
 from proc_schemas.clinical import ProcedureBundle, ProcedureInput
 
+from app.reporting.normalization.robotic_prompt_fidelity import ebus_detail_gaps
+
 FLAG_VERSION = "reporter_seed_flag.v1"
 
 BLOCKER_CODES = {
@@ -189,10 +191,56 @@ def _complication_contradiction_flags(
 ) -> list[dict[str, Any]]:
     if not source_text:
         return []
+    # Operative narratives outrank billing modifiers and consent boilerplate.
+    narrative = re.search(r"(?im)^[ \t]*PROCEDURE IN DETAIL[ \t]*:", source_text)
+    if narrative:
+        source_text = source_text[narrative.end():]
     adverse_patterns = (
-        r"(?i)\b(?:complication|tear|bleeding|oozing|migration|migrated|failed|failure|removed|required|converted|switch\s+from)\b",
+        r"(?i)\b(?:complication|tear|bleeding|oozing|migration|migrated|failed|failure|converted|switch\s+from)\b",
+        # Inadvertent/accidental device removals always count.
+        r"(?i)\b(?:inadvertent(?:ly)?|accidental(?:ly)?|dislodg\w+)\b[^.;\n]{0,60}\bremov\w+\b",
+        # "required" counts unless it is the routine closing idiom ("no further
+        # intervention was required"); adverse events described with a negation
+        # elsewhere in the clause ("did not tolerate ... and required reversal
+        # agents") still count.
+        r"(?i)(?:^|[.;\n])(?![^.;\n]*\bno\s+(?:further|additional|other)\b[^.;\n]{0,40}\brequired\b)[^.;\n]*\brequired\b",
     )
-    if not any(re.search(pattern, source_text) for pattern in adverse_patterns):
+
+    def _removed_is_adverse(text: str) -> bool:
+        # "removed" counts unless the removed object is fluid ("900 mL of
+        # serous fluid was removed", "Removed 900 mL of serous fluid") — those
+        # must not contradict "COMPLICATIONS None". Inadvertent/accidental
+        # removals are caught by their own pattern above regardless.
+        for removed_match in re.finditer(r"(?i)\bremoved\b", text):
+            prefix = text[max(0, removed_match.start() - 40) : removed_match.start()]
+            if re.search(r"(?i)\bbronchoscope\s+(?:was\s+)?$", prefix):
+                suffix = text[removed_match.end():removed_match.end() + 80]
+                if not re.match(r"(?i)\s+(?:emergently|due to|because of)\b", suffix):
+                    continue
+            if re.search(r"(?i)\b(?:fluid|effusion|ml|cc)\b[^.;\n]{0,30}$", prefix):
+                continue
+            suffix = text[removed_match.end() : removed_match.end() + 40]
+            if re.search(r"(?i)^[^.;\n]{0,30}\b(?:fluid|effusion|ml|cc)\b", suffix):
+                continue
+            return True
+        return False
+
+    def _has_adverse_match(pattern: str) -> bool:
+        for match in re.finditer(pattern, source_text):
+            prefix = source_text[max(0, match.start() - 100):match.start()]
+            if re.search(
+                r"(?i)\b(?:no|without|absence of|no evidence of)\s+"
+                r"(?:(?:active|significant|ongoing|immediate)\s+|(?:mass|lesions?)\s*,\s*)*$",
+                prefix,
+            ):
+                continue
+            return True
+        return False
+
+    if (
+        not any(_has_adverse_match(pattern) for pattern in adverse_patterns)
+        and not _removed_is_adverse(source_text)
+    ):
         return []
     existing = str(bundle.complications_text or "").strip()
     rendered_none = bool(re.search(r"(?im)^\s*COMPLICATIONS\s+None\s*$", markdown or ""))
@@ -226,6 +274,29 @@ def _omitted_major_family_flags(source_text: str, bundle: ProcedureBundle) -> li
         if not all(re.search(pattern, source_text) for pattern in patterns):
             continue
         if family == "EBUS":
+            if re.search(r"\bLinear EBUS survey\b", bundle.findings_text or ""):
+                # An explicitly documented survey without TBNA still preserves
+                # the EBUS family; it must not be promoted to sampling.
+                continue
+            if "Linear EBUS evaluation:" in (bundle.findings_text or ""):
+                gaps = ebus_detail_gaps(source_text)
+                missing = {
+                    "station_labels": "individual station identities",
+                    "sampling_status": "whether nodal sampling was performed",
+                }
+                detail = " and ".join(missing[gap] for gap in gaps)
+                flags.append(
+                    _make_flag(
+                        "EBUS_DETAILS_UNSPECIFIED",
+                        "EBUS is preserved in the report; the source does not specify "
+                        + (detail or "station labels or sampling details")
+                        + ".",
+                        source="quality_gate.bundle",
+                        metadata={"family": "EBUS", "missing_details": gaps},
+                        blocking=False,
+                    )
+                )
+                continue
             has_sampling_detail = bool(re.search(r"(?i)\b(?:station|tbna|sampled|biops(?:y|ies))\b", source_text))
             has_procedure_context = bool(re.search(r"(?im)^\s*procedures?\s*:\s*[^\n]*\bEBUS\b", source_text))
             if not has_sampling_detail and not has_procedure_context and re.search(
@@ -429,6 +500,19 @@ def _multi_target_collapse_flags(
 ) -> list[dict[str, Any]]:
     if not source_text:
         return []
+    operative_targets = re.findall(
+        r"(?im)^[ \t]*Robotic navigation bronchoscopy was performed with [^\n.]+\.", source_text,
+    )
+    if operative_targets:
+        nav_count = sum(p.proc_type == "robotic_navigation" for p in bundle.procedures)
+        if nav_count >= len(operative_targets):
+            return []
+        return [_make_flag(
+            "MULTI_TARGET_COLLAPSE",
+            "The bundle preserves fewer targets than the explicit operative target blocks.",
+            source="quality_gate.bundle",
+            metadata={"target_count": len(operative_targets)}, blocking=False,
+        )]
     targets = [
         f"{match.group(1).upper()} ({str(match.group(2) or '').strip()})".strip()
         for match in re.finditer(r"(?i)\b(RUL|RML|RLL|LUL|LLL)\b(?:\s*\(([^)]+)\))?", source_text)
@@ -479,6 +563,9 @@ def _explicit_cpt_shorthand_flags(
 ) -> list[dict[str, Any]]:
     if not source_text:
         return []
+    narrative = re.search(r"(?im)^[ \t]*PROCEDURE IN DETAIL[ \t]*:", source_text)
+    if narrative:
+        source_text = source_text[narrative.end():]
     explicit_cpts = {match.group(1) for match in re.finditer(r"(?<!\d)\b(31640|31641|31645)\b(?!\d)", source_text)}
     if not explicit_cpts:
         return []

@@ -5,9 +5,9 @@ cpt_hints: []
 schema_id: robotic_navigation_v1
 output_section: PROCEDURE_DETAILS
 template_path: robotic_navigation.j2
-required_fields:
-  - platform
+required_fields: []
 optional_fields:
+  - platform
   - lesion_location
   - registration_method
   - registration_error_mm

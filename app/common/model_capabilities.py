@@ -27,16 +27,22 @@ def is_gpt5(model: str) -> bool:
     return (model or "").strip().lower().startswith("gpt-5")
 
 
+def is_gpt6_luna(model: str) -> bool:
+    """Recognize the Luna API model and dated snapshots, without matching other tiers."""
+    name = (model or "").strip().lower()
+    return name == "gpt-6-luna" or name.startswith("gpt-6-luna-")
+
+
 def capabilities_for(model: str) -> Capabilities:
     """Best-effort capability matrix by model family.
 
     We keep this intentionally conservative: if a parameter is known to trigger
     400s for a family, we mark it unsupported here so it can be filtered out.
     """
-    if is_gpt5(model):
+    if is_gpt5(model) or is_gpt6_luna(model):
         return Capabilities(
-            supports_response_format_json_object=False,
-            supports_response_format_json_schema=False,
+            supports_response_format_json_object=is_gpt6_luna(model),
+            supports_response_format_json_schema=is_gpt6_luna(model),
             supports_tools=True,
             supports_parallel_tool_calls_with_strict=False,
             supports_temperature=False,
@@ -93,7 +99,9 @@ def filter_payload_for_model(
             filtered.pop("logprobs", None)
 
     else:  # api_style == "chat"
-        if not (caps.supports_response_format_json_object or caps.supports_response_format_json_schema):
+        if not (
+            caps.supports_response_format_json_object or caps.supports_response_format_json_schema
+        ):
             filtered.pop("response_format", None)
 
         if not caps.supports_temperature:
@@ -115,5 +123,7 @@ def filter_payload_for_model(
     return filtered
 
 
-__all__ = ["Capabilities", "capabilities_for", "filter_payload_for_model", "is_gpt5"]
+__all__ = [
+    "Capabilities", "capabilities_for", "filter_payload_for_model", "is_gpt5", "is_gpt6_luna",
+]
 

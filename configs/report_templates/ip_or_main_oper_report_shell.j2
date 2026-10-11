@@ -1,3 +1,6 @@
+{% if source_only | default(false) %}
+{% include "robotic_prompt_shell.j2" %}
+{% else %}
 INTERVENTIONAL PULMONOLOGY OPERATIVE REPORT
 
 {% set _note = free_text_hint | default("", true) %}
@@ -207,4 +210,6 @@ IMPRESSION / PLAN
 Await final pathology and cytology. Post-procedure monitoring per protocol.
 {% else %}
 Post-procedure monitoring per protocol.
+{% endif %}
+
 {% endif %}

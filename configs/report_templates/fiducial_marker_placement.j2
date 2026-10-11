@@ -1,2 +1,9 @@
+{% if source_only | default(false) %}
+Fiducial marker placement{% if proc.airway_location %} at {{ proc.airway_location }}{% endif %}.
+{% if proc.marker_details %}Marker: {{ proc.marker_details }}.{% endif %}
+{% if proc.confirmation_method %}Confirmation: {{ proc.confirmation_method }}.{% endif %}
+{% else %}
 A fiducial marker{% if proc.marker_details %} ({{ proc.marker_details }}){% endif %} was loaded and placed under fluoroscopic guidance at the targeted airway location {{ proc.airway_location }}.
 Placement was confirmed{% if proc.confirmation_method %} using {{ proc.confirmation_method }}{% endif %} and the bronchoscope withdrawn without complication.
+
+{% endif %}

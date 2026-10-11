@@ -18,7 +18,7 @@ import httpx
 
 from app.common.logger import get_logger
 from app.common.exceptions import LLMError
-from app.common.model_capabilities import filter_payload_for_model, is_gpt5
+from app.common.model_capabilities import is_gpt5, is_gpt6_luna
 from app.infra.llm_control import backoff_seconds, llm_slot, parse_retry_after_seconds
 from app.infra.settings import get_infra_settings
 
@@ -74,7 +74,7 @@ def build_responses_payload(
     """
     # For JSON-required paths, use instruction-first approach (PHI-safe)
     outgoing_prompt = prompt
-    if wants_json and is_gpt5(model):
+    if wants_json and (is_gpt5(model) or is_gpt6_luna(model)):
         outgoing_prompt = _prepend_json_object_instruction(prompt)
 
     # Responses API uses "input" field
@@ -83,6 +83,10 @@ def build_responses_payload(
         "model": model,
         "input": outgoing_prompt,
     }
+    if is_gpt6_luna(model):
+        # Preserve the effective GPT-5.2 effort used by this application's
+        # structurer/judge. Luna otherwise defaults to medium reasoning.
+        payload["reasoning"] = {"effort": "none"}
 
     # Merge extra params if provided
     if extra:
